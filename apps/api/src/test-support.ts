@@ -2,6 +2,7 @@ import type { IdentityProvider } from "@workeasy/auth";
 import type { Db } from "@workeasy/database";
 import { createLogger } from "@workeasy/observability";
 import type { Express } from "express";
+import { sql } from "kysely";
 import { createApp, type AppSettings } from "./app.js";
 
 /** Shared setup for API integration tests. Not part of the production bundle. */
@@ -21,7 +22,14 @@ export const unusedIdentityProvider: IdentityProvider = {
 };
 
 export function buildTestApp(db: Db, identityProvider: IdentityProvider = unusedIdentityProvider, settings = testSettings): Express {
-  return createApp({ logger: createLogger({ service: "api-test", level: "silent" }), db, identityProvider, settings });
+  return createApp({
+    logger: createLogger({ service: "api-test", level: "silent" }),
+    db,
+    identityProvider,
+    settings,
+    readinessChecks: { database: () => sql`SELECT 1`.execute(db) },
+    isDraining: () => false,
+  });
 }
 
 /** Extracts `name=value` for a cookie from Set-Cookie headers. */

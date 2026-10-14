@@ -1,0 +1,68 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "import", "react", "oxc", "unicorn", "vitest"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "error"
+  },
+  "env": { "es2024": true, "node": true, "browser": true },
+  "ignorePatterns": ["**/node_modules/**", "**/dist/**", "**/.next/**", "**/generated/**", "**/next-env.d.ts"],
+  "rules": {
+    "eqeqeq": ["error", "always", { "null": "ignore" }],
+    "no-eval": "error",
+    "no-new-func": "error",
+    "no-implied-eval": "error",
+    "no-var": "error",
+    "prefer-const": "error",
+    "typescript/no-explicit-any": "error",
+    "typescript/consistent-type-imports": "error",
+    "import/no-cycle": "error",
+    "vitest/expect-expect": ["error", { "assertFunctionNames": ["expect", "expect*"] }],
+    "vitest/valid-expect": ["error", { "maxArgs": 2 }],
+    "vitest/valid-title": ["error", { "allowArguments": true }],
+
+    // Off on purpose: the automatic JSX runtime needs no React import;
+    // Express 5 forwards rejected async handlers to the error handler;
+    // placeholder packages use `export {}`; function placement is style.
+    "react/react-in-jsx-scope": "off",
+    "oxc/no-async-endpoint-handlers": "off",
+    "unicorn/require-module-specifiers": "off",
+    "unicorn/consistent-function-scoping": "off"
+  },
+  "overrides": [
+    {
+      "files": [
+        "packages/form-schema/src/**",
+        "packages/form-engine/src/**",
+        "packages/form-renderer/src/**",
+        "packages/builder/src/**",
+        "packages/ui/src/**",
+        "packages/auth/src/**",
+        "apps/console/src/**",
+        "apps/respondent/src/**"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              { "name": "@workeasy/database", "message": "Browser and shared packages must not import database code (docs/02 §4)." },
+              { "name": "@workeasy/integrations", "message": "Integration adapters are server-only." },
+              { "name": "pg", "message": "Database drivers are server-only." },
+              { "name": "kysely", "message": "Database code is server-only." },
+              { "name": "openid-client", "message": "Identity-provider clients are server-only." }
+            ],
+            "patterns": [
+              { "group": ["@workeasy/database/*", "@workeasy/integrations/*"], "message": "Server-only package." },
+              { "group": ["node:*"], "message": "Browser and shared packages must not use Node built-ins." }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["**/*.test.ts", "**/scripts/**"],
+      "rules": { "no-restricted-imports": "off" }
+    }
+  ]
+}

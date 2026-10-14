@@ -33,6 +33,28 @@ describe("createLogger", () => {
     expect(out).toContain("form-1");
   });
 
+  it("logs only allowlisted error fields and withholds database messages", () => {
+    const { logger, lines } = captureLogger();
+    const dbError = Object.assign(new Error('invalid input syntax for type uuid: "asha@example.com"'), {
+      severity: "ERROR",
+      code: "22P02",
+      detail: "Key (email)=(asha@example.com) already exists.",
+      where: "unnamed portal parameter $1 = '...'",
+      table: "forms",
+    });
+    const httpError = Object.assign(new Error("request failed"), { response: { body: "secret-body" }, code: "ECONNRESET" });
+    logger.error({ err: dbError }, "db failed");
+    logger.error({ err: httpError }, "http failed");
+    const out = lines.join("");
+    expect(out).not.toContain("asha@example.com");
+    expect(out).not.toContain("secret-body");
+    const [db, http] = lines.map((l) => JSON.parse(l) as { err: Record<string, unknown> });
+    expect(db!.err).toMatchObject({ type: "Error", code: "22P02", table: "forms" });
+    expect(db!.err.detail).toBeUndefined();
+    expect(http!.err).toMatchObject({ type: "Error", message: "request failed", code: "ECONNRESET" });
+    expect(http!.err.response).toBeUndefined();
+  });
+
   it("tags every line with the service name", () => {
     const { logger, lines } = captureLogger();
     logger.info("hello");

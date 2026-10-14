@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
-import pg from "pg";
+import { Client } from "pg";
 import type { TestProject } from "vitest/node";
 import { bootstrapDatabase } from "../bootstrap.js";
 import { migrate } from "../migrate.js";
@@ -30,7 +30,7 @@ export default async function setup(project: TestProject): Promise<void> {
   const devDatabase = decodeURIComponent(new URL(required("DATABASE_MIGRATION_URL")).pathname.slice(1));
   const testDatabase = `${devDatabase}_test`;
 
-  const admin = new pg.Client({ connectionString: adminUrl });
+  const admin = new Client({ connectionString: adminUrl });
   await admin.connect();
   try {
     await admin.query(`DROP DATABASE IF EXISTS ${admin.escapeIdentifier(testDatabase)} WITH (FORCE)`);

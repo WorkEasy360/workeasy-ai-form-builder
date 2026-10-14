@@ -27,7 +27,9 @@ pnpm dev
 |---|---|
 | Console (creator app) | http://localhost:3000 |
 | Respondent (public forms) | http://localhost:3001 |
-| API liveness | http://localhost:4000/health/live |
+| API liveness / readiness | http://localhost:4000/health/live, http://localhost:4000/health/ready |
+| Worker liveness | http://localhost:4001/health/live |
+| Console / respondent liveness | http://localhost:3000/healthz, http://localhost:3001/healthz |
 | Worker | No port; logs to the `pnpm dev` output |
 | Local sign-in provider (Dex) | http://localhost:5556/dex |
 | Mail sink UI (Mailpit) | http://localhost:8025 |
@@ -43,6 +45,8 @@ Every container port is bound to `127.0.0.1`. Change host ports in `.env` if the
 | `pnpm dev` | Runs api, worker, console and respondent in watch mode |
 | `pnpm build` | Production builds (tsup for api/worker, `next build` for the web apps) |
 | `pnpm typecheck` | Type-checks every workspace project |
+| `pnpm lint` | Oxlint, including import boundaries for browser-side packages |
+| `pnpm check:bundles` | After `pnpm build`: fails if a client bundle contains server-only setting names or secret values |
 | `pnpm test` | Unit tests (no services needed) |
 | `pnpm test:integration` | PostgreSQL integration tests; needs `pnpm infra:up`, recreates `<db>_test` each run |
 | `pnpm test:browser` | Shared engine/schema tests in headless Chromium; needs `pnpm browsers:install` once |
@@ -162,6 +166,30 @@ Cookie-authenticated mutations must come from `CONSOLE_PUBLIC_URL`, checked by O
 
 **Shared corpus.** `packages/form-engine/corpus/` holds JSON cases: definitions with raw answers and their exact expected outcome, plus definitions with their expected validation issues. `*.shared.test.ts` files run unchanged in Node (`pnpm test`) and headless Chromium (`pnpm test:browser`). To cover new behavior, add a case to the corpus instead of writing a one-off test.
 
+## Errors, logs and health
+
+- **Request IDs.** Every API response has an `X-Request-Id` (`req_…`). Every log line written while handling the request carries the same ID. An incoming `X-Request-Id` is recorded only as `upstreamRequestId`, and only if it is plainly safe to log; it is never reused as our own.
+- **Error model.** Every error is `application/problem+json` with `type`, `title`, `status`, `code` and `requestId`, plus `errors` for field problems or `checks` for readiness. Malformed JSON → 400 `MALFORMED_JSON`; oversized body → 413; unexpected failures → 500 `INTERNAL` with a generic title (details only in the log, under the request ID).
+- **Logs** are JSON (pino). Each request logs one line with method, route **template** (e.g. `/api/v1/organizations/:orgId/forms`), status and duration. It never logs the concrete path, query string, headers or body.
+  - Credentials, tokens, answers and prompts are redacted by key.
+  - Errors are reduced to name, message, code and stack. PostgreSQL errors keep only the SQLSTATE and the table or constraint name, because their messages and details can quote submitted values.
+- **Health.**
+  - `/health/live` reports process liveness.
+  - `/health/ready` checks PostgreSQL with a 2-second timeout, and fails while the API is draining for shutdown. Sign-in, email and AI outages deliberately don't affect readiness.
+  - The worker's `/health/live` (port `WORKER_HEALTH_PORT`) fails if its polling loop stops iterating.
+  - The Next.js apps serve `/healthz`.
+
+## Continuous integration
+
+`.github/workflows/ci.yml` runs on pushes to `main` and `feat/**` and on pull requests. Actions are pinned to full commit SHAs.
+
+| Job | Runs |
+|---|---|
+| checks | `pnpm install --frozen-lockfile`, `lint`, `typecheck`, `test`, `build`, `check:bundles` |
+| browser | Shared engine/schema tests in headless Chromium |
+| integration | `pnpm infra:up` (the same Docker services as locally, with `.env.example` credentials), then `test:integration` |
+| audit | `pnpm audit --prod --audit-level high` |
+
 ## Dependency policy
 
 - Versions are pinned exactly (`save-exact`) and resolved in `pnpm-lock.yaml`.
@@ -172,7 +200,8 @@ Cookie-authenticated mutations must come from `CONSOLE_PUBLIC_URL`, checked by O
 
 Later backlog items add these:
 
-- Readiness checks, request IDs and CI (FND-05)
+- Distributed tracing (OpenTelemetry), metrics and alerting
+- Secret scanning and container image scanning in CI
 - Audit events for grant changes and sign-ins (GOV-01)
 - Rate limiting on sign-in, and invalidating sessions after high-risk account changes
 - Malware scanner (FIL-01)

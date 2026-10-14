@@ -6,6 +6,7 @@ import {
   FormListResponseSchema,
   MeResponseSchema,
   ProblemSchema,
+  ReadyResponseSchema,
 } from "./schemas.js";
 
 type JsonSchema = Record<string, unknown>;
@@ -53,7 +54,7 @@ export function buildOpenApiDocument(): JsonSchema {
       title: "Workeasy Forms API",
       version: "0.1.0",
       description:
-        "Routes implemented through FND-03. Organization routes derive the tenant from the authenticated membership; resources outside the caller's organizations return 404.",
+        "Routes implemented through FND-05. Organization routes derive the tenant from the authenticated membership; resources outside the caller's organizations return 404. Every response carries an X-Request-Id header, and every error is application/problem+json with the same requestId.",
     },
     servers: [{ url: "/" }],
     components: {
@@ -68,6 +69,23 @@ export function buildOpenApiDocument(): JsonSchema {
       schemas: { Problem: schemaOf(ProblemSchema, "output") },
     },
     paths: {
+      "/health/live": {
+        get: {
+          operationId: "liveness",
+          summary: "Process liveness",
+          responses: { "200": { description: "The process is serving HTTP" } },
+        },
+      },
+      "/health/ready": {
+        get: {
+          operationId: "readiness",
+          summary: "Readiness: essential dependencies reachable and not shutting down",
+          responses: {
+            "200": json("Ready to serve traffic", ReadyResponseSchema),
+            "503": problem("Not ready: a dependency is unavailable or the process is draining"),
+          },
+        },
+      },
       "/auth/login": {
         get: {
           operationId: "beginLogin",

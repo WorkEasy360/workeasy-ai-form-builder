@@ -3,7 +3,7 @@
   "info": {
     "title": "Workeasy Forms API",
     "version": "0.1.0",
-    "description": "Routes implemented through FND-03. Organization routes derive the tenant from the authenticated membership; resources outside the caller's organizations return 404."
+    "description": "Routes implemented through FND-05. Organization routes derive the tenant from the authenticated membership; resources outside the caller's organizations return 404. Every response carries an X-Request-Id header, and every error is application/problem+json with the same requestId."
   },
   "servers": [
     {
@@ -37,6 +37,9 @@
           "code": {
             "type": "string"
           },
+          "requestId": {
+            "type": "string"
+          },
           "errors": {
             "type": "array",
             "items": {
@@ -59,19 +62,89 @@
               ],
               "additionalProperties": false
             }
+          },
+          "checks": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "string"
+            }
           }
         },
         "required": [
           "type",
           "title",
           "status",
-          "code"
+          "code",
+          "requestId"
         ],
         "additionalProperties": false
       }
     }
   },
   "paths": {
+    "/health/live": {
+      "get": {
+        "operationId": "liveness",
+        "summary": "Process liveness",
+        "responses": {
+          "200": {
+            "description": "The process is serving HTTP"
+          }
+        }
+      }
+    },
+    "/health/ready": {
+      "get": {
+        "operationId": "readiness",
+        "summary": "Readiness: essential dependencies reachable and not shutting down",
+        "responses": {
+          "200": {
+            "description": "Ready to serve traffic",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "const": "ready"
+                    },
+                    "checks": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {
+                        "type": "string",
+                        "const": "ok"
+                      }
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "checks"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Not ready: a dependency is unavailable or the process is draining",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/auth/login": {
       "get": {
         "operationId": "beginLogin",

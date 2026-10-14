@@ -163,7 +163,7 @@ function checkCondition(root: Condition, rootPath: string, fields: Map<string, F
     return referenced;
   }
 
-  for (const { node, path } of leaves.reverse()) {
+  for (const { node, path } of leaves.toReversed()) {
     const field = fields.get(node.fieldId);
     if (!field) {
       add(`${path}/fieldId`, "UNKNOWN_FIELD", `Unknown field "${node.fieldId}".`);

@@ -1,4 +1,5 @@
 import { createDb } from "@workeasy/database";
+import { sql } from "kysely";
 import { createLogger } from "@workeasy/observability";
 import { createApp } from "./app.js";
 import { loadConfig } from "./config.js";
@@ -8,8 +9,11 @@ const config = loadConfig();
 const logger = createLogger({ service: "api", level: config.LOG_LEVEL });
 const db = createDb({ connectionString: config.DATABASE_URL, applicationName: "workeasy-api" });
 const consoleOrigin = new URL(config.CONSOLE_PUBLIC_URL).origin;
+let draining = false;
 
 const app = createApp({
+  readinessChecks: { database: () => sql`SELECT 1`.execute(db) },
+  isDraining: () => draining,
   logger,
   db,
   identityProvider: createOidcIdentityProvider({
@@ -36,6 +40,8 @@ let shuttingDown = false;
 function shutdown(signal: NodeJS.Signals): void {
   if (shuttingDown) return;
   shuttingDown = true;
+  // Readiness fails from now on; in-flight requests finish before exit.
+  draining = true;
   logger.info({ signal }, "api shutting down; draining connections");
   server.close((err) => {
     void db.destroy().finally(() => {

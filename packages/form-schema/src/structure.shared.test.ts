@@ -25,7 +25,8 @@ describe("validateStructure (generated from the JSON Schema contract)", () => {
     delete def.fields[2]!.settings.options;
     const result = validateStructure(def);
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.issues.some((i) => i.path === "/fields/2/settings" && i.code === "SCHEMA_REQUIRED")).toBe(true);
+    const issues = result.ok ? [] : result.issues;
+    expect(issues.some((i) => i.path === "/fields/2/settings" && i.code === "SCHEMA_REQUIRED")).toBe(true);
   });
 
   it("enforces the contract's count limits", () => {
@@ -33,7 +34,8 @@ describe("validateStructure (generated from the JSON Schema contract)", () => {
     def.pages = Array.from({ length: 21 }, (_, i) => ({ id: `page_${i}`, title: "", fieldIds: [] }));
     const result = validateStructure(def);
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.issues.some((i) => i.path === "/pages" && i.code === "SCHEMA_MAXITEMS")).toBe(true);
+    const issues = result.ok ? [] : result.issues;
+    expect(issues.some((i) => i.path === "/pages" && i.code === "SCHEMA_MAXITEMS")).toBe(true);
   });
 
   it("counts string lengths in code points, as JSON Schema requires", () => {

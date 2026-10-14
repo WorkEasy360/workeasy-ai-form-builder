@@ -44,7 +44,7 @@ export function evaluate(definition: FormDefinition, rawAnswers: unknown): Evalu
   const raw = rawAnswers as Record<string, unknown>;
 
   const fields = new Map<string, Field>(definition.fields.map((f) => [f.id, f]));
-  for (const key of Object.keys(raw).sort()) {
+  for (const key of Object.keys(raw).toSorted()) {
     if (!fields.has(key)) result.errors.push({ fieldId: key, code: "UNKNOWN_FIELD", message: "This question is not part of the form." });
   }
 

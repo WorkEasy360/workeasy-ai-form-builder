@@ -11,6 +11,7 @@ import {
   FormListResponseSchema,
   MeResponseSchema,
   ProblemSchema,
+  ReadyResponseSchema,
 } from "./contract/schemas.js";
 import { buildTestApp, TEST_CONSOLE_ORIGIN } from "./test-support.js";
 
@@ -79,6 +80,14 @@ function expectNotFound(res: request.Response) {
   expect(ProblemSchema.parse(res.body).code).toBe("NOT_FOUND");
 }
 
+describe("readiness against the real database", () => {
+  it("reports ready when PostgreSQL answers", async () => {
+    const res = await request(app).get("/health/ready");
+    expect(res.status).toBe(200);
+    expect(ReadyResponseSchema.parse(res.body)).toEqual({ status: "ready", checks: { database: "ok" } });
+  });
+});
+
 describe("sessions", () => {
   it("rejects requests without a session, with an unknown token, or with a revoked or expired session", async () => {
     expect((await request(app).get("/api/v1/me")).status).toBe(401);
@@ -121,7 +130,7 @@ describe("organization routes: tenant isolation", () => {
     const res = await get(formsPath(a.id), "ownerA");
     expect(res.status).toBe(200);
     const body = FormListResponseSchema.parse(res.body);
-    expect(body.items.map((f) => f.id).sort()).toEqual(a.forms.map((f) => f.id).sort());
+    expect(body.items.map((f) => f.id).toSorted()).toEqual(a.forms.map((f) => f.id).toSorted());
   });
 
   it("returns 404 when a member of A asks for B's organization, and vice versa", async () => {

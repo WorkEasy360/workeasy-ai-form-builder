@@ -1,5 +1,5 @@
 import { Kysely, PostgresDialect } from "kysely";
-import pg from "pg";
+import { Pool } from "pg";
 import type { Database } from "./schema.js";
 
 export type Db = Kysely<Database>;
@@ -12,7 +12,7 @@ export interface CreateDbOptions {
 }
 
 export function createDb({ connectionString, maxConnections = 10, applicationName }: CreateDbOptions): Db {
-  const pool = new pg.Pool({
+  const pool = new Pool({
     connectionString,
     max: maxConnections,
     ...(applicationName ? { application_name: applicationName } : {}),

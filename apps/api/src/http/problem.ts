@@ -1,4 +1,5 @@
 import type { Response } from "express";
+import { requestIdOf } from "./request-context.js";
 
 export interface FieldError {
   field: string;
@@ -6,18 +7,28 @@ export interface FieldError {
   message: string;
 }
 
-/** Writes an application/problem+json response (docs/05 §1). */
-export function sendProblem(
-  res: Response,
-  status: number,
-  code: string,
-  title: string,
-  extra?: { errors?: FieldError[] },
-): void {
+export interface ProblemExtensions {
+  errors?: FieldError[];
+  /** Per-dependency status for readiness failures. */
+  checks?: Record<string, string>;
+}
+
+/**
+ * Writes an application/problem+json response (docs/05 §1). Every problem
+ * carries the request ID so a user-reported failure can be found in the logs.
+ */
+export function sendProblem(res: Response, status: number, code: string, title: string, extra?: ProblemExtensions): void {
   res
     .status(status)
     .type("application/problem+json")
-    .json({ type: `urn:workeasy:error:${code.toLowerCase()}`, title, status, code, ...extra });
+    .json({
+      type: `urn:workeasy:error:${code.toLowerCase()}`,
+      title,
+      status,
+      code,
+      requestId: requestIdOf(res) ?? "unknown",
+      ...extra,
+    });
 }
 
 export const problems = {

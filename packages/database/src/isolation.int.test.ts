@@ -1,6 +1,6 @@
 import { createTenantFixture, type TenantFixture } from "@workeasy/test-fixtures";
 import { sql } from "kysely";
-import pg from "pg";
+import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, inject, it } from "vitest";
 import { createDb, type Db } from "./client.js";
 import { InvalidDbContextError, withContext, withTenant } from "./context.js";
@@ -18,7 +18,7 @@ async function expectPgError(action: Promise<unknown>, code: string, message?: R
   );
   expect(err, `expected SQLSTATE ${code}`).toBeInstanceOf(Error);
   expect((err as { code?: string }).code).toBe(code);
-  if (message) expect((err as Error).message).toMatch(message);
+  expect((err as Error).message).toMatch(message ?? /./);
 }
 
 const RLS_VIOLATION = "42501"; // insufficient_privilege: RLS WITH CHECK and missing grants
@@ -43,8 +43,8 @@ afterAll(async () => {
   await worker?.destroy();
 });
 
-const ids = (rows: { id: string }[]) => rows.map((r) => r.id).sort();
-const formIds = (t: TenantFixture) => t.forms.map((f) => f.id).sort();
+const ids = (rows: { id: string }[]) => rows.map((r) => r.id).toSorted();
+const formIds = (t: TenantFixture) => t.forms.map((f) => f.id).toSorted();
 const ownerOf = (t: TenantFixture) => t.members.find((m) => m.role === "owner")!.user;
 
 describe("tenant isolation through the api role", () => {
@@ -61,9 +61,9 @@ describe("tenant isolation through the api role", () => {
       expect(ids(await trx.selectFrom("forms").select("id").execute())).toEqual(formIds(a));
       expect(ids(await trx.selectFrom("tenants").select("id").execute())).toEqual([a.id]);
       const memberships = await trx.selectFrom("memberships").select(["tenant_id", "user_id"]).execute();
-      expect(memberships.map((m) => m.user_id).sort()).toEqual(a.members.map((m) => m.user.id).sort());
+      expect(memberships.map((m) => m.user_id).toSorted()).toEqual(a.members.map((m) => m.user.id).toSorted());
       expect(new Set(memberships.map((m) => m.tenant_id))).toEqual(new Set([a.id]));
-      expect(ids(await trx.selectFrom("users").select("id").execute())).toEqual(a.members.map((m) => m.user.id).sort());
+      expect(ids(await trx.selectFrom("users").select("id").execute())).toEqual(a.members.map((m) => m.user.id).toSorted());
     });
   });
 
@@ -198,9 +198,9 @@ describe("user context (signed in, no organization selected)", () => {
     const own = await withContext(api, { userId: shared.id }, (trx) =>
       trx.selectFrom("memberships").select("tenant_id").execute(),
     );
-    expect(own.map((m) => m.tenant_id).sort()).toEqual([a.id, b.id].sort());
+    expect(own.map((m) => m.tenant_id).toSorted()).toEqual([a.id, b.id].toSorted());
     const tenants = await withContext(api, { userId: shared.id }, (trx) => trx.selectFrom("tenants").select("id").execute());
-    expect(ids(tenants)).toEqual([a.id, b.id].sort());
+    expect(ids(tenants)).toEqual([a.id, b.id].toSorted());
 
     // With an organization selected the same user sees only that organization.
     const scoped = await withContext(api, { tenantId: a.id, userId: shared.id }, (trx) =>
@@ -315,9 +315,9 @@ describe("tenant isolation through the worker role", () => {
 });
 
 describe("role and policy hardening", () => {
-  let admin: pg.Client;
+  let admin: Client;
   beforeAll(async () => {
-    admin = new pg.Client({ connectionString: urls.admin });
+    admin = new Client({ connectionString: urls.admin });
     await admin.connect();
   });
   afterAll(async () => {
@@ -356,7 +356,7 @@ describe("role and policy hardening", () => {
                OR EXISTS (SELECT 1 FROM pg_attribute a
                            WHERE a.attrelid = c.oid AND a.attname = 'tenant_id' AND NOT a.attisdropped))`,
     );
-    expect(rows.map((r) => r.relname).sort()).toEqual(
+    expect(rows.map((r) => r.relname).toSorted()).toEqual(
       expect.arrayContaining(["auth_sessions", "form_grants", "forms", "memberships", "tenants", "users"]),
     );
     for (const row of rows) {

@@ -12,7 +12,9 @@
   "scripts": {
     "dev": "pnpm --parallel --filter \"./apps/*\" dev",
     "build": "pnpm -r build",
+    "check:bundles": "node scripts/client-bundle-check.mjs",
     "typecheck": "pnpm -r typecheck",
+    "lint": "oxlint",
     "test": "vitest run --project unit",
     "test:integration": "vitest run --project integration",
     "test:browser": "vitest run --project browser",
@@ -29,6 +31,7 @@
   "devDependencies": {
     "@types/node": "24.19.2",
     "@vitest/browser-playwright": "5.0.4",
+    "oxlint": "1.87.0",
     "playwright": "1.64.0",
     "typescript": "7.0.2",
     "vitest": "5.0.4"

@@ -52,7 +52,8 @@ describe(`form engine corpus: evaluation (${runtime})`, () => {
       });
 
       for (const testCase of corpus.cases) {
-        it(testCase.name, () => {
+        const { name: caseName } = testCase;
+        it(caseName, () => {
           if (!validation.ok) throw new Error("definition is invalid");
           const result = evaluate(validation.definition as FormDefinition, structuredClone(testCase.answers));
           expect({
@@ -72,11 +73,12 @@ describe(`form engine corpus: evaluation (${runtime})`, () => {
 
 describe(`form engine corpus: definition validation (${runtime})`, () => {
   for (const testCase of (definitionCorpus as DefinitionCorpus).cases) {
-    it(testCase.name, () => {
+    const { name: caseName } = testCase;
+    it(caseName, () => {
       const result = validateDefinition(resolve(testCase.definition));
       const issues = result.ok ? [] : result.issues.map(({ path, code }) => ({ path, code }));
       const sort = (list: Array<{ path: string; code: string }>) =>
-        [...list].sort((a, b) => (a.path + a.code < b.path + b.code ? -1 : 1));
+        [...list].toSorted((a, b) => (a.path + a.code < b.path + b.code ? -1 : 1));
       expect(sort(issues)).toEqual(sort(testCase.expectedIssues));
     });
   }

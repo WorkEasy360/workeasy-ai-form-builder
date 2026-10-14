@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import pg from "pg";
+import { Client } from "pg";
 import { APP_SCHEMA } from "./roles.js";
 
 export const DEFAULT_MIGRATIONS_DIR = fileURLToPath(new URL("../migrations/", import.meta.url));
@@ -30,7 +30,7 @@ export interface MigrateResult {
 }
 
 async function loadMigrations(dir: string): Promise<MigrationFile[]> {
-  const names = (await readdir(dir)).filter((name) => FILE_PATTERN.test(name)).sort();
+  const names = (await readdir(dir)).filter((name) => FILE_PATTERN.test(name)).toSorted();
   const migrations: MigrationFile[] = [];
   for (const name of names) {
     // Normalize line endings so a Windows checkout produces the same checksum.
@@ -51,7 +51,7 @@ async function loadMigrations(dir: string): Promise<MigrationFile[]> {
  */
 export async function migrate({ connectionString, migrationsDir = DEFAULT_MIGRATIONS_DIR }: MigrateOptions): Promise<MigrateResult> {
   const migrations = await loadMigrations(migrationsDir);
-  const client = new pg.Client({ connectionString });
+  const client = new Client({ connectionString });
   await client.connect();
   try {
     await client.query("SELECT pg_advisory_lock($1)", [MIGRATION_LOCK_KEY]);

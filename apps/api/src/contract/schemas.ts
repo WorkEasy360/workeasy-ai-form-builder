@@ -17,7 +17,15 @@ export const ProblemSchema = z.object({
   title: z.string(),
   status: z.number().int(),
   code: z.string(),
+  /** Matches the X-Request-Id response header; quote it when reporting a problem. */
+  requestId: z.string(),
   errors: z.array(z.object({ field: z.string(), code: z.string(), message: z.string() })).optional(),
+  checks: z.record(z.string(), z.string()).optional(),
+});
+
+export const ReadyResponseSchema = z.object({
+  status: z.literal("ready"),
+  checks: z.record(z.string(), z.literal("ok")),
 });
 
 export const MeResponseSchema = z.object({

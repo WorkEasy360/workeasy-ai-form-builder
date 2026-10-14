@@ -22,7 +22,7 @@ describe("migrate", () => {
   it("is a no-op when every migration is already applied", async () => {
     const result = await migrate({ connectionString: urls.owner });
     expect(result.applied).toEqual([]);
-    expect(result.alreadyApplied).toEqual(await readdir(DEFAULT_MIGRATIONS_DIR).then((f) => f.filter((n) => n.endsWith(".sql")).sort()));
+    expect(result.alreadyApplied).toEqual(await readdir(DEFAULT_MIGRATIONS_DIR).then((f) => f.filter((n) => n.endsWith(".sql")).toSorted()));
   });
 
   it("refuses to run when an applied migration was edited", async () => {

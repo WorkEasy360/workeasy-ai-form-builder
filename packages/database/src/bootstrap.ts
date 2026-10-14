@@ -1,4 +1,4 @@
-import pg from "pg";
+import { Client } from "pg";
 import { APP_SCHEMA, DB_ROLES, type DbRoleKey } from "./roles.js";
 
 export interface BootstrapOptions {
@@ -35,7 +35,7 @@ function withDatabase(url: string, database: string): string {
 export async function bootstrapDatabase({ adminUrl, database, roleUrls }: BootstrapOptions): Promise<void> {
   // Cluster-level work (roles, CREATE DATABASE) runs in the maintenance
   // database, so it also works when the target database does not exist yet.
-  const admin = new pg.Client({ connectionString: withDatabase(adminUrl, "postgres") });
+  const admin = new Client({ connectionString: withDatabase(adminUrl, "postgres") });
   await admin.connect();
   try {
     for (const key of Object.keys(DB_ROLES) as DbRoleKey[]) {
@@ -61,7 +61,7 @@ export async function bootstrapDatabase({ adminUrl, database, roleUrls }: Bootst
     await admin.end();
   }
 
-  const target = new pg.Client({ connectionString: withDatabase(adminUrl, database) });
+  const target = new Client({ connectionString: withDatabase(adminUrl, database) });
   await target.connect();
   try {
     const owner = target.escapeIdentifier(DB_ROLES.owner);
