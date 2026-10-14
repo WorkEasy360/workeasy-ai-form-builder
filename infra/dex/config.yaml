@@ -1,0 +1,56 @@
+# Local OIDC provider for development and integration tests (FND-03).
+# Not for any shared or deployed environment: users and passwords are fixtures.
+#
+# Every user below signs in with the password: local-dev-password
+# userID values match the seeded user IDs in packages/test-fixtures, so the
+# subject (sub) Dex issues maps to the seeded identity.
+
+issuer: http://localhost:5556/dex
+
+storage:
+  type: memory
+
+web:
+  http: 0.0.0.0:5556
+
+frontend:
+  issuer: Workeasy (local)
+
+oauth2:
+  responseTypes: [code]
+  skipApprovalScreen: true
+
+expiry:
+  idTokens: 10m
+
+staticClients:
+  - id: workeasy-console
+    name: Workeasy Forms console (local)
+    secretEnv: DEX_CONSOLE_CLIENT_SECRET
+    redirectURIs:
+      - http://localhost:3000/auth/callback
+
+enablePasswordDB: true
+
+staticPasswords:
+  - email: asha@acme.test
+    username: Asha Owner
+    userID: 00000000-0000-4000-8000-00000000a001
+    hash: "$2a$10$de1m6tZKRa5epP01hYO0ke7D6wl1/3Yz8lajEnIDzLpsZTBEpLv7W"
+  - email: carlos@acme.test
+    username: Carlos Creator
+    userID: 00000000-0000-4000-8000-00000000a002
+    hash: "$2a$10$de1m6tZKRa5epP01hYO0ke7D6wl1/3Yz8lajEnIDzLpsZTBEpLv7W"
+  - email: grace@globex.test
+    username: Grace Owner
+    userID: 00000000-0000-4000-8000-00000000b001
+    hash: "$2a$10$de1m6tZKRa5epP01hYO0ke7D6wl1/3Yz8lajEnIDzLpsZTBEpLv7W"
+  - email: ana@globex.test
+    username: Ana Analyst
+    userID: 00000000-0000-4000-8000-00000000b002
+    hash: "$2a$10$de1m6tZKRa5epP01hYO0ke7D6wl1/3Yz8lajEnIDzLpsZTBEpLv7W"
+  # Signs in successfully but has no membership in any organization.
+  - email: nina@nowhere.test
+    username: Nina No-Org
+    userID: 00000000-0000-4000-8000-00000000c001
+    hash: "$2a$10$de1m6tZKRa5epP01hYO0ke7D6wl1/3Yz8lajEnIDzLpsZTBEpLv7W"

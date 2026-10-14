@@ -2,6 +2,8 @@ import type { TenantFixture } from "@workeasy/test-fixtures";
 import type { Db } from "../client.js";
 import { withContext, withTenant } from "../context.js";
 
+export type { TestDatabaseUrls, TestOidcSettings } from "./provided.js";
+
 /**
  * Inserts a tenant fixture through the normal row-security path: each user in
  * its own user context, then tenant rows in the tenant context. Existing rows

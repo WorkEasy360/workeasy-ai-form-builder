@@ -1,9 +1,15 @@
-/**
- * @workeasy/auth
- *
- * Permission checks, role/grant model and identity-provider (OIDC) interfaces.
- *
- * Package boundary created in FND-01. Its contents are delivered by backlog
- * item FND-03 (see docs/07-delivery-plan.md); nothing is exported until then.
- */
-export {};
+export type { IdentityProvider, LoginTransaction, VerifiedIdentity } from "./identity.js";
+export {
+  FORM_PERMISSIONS,
+  ORG_PERMISSIONS,
+  ORG_ROLES,
+  formPermissions,
+  isFormPermission,
+  orgPermissions,
+  readsAllForms,
+  type FormPermission,
+  type MembershipFacts,
+  type MembershipStatus,
+  type OrgPermission,
+  type OrgRole,
+} from "./permissions.js";

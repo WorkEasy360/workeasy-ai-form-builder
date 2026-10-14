@@ -33,7 +33,9 @@ function withDatabase(url: string, database: string): string {
  * the same roles through infrastructure tooling and a secret manager.
  */
 export async function bootstrapDatabase({ adminUrl, database, roleUrls }: BootstrapOptions): Promise<void> {
-  const admin = new pg.Client({ connectionString: adminUrl });
+  // Cluster-level work (roles, CREATE DATABASE) runs in the maintenance
+  // database, so it also works when the target database does not exist yet.
+  const admin = new pg.Client({ connectionString: withDatabase(adminUrl, "postgres") });
   await admin.connect();
   try {
     for (const key of Object.keys(DB_ROLES) as DbRoleKey[]) {

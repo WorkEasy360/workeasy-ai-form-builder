@@ -2,8 +2,7 @@
 # 127.0.0.1 only. Run from the repository root with `pnpm infra:up`, which
 # passes the root .env file for credentials and port overrides.
 #
-# Added by later backlog items: local OIDC provider (FND-03) and malware
-# scanner (FIL-01).
+# Added by later backlog items: malware scanner (FIL-01).
 name: workeasy-forms
 
 services:
@@ -91,6 +90,22 @@ services:
       - "127.0.0.1:${MAIL_UI_PORT:-8025}:8025"
     healthcheck:
       test: ["CMD", "/mailpit", "readyz"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # Local OIDC identity provider (FND-03). Fixture users are in infra/dex/config.yaml.
+  identity:
+    image: dexidp/dex:v2.46.0
+    command: ["dex", "serve", "/etc/dex/config.yaml"]
+    environment:
+      DEX_CONSOLE_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:?set OIDC_CLIENT_SECRET in .env}
+    ports:
+      - "127.0.0.1:${IDENTITY_PORT:-5556}:5556"
+    volumes:
+      - ./dex/config.yaml:/etc/dex/config.yaml:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:5556/dex/.well-known/openid-configuration"]
       interval: 5s
       timeout: 5s
       retries: 20

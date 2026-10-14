@@ -21,7 +21,7 @@ pnpm db:seed
 pnpm dev
 ```
 
-`pnpm infra:up` waits until PostgreSQL, Redis, object storage and the mail sink are healthy, then creates the private buckets. `pnpm db:setup` creates the database roles and schema and applies migrations; `pnpm db:seed` adds two local tenants (Acme Support and Globex HR) with members and sample forms.
+`pnpm infra:up` waits until PostgreSQL, Redis, object storage and the mail sink are healthy, then creates the private buckets. `pnpm db:setup` creates the database roles and schema and applies migrations; `pnpm db:seed` adds two local tenants (Acme Support and Globex HR) with members and sample forms. Open http://localhost:3000 and sign in as one of the [local users](#sign-in-and-permissions).
 
 | Process | URL |
 |---|---|
@@ -29,6 +29,7 @@ pnpm dev
 | Respondent (public forms) | http://localhost:3001 |
 | API liveness | http://localhost:4000/health/live |
 | Worker | No port; logs to the `pnpm dev` output |
+| Local sign-in provider (Dex) | http://localhost:5556/dex |
 | Mail sink UI (Mailpit) | http://localhost:8025 |
 | Object storage console (RustFS) | http://localhost:9001 |
 | PostgreSQL / Redis | `127.0.0.1:5432` / `127.0.0.1:6379` |
@@ -101,6 +102,44 @@ const forms = await withTenant(db, tenantId, (trx) => trx.selectFrom("forms").se
 
 **Integration tests** (`*.int.test.ts`) run against a fresh `workeasy_forms_test` database. They seed two tenants with random IDs and check that tenant A cannot read, update, insert into, move rows into or reference tenant B through either the api or the worker role. They also cover context lifetime on pooled connections and role/policy hardening.
 
+## Sign-in and permissions
+
+**Local users** (all use the password `local-dev-password`; defined in `infra/dex/config.yaml`):
+
+| Email | Seeded as |
+|---|---|
+| `asha@acme.test` | Owner of Acme Support |
+| `carlos@acme.test` | Creator in Acme Support |
+| `grace@globex.test` | Owner of Globex HR |
+| `ana@globex.test` | Analyst in Globex HR |
+| `nina@nowhere.test` | No organization (signs in, sees none) |
+
+**Flow.** The console forwards `/auth/*` and `/api/*` to the API (`next.config.ts` rewrites, `API_INTERNAL_URL`), so cookies stay first-party to the console origin.
+
+1. `/auth/login` starts an OIDC authorization-code flow with PKCE, state and nonce. These are kept in a short-lived, AES-GCM-encrypted HttpOnly cookie.
+2. `/auth/callback` exchanges the code. `openid-client` validates the ID token, the issuer + subject is mapped to a user (created on first sign-in, with no access), and a random 256-bit session token is set as an HttpOnly, SameSite=Lax cookie. Only its SHA-256 hash is stored, in `auth_sessions`.
+3. `POST /auth/logout` revokes the session.
+
+Cookie-authenticated mutations must come from `CONSOLE_PUBLIC_URL`, checked by Origin, or by Referer when there is no Origin. With `SESSION_COOKIE_SECURE=true` the cookie becomes `__Host-we_session`, and production refuses `false`, http issuers and http console URLs.
+
+**Organization mapping.** Organization routes take the tenant ID from the URL (`/api/v1/organizations/:orgId/...`), and every request re-checks that the signed-in user has an **active** membership there before any tenant data is read. Unknown organizations, organizations the user doesn't belong to, and revoked memberships all return 404, so revocation applies to the very next request. The tenant is never inferred from an email domain or a token claim. `tenants.external_org_id` is reserved for the Workeasy organization identifier once the Workeasy identity provider's claims are specified.
+
+**Roles and grants** (`packages/auth`, docs/01 §4):
+- Owners hold every permission.
+- Admins hold every permission except organization management, and except deleting forms or responses without an explicit grant.
+- Creators can create forms.
+- Everything else comes from per-form grants in `form_grants`.
+- Any grant on a form implies `forms.read`.
+- Creating a form does not by itself give response access.
+
+**Endpoints so far** are in [`contracts/openapi.json`](../contracts/openapi.json), which is generated from the zod schemas in `apps/api/src/contract/`. After changing a route or schema, run `pnpm --filter @workeasy/api openapi:write`; a unit test fails if the file is stale.
+
+| Route | Permission |
+|---|---|
+| `GET /api/v1/me` | Signed in |
+| `GET /api/v1/organizations/:orgId/forms` | Active member; owners/admins see every form, others only forms they hold grants on |
+| `GET`/`PUT /api/v1/organizations/:orgId/forms/:formId/grants` | `forms.manage_access` on the form; grantees must be active members |
+
 ## Dependency policy
 
 - Versions are pinned exactly (`save-exact`) and resolved in `pnpm-lock.yaml`.
@@ -111,6 +150,8 @@ const forms = await withTenant(db, tenantId, (trx) => trx.selectFrom("forms").se
 
 Later backlog items add these:
 
-- Local OIDC provider, and API routes that resolve the tenant from membership, with API-level isolation tests (FND-03)
-- Malware scanner (FIL-01)
+- Shared schema and engine packages (FND-04)
 - Readiness checks, request IDs and CI (FND-05)
+- Audit events for grant changes and sign-ins (GOV-01)
+- Rate limiting on sign-in, and invalidating sessions after high-risk account changes
+- Malware scanner (FIL-01)

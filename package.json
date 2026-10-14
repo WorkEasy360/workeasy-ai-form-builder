@@ -19,7 +19,7 @@
     "db:setup": "pnpm --filter @workeasy/database db setup",
     "db:migrate": "pnpm --filter @workeasy/database db migrate",
     "db:seed": "pnpm --filter @workeasy/database db seed",
-    "infra:up": "docker compose -f infra/docker-compose.yml --env-file .env up -d --wait --wait-timeout 180 postgres redis object-storage mail && docker compose -f infra/docker-compose.yml --env-file .env run --rm object-storage-init",
+    "infra:up": "docker compose -f infra/docker-compose.yml --env-file .env up -d --wait --wait-timeout 180 postgres redis object-storage mail identity && docker compose -f infra/docker-compose.yml --env-file .env run --rm object-storage-init",
     "infra:down": "docker compose -f infra/docker-compose.yml --env-file .env down",
     "infra:reset": "docker compose -f infra/docker-compose.yml --env-file .env down -v",
     "infra:ps": "docker compose -f infra/docker-compose.yml --env-file .env ps"

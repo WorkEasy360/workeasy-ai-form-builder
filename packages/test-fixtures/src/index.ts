@@ -8,6 +8,33 @@ import { randomUUID } from "node:crypto";
 /** Issuer used for fixture identities; never a real identity provider. */
 export const FIXTURE_ISSUER = "https://idp.workeasy.test/fixtures";
 
+/** Issuer of the local Dex provider in infra/dex/config.yaml. */
+export const LOCAL_OIDC_ISSUER = "http://localhost:5556/dex";
+
+/**
+ * The `sub` claim Dex issues for a static-password user: base64url (no
+ * padding) of a protobuf message { 1: userID, 2: connectorID }.
+ */
+export function dexSubject(userId: string, connectorId = "local"): string {
+  const field = (number: number, value: string) => {
+    const bytes = Buffer.from(value, "utf8");
+    if (bytes.length > 127) throw new Error("Value too long for a single-byte protobuf length.");
+    return Buffer.concat([Buffer.from([(number << 3) | 2, bytes.length]), bytes]);
+  };
+  return Buffer.concat([field(1, userId), field(2, connectorId)]).toString("base64url");
+}
+
+/** Sign-in emails for the local Dex users (password: local-dev-password). */
+export const LOCAL_DEX_LOGINS = {
+  ashaAcmeOwner: "asha@acme.test",
+  carlosAcmeCreator: "carlos@acme.test",
+  graceGlobexOwner: "grace@globex.test",
+  anaGlobexAnalyst: "ana@globex.test",
+  ninaNoOrganization: "nina@nowhere.test",
+} as const;
+
+export const LOCAL_DEX_PASSWORD = "local-dev-password";
+
 export type FixtureRole = "owner" | "admin" | "creator" | "analyst" | "approver";
 
 export interface UserFixture {
@@ -66,12 +93,20 @@ export function createTenantFixture(label: string): TenantFixture {
   };
 }
 
-/** Two fixed tenants for local development (`pnpm db:seed`); IDs are stable so seeding is idempotent. */
+/** A user who signs in through the local Dex provider; the user ID doubles as the Dex userID. */
+function localDexUser(id: string, displayName: string): UserFixture {
+  return { id, issuer: LOCAL_OIDC_ISSUER, subject: dexSubject(id), displayName };
+}
+
+/**
+ * Two fixed tenants for local development (`pnpm db:seed`); IDs are stable so
+ * seeding is idempotent. Their members can sign in through local Dex.
+ */
 export const LOCAL_SEED_TENANTS: readonly TenantFixture[] = (() => {
-  const acmeOwner = user("00000000-0000-4000-8000-00000000a001", "Asha Owner (Acme)");
-  const acmeCreator = user("00000000-0000-4000-8000-00000000a002", "Carlos Creator (Acme)");
-  const globexOwner = user("00000000-0000-4000-8000-00000000b001", "Grace Owner (Globex)");
-  const globexAnalyst = user("00000000-0000-4000-8000-00000000b002", "Ana Analyst (Globex)");
+  const acmeOwner = localDexUser("00000000-0000-4000-8000-00000000a001", "Asha Owner");
+  const acmeCreator = localDexUser("00000000-0000-4000-8000-00000000a002", "Carlos Creator");
+  const globexOwner = localDexUser("00000000-0000-4000-8000-00000000b001", "Grace Owner");
+  const globexAnalyst = localDexUser("00000000-0000-4000-8000-00000000b002", "Ana Analyst");
   return [
     {
       id: "00000000-0000-4000-8000-0000000000a0",

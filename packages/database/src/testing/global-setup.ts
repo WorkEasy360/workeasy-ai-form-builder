@@ -4,20 +4,7 @@ import pg from "pg";
 import type { TestProject } from "vitest/node";
 import { bootstrapDatabase } from "../bootstrap.js";
 import { migrate } from "../migrate.js";
-
-export interface TestDatabaseUrls {
-  admin: string;
-  owner: string;
-  api: string;
-  worker: string;
-  public: string;
-}
-
-declare module "vitest" {
-  export interface ProvidedContext {
-    testDatabase: TestDatabaseUrls;
-  }
-}
+import type { TestDatabaseUrls, TestOidcSettings } from "./provided.js";
 
 function required(name: string): string {
   const value = process.env[name];
@@ -67,4 +54,16 @@ export default async function setup(project: TestProject): Promise<void> {
   await migrate({ connectionString: urls.owner });
 
   project.provide("testDatabase", urls);
+
+  const { OIDC_ISSUER_URL, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET, CONSOLE_PUBLIC_URL } = process.env;
+  const oidc: TestOidcSettings | null =
+    OIDC_ISSUER_URL && OIDC_CLIENT_ID && OIDC_CLIENT_SECRET && CONSOLE_PUBLIC_URL
+      ? {
+          issuerUrl: OIDC_ISSUER_URL,
+          clientId: OIDC_CLIENT_ID,
+          clientSecret: OIDC_CLIENT_SECRET,
+          consoleOrigin: new URL(CONSOLE_PUBLIC_URL).origin,
+        }
+      : null;
+  project.provide("testOidc", oidc);
 }

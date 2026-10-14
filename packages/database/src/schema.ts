@@ -51,11 +51,35 @@ export interface FormsTable {
   updated_at: UpdatedAt;
 }
 
+export interface AuthSessionsTable {
+  id: Generated<string>;
+  user_id: string;
+  token_hash: Buffer;
+  expires_at: Date;
+  revoked_at: Date | null;
+  created_at: CreatedAt;
+}
+
+export type GrantPrincipalType = "user";
+
+export interface FormGrantsTable {
+  id: Generated<string>;
+  tenant_id: string;
+  form_id: string;
+  principal_type: GrantPrincipalType;
+  principal_id: string;
+  permission: string;
+  created_by: string;
+  created_at: CreatedAt;
+}
+
 export interface Database {
   tenants: TenantsTable;
   users: UsersTable;
   memberships: MembershipsTable;
   forms: FormsTable;
+  auth_sessions: AuthSessionsTable;
+  form_grants: FormGrantsTable;
 }
 
 export type Tenant = Selectable<TenantsTable>;
