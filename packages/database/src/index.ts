@@ -1,9 +1,6 @@
-/**
- * @workeasy/database
- *
- * PostgreSQL migrations, repositories and the tenant-scoped transaction wrapper.
- *
- * Package boundary created in FND-01. Its contents are delivered by backlog
- * item FND-02 (see docs/07-delivery-plan.md); nothing is exported until then.
- */
-export {};
+export { bootstrapDatabase, type BootstrapOptions } from "./bootstrap.js";
+export { createDb, type CreateDbOptions, type Db } from "./client.js";
+export { InvalidDbContextError, withContext, withTenant, type DbContext } from "./context.js";
+export { DEFAULT_MIGRATIONS_DIR, migrate, type MigrateOptions, type MigrateResult } from "./migrate.js";
+export { APP_SCHEMA, DB_ROLES, RUNTIME_ROLE_KEYS, type DbRoleKey } from "./roles.js";
+export type * from "./schema.js";

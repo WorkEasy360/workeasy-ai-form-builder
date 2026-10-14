@@ -58,5 +58,7 @@ The monorepo scaffold (FND-01) is in place. See [local development](docs/local-d
 cp .env.example .env
 pnpm install
 pnpm infra:up
+pnpm db:setup
+pnpm db:seed
 pnpm dev
 ```
