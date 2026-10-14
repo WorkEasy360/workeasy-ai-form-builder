@@ -19,6 +19,7 @@
   },
   "devDependencies": {
     "@types/pg": "8.23.1",
+    "@workeasy/form-engine": "workspace:*",
     "@workeasy/test-fixtures": "workspace:*",
     "tsx": "4.23.15"
   }

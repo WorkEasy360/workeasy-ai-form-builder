@@ -150,7 +150,9 @@ describe("rejected sign-in callbacks", () => {
   it("rejects a tampered login transaction cookie", async () => {
     const redirect = await signInAtDex(LOCAL_DEX_LOGINS.graceGlobexOwner);
     const [name, value] = redirect.loginCookie.split("=");
-    const tampered = `${name}=${value!.slice(0, -2)}${value!.endsWith("AA") ? "BB" : "AA"}`;
+    const bytes = Buffer.from(decodeURIComponent(value!), "base64url");
+    bytes[bytes.length - 1] = bytes[bytes.length - 1]! ^ 0x01; // flip a real ciphertext bit
+    const tampered = `${name}=${bytes.toString("base64url")}`;
     expectFailedWithoutSession(await callback(redirect, tampered));
   });
 

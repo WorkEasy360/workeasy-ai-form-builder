@@ -1,4 +1,5 @@
 import { FORM_PERMISSIONS, ORG_PERMISSIONS, ORG_ROLES } from "@workeasy/auth";
+import { FORM_TEMPLATES } from "@workeasy/form-engine";
 import { z } from "zod";
 
 /**
@@ -56,6 +57,30 @@ export const FormSummarySchema = z.object({
   ownerId: Uuid,
   createdAt: Timestamp,
   updatedAt: Timestamp,
+  /** The caller's effective permissions on this form (role defaults plus grants). */
+  permissions: z.array(z.enum(FORM_PERMISSIONS)),
+});
+export type FormSummaryBody = z.infer<typeof FormSummarySchema>;
+
+const FormName = z.string().trim().min(1).max(200);
+const TEMPLATE_IDS = FORM_TEMPLATES.map((t) => t.id) as [string, ...string[]];
+
+export const CreateFormBodySchema = z.object({
+  name: FormName,
+  /** Built-in template to start from; omit for a blank form. */
+  template: z.enum(TEMPLATE_IDS).optional(),
+});
+
+export const DuplicateFormBodySchema = z.object({ name: FormName });
+
+export const FormResponseSchema = z.object({
+  form: FormSummarySchema,
+  draft: z.object({ revision: z.number().int().min(1) }),
+});
+export type FormResponse = z.infer<typeof FormResponseSchema>;
+
+export const FormTemplatesResponseSchema = z.object({
+  templates: z.array(z.object({ id: z.string(), name: z.string(), description: z.string() })),
 });
 
 export const FormListResponseSchema = z.object({

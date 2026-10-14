@@ -1,3 +1,4 @@
+import { randomInt } from "node:crypto";
 import { sql, type Transaction } from "kysely";
 import type { Database, FormState, MembershipRole, MembershipStatus } from "../schema.js";
 
@@ -45,6 +46,23 @@ export interface FormPage {
   nextCursor?: FormListCursor;
 }
 
+const SLUG_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789";
+
+/**
+ * Public form locator: "f-" plus 12 random base-36 characters (~62 bits).
+ * A slug only locates a form; it never grants access (docs/01 §3).
+ */
+export function newFormSlug(): string {
+  let slug = "f-";
+  for (let i = 0; i < 12; i++) slug += SLUG_ALPHABET[randomInt(SLUG_ALPHABET.length)];
+  return slug;
+}
+
+/** True for a unique violation on the global slug constraint, which callers retry with a new slug. */
+export function isSlugCollision(err: unknown): boolean {
+  return typeof err === "object" && err !== null && (err as { code?: string }).code === "23505" && (err as { constraint?: string }).constraint === "forms_slug_key";
+}
+
 function escapeLike(value: string): string {
   return value.replace(/[\\%_]/g, (c) => `\\${c}`);
 }
@@ -79,7 +97,8 @@ export async function listForms(trx: Trx, options: ListFormsOptions): Promise<Fo
       ),
     );
   }
-  if (options.state) query = query.where("f.state", "=", options.state);
+  // Archived forms are listed only when asked for explicitly.
+  query = options.state ? query.where("f.state", "=", options.state) : query.where("f.state", "!=", "archived");
   if (options.search) query = query.where(sql<boolean>`f.name ILIKE ${`%${escapeLike(options.search)}%`} ESCAPE '\\'`);
   if (options.cursor) {
     const { updatedAt, id } = options.cursor;
@@ -95,17 +114,127 @@ export async function listForms(trx: Trx, options: ListFormsOptions): Promise<Fo
   const page = rows.slice(0, options.limit);
   const last = page.at(-1);
   return {
-    items: page.map((r) => ({
-      id: r.id,
-      slug: r.slug,
-      name: r.name,
-      state: r.state,
-      ownerId: r.owner_id,
-      createdAt: r.created_at,
-      updatedAt: r.updated_at,
-    })),
+    items: page.map(toSummary),
     ...(rows.length > options.limit && last ? { nextCursor: { updatedAt: last.cursor_updated_at, id: last.id } } : {}),
   };
+}
+
+const SUMMARY_COLUMNS = ["id", "slug", "name", "state", "owner_id", "created_at", "updated_at"] as const;
+
+function toSummary(row: {
+  id: string;
+  slug: string;
+  name: string;
+  state: FormState;
+  owner_id: string;
+  created_at: Date;
+  updated_at: Date;
+}): FormSummary {
+  return {
+    id: row.id,
+    slug: row.slug,
+    name: row.name,
+    state: row.state,
+    ownerId: row.owner_id,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+/** A form that is not deleted, or undefined. */
+export async function getFormSummary(trx: Trx, formId: string): Promise<FormSummary | undefined> {
+  const row = await trx
+    .selectFrom("forms")
+    .select(SUMMARY_COLUMNS)
+    .where("id", "=", formId)
+    .where("deleted_at", "is", null)
+    .executeTakeFirst();
+  return row ? toSummary(row) : undefined;
+}
+
+export interface FormDraft {
+  revision: number;
+  definition: Record<string, unknown>;
+}
+
+export async function getDraft(trx: Trx, formId: string): Promise<FormDraft | undefined> {
+  return trx.selectFrom("form_drafts").select(["revision", "definition"]).where("form_id", "=", formId).executeTakeFirst();
+}
+
+export interface CreateFormInput {
+  tenantId: string;
+  ownerId: string;
+  name: string;
+  slug: string;
+  definition: Record<string, unknown>;
+  /** Permissions granted to the owner on the new form. */
+  ownerGrants: readonly string[];
+}
+
+/** Inserts a form, its draft (revision 1) and the owner's grants. Run inside one transaction. */
+export async function createForm(trx: Trx, input: CreateFormInput): Promise<{ form: FormSummary; draftRevision: number }> {
+  const form = await trx
+    .insertInto("forms")
+    .values({ tenant_id: input.tenantId, slug: input.slug, name: input.name, owner_id: input.ownerId })
+    .returning(SUMMARY_COLUMNS)
+    .executeTakeFirstOrThrow();
+  const draft = await trx
+    .insertInto("form_drafts")
+    .values({ tenant_id: input.tenantId, form_id: form.id, definition: input.definition, updated_by: input.ownerId })
+    .returning("revision")
+    .executeTakeFirstOrThrow();
+  if (input.ownerGrants.length > 0) {
+    await trx
+      .insertInto("form_grants")
+      .values(
+        input.ownerGrants.map((permission) => ({
+          tenant_id: input.tenantId,
+          form_id: form.id,
+          principal_type: "user" as const,
+          principal_id: input.ownerId,
+          permission,
+          created_by: input.ownerId,
+        })),
+      )
+      .execute();
+  }
+  return { form: toSummary(form), draftRevision: draft.revision };
+}
+
+/**
+ * Moves a form to `to` only if it is currently in one of `from` (compare and
+ * set under the row lock). Returns undefined when the state did not match.
+ */
+export async function transitionFormState(
+  trx: Trx,
+  formId: string,
+  from: readonly FormState[],
+  to: FormState,
+): Promise<FormSummary | undefined> {
+  const row = await trx
+    .updateTable("forms")
+    .set({ state: to })
+    .where("id", "=", formId)
+    .where("deleted_at", "is", null)
+    .where("state", "in", [...from])
+    .returning(SUMMARY_COLUMNS)
+    .executeTakeFirst();
+  return row ? toSummary(row) : undefined;
+}
+
+/** The user's explicit grants on each of the given forms. */
+export async function userGrantsForForms(trx: Trx, formIds: readonly string[], userId: string): Promise<Map<string, string[]>> {
+  const grants = new Map<string, string[]>();
+  if (formIds.length === 0) return grants;
+  const rows = await trx
+    .selectFrom("form_grants")
+    .select(["form_id", "permission"])
+    .where("form_id", "in", [...formIds])
+    .where("principal_type", "=", "user")
+    .where("principal_id", "=", userId)
+    .execute();
+  for (const row of rows) grants.set(row.form_id, [...(grants.get(row.form_id) ?? []), row.permission]);
+  return grants;
 }
 
 export async function formExists(trx: Trx, formId: string): Promise<boolean> {

@@ -12,6 +12,14 @@ export {
   type ValueKind,
 } from "./fields.js";
 export {
+  blankDefinition,
+  DEFAULT_SUCCESS_MESSAGE,
+  DEFAULT_THEME,
+  definitionFromTemplate,
+  FORM_TEMPLATES,
+  type FormTemplate,
+} from "./templates.js";
+export {
   MAX_CONDITION_DEPTH,
   MAX_CONDITION_NODES,
   validateDefinition,

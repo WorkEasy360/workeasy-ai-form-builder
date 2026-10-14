@@ -193,6 +193,9 @@ importers:
       '@workeasy/database':
         specifier: workspace:*
         version: link:../../packages/database
+      '@workeasy/form-engine':
+        specifier: workspace:*
+        version: link:../../packages/form-engine
       '@workeasy/observability':
         specifier: workspace:*
         version: link:../../packages/observability
@@ -316,6 +319,9 @@ importers:
       '@types/pg':
         specifier: 8.23.1
         version: 8.23.1
+      '@workeasy/form-engine':
+        specifier: workspace:*
+        version: link:../form-engine
       '@workeasy/test-fixtures':
         specifier: workspace:*
         version: link:../test-fixtures

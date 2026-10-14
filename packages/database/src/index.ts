@@ -5,6 +5,14 @@ export { DEFAULT_MIGRATIONS_DIR, migrate, type MigrateOptions, type MigrateResul
 export * as identityRepo from "./repositories/identity.js";
 export * as orgRepo from "./repositories/organization.js";
 export type { CreatedSession, IdentityClaims, ResolvedSession, UserProfile } from "./repositories/identity.js";
-export type { FormGrant, FormListCursor, FormPage, FormSummary, MembershipRecord } from "./repositories/organization.js";
+export type {
+  CreateFormInput,
+  FormDraft,
+  FormGrant,
+  FormListCursor,
+  FormPage,
+  FormSummary,
+  MembershipRecord,
+} from "./repositories/organization.js";
 export { APP_SCHEMA, DB_ROLES, RUNTIME_ROLE_KEYS, type DbRoleKey } from "./roles.js";
 export type * from "./schema.js";

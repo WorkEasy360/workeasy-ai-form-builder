@@ -1,3 +1,4 @@
+import { blankDefinition } from "@workeasy/form-engine";
 import type { TenantFixture } from "@workeasy/test-fixtures";
 import type { Db } from "../client.js";
 import { withContext, withTenant } from "../context.js";
@@ -39,6 +40,39 @@ export async function seedTenantFixture(db: Db, fixture: TenantFixture): Promise
         )
         .onConflict((oc) => oc.doNothing())
         .execute();
+      // Every form has a draft; fixtures start from a blank definition.
+      await trx
+        .insertInto("form_drafts")
+        .values(
+          fixture.forms.map((f) => ({
+            tenant_id: fixture.id,
+            form_id: f.id,
+            definition: blankDefinition(f.name) as unknown as Record<string, unknown>,
+            updated_by: f.ownerId,
+          })),
+        )
+        .onConflict((oc) => oc.doNothing())
+        .execute();
+      // Match the API's create behaviour: a form's owner holds these grants.
+      await trx
+        .insertInto("form_grants")
+        .values(
+          fixture.forms.flatMap((f) =>
+            OWNER_GRANTS.map((permission) => ({
+              tenant_id: fixture.id,
+              form_id: f.id,
+              principal_type: "user" as const,
+              principal_id: f.ownerId,
+              permission,
+              created_by: f.ownerId,
+            })),
+          ),
+        )
+        .onConflict((oc) => oc.doNothing())
+        .execute();
     }
   });
 }
+
+/** Same as the API's creator grants (apps/api/src/routes/api-v1.ts). */
+const OWNER_GRANTS = ["forms.edit", "forms.publish", "forms.manage_access"] as const;

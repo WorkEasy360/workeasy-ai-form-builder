@@ -1,5 +1,9 @@
 import { z } from "zod";
 import {
+  CreateFormBodySchema,
+  DuplicateFormBodySchema,
+  FormResponseSchema,
+  FormTemplatesResponseSchema,
   FormGrantsBodySchema,
   FormGrantsResponseSchema,
   FormListQuerySchema,
@@ -54,7 +58,7 @@ export function buildOpenApiDocument(): JsonSchema {
       title: "Workeasy Forms API",
       version: "0.1.0",
       description:
-        "Routes implemented through FND-05. Organization routes derive the tenant from the authenticated membership; resources outside the caller's organizations return 404. Every response carries an X-Request-Id header, and every error is application/problem+json with the same requestId.",
+        "Routes implemented through BLD-01. Organization routes derive the tenant from the authenticated membership; resources outside the caller's organizations return 404. Every response carries an X-Request-Id header, and every error is application/problem+json with the same requestId.",
     },
     servers: [{ url: "/" }],
     components: {
@@ -118,7 +122,90 @@ export function buildOpenApiDocument(): JsonSchema {
           responses: { "200": json("Current user", MeResponseSchema), "401": unauthenticated },
         },
       },
+      "/api/v1/form-templates": {
+        get: {
+          operationId: "listFormTemplates",
+          summary: "Built-in templates a new form can start from",
+          security: [{ consoleSession: [] }],
+          responses: { "200": json("Templates", FormTemplatesResponseSchema), "401": unauthenticated },
+        },
+      },
+      "/api/v1/organizations/{orgId}/forms/{formId}": {
+        parameters: [uuidPath("orgId", "Organization (tenant) ID"), uuidPath("formId", "Form ID")],
+        get: {
+          operationId: "getForm",
+          summary: "Form summary, the caller's permissions and the current draft revision",
+          security: [{ consoleSession: [] }],
+          responses: {
+            "200": json("Form", FormResponseSchema),
+            "401": unauthenticated,
+            "404": problem("Organization or form not found or not visible"),
+          },
+        },
+      },
+      "/api/v1/organizations/{orgId}/forms/{formId}/duplicate": {
+        parameters: [uuidPath("orgId", "Organization (tenant) ID"), uuidPath("formId", "Source form ID")],
+        post: {
+          operationId: "duplicateForm",
+          summary: "Copy a form's draft into an independent new form (requires forms.create and forms.edit on the source)",
+          description: "Only the draft definition is copied. Grants, workflow configuration, versions and responses are not.",
+          security: [{ consoleSession: [] }],
+          requestBody: { required: true, content: { "application/json": { schema: schemaOf(DuplicateFormBodySchema, "input") } } },
+          responses: {
+            "201": json("The new form; ETag carries its draft revision", FormResponseSchema),
+            "401": unauthenticated,
+            "403": crossOrigin,
+            "404": problem("Organization or source form not found or not visible"),
+            "422": problem("Invalid name"),
+          },
+        },
+      },
+      "/api/v1/organizations/{orgId}/forms/{formId}/archive": {
+        parameters: [uuidPath("orgId", "Organization (tenant) ID"), uuidPath("formId", "Form ID")],
+        post: {
+          operationId: "archiveForm",
+          summary: "Archive a form (requires forms.publish)",
+          security: [{ consoleSession: [] }],
+          responses: {
+            "200": json("The archived form", FormResponseSchema),
+            "401": unauthenticated,
+            "403": crossOrigin,
+            "404": problem("Organization or form not found or not visible"),
+            "409": problem("The form is already archived"),
+          },
+        },
+      },
+      "/api/v1/organizations/{orgId}/forms/{formId}/restore": {
+        parameters: [uuidPath("orgId", "Organization (tenant) ID"), uuidPath("formId", "Form ID")],
+        post: {
+          operationId: "restoreForm",
+          summary: "Restore an archived form to draft (requires forms.publish)",
+          security: [{ consoleSession: [] }],
+          responses: {
+            "200": json("The restored form", FormResponseSchema),
+            "401": unauthenticated,
+            "403": crossOrigin,
+            "404": problem("Organization or form not found or not visible"),
+            "409": problem("The form is not archived"),
+          },
+        },
+      },
       "/api/v1/organizations/{orgId}/forms": {
+        post: {
+          operationId: "createForm",
+          summary: "Create a blank or template-based form (requires forms.create)",
+          description: "The creator receives forms.edit, forms.publish and forms.manage_access on the new form.",
+          security: [{ consoleSession: [] }],
+          parameters: [uuidPath("orgId", "Organization (tenant) ID")],
+          requestBody: { required: true, content: { "application/json": { schema: schemaOf(CreateFormBodySchema, "input") } } },
+          responses: {
+            "201": json("The new form; ETag carries its draft revision", FormResponseSchema),
+            "401": unauthenticated,
+            "403": crossOrigin,
+            "404": problem("Organization not found or not visible"),
+            "422": problem("Invalid name or unknown template"),
+          },
+        },
         get: {
           operationId: "listForms",
           summary: "List forms the caller can read in an organization",

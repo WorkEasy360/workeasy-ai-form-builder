@@ -136,15 +136,24 @@ Cookie-authenticated mutations must come from `CONSOLE_PUBLIC_URL`, checked by O
 - Creators can create forms.
 - Everything else comes from per-form grants in `form_grants`.
 - Any grant on a form implies `forms.read`.
-- Creating a form does not by itself give response access.
+- Creating or duplicating a form gives the creator `forms.edit`, `forms.publish` and `forms.manage_access` on that form, but never response access or delete rights.
 
 **Endpoints so far** are in [`contracts/openapi.json`](../contracts/openapi.json), which is generated from the zod schemas in `apps/api/src/contract/`. After changing a route or schema, run `pnpm --filter @workeasy/api openapi:write`; a unit test fails if the file is stale.
 
 | Route | Permission |
 |---|---|
 | `GET /api/v1/me` | Signed in |
-| `GET /api/v1/organizations/:orgId/forms` | Active member; owners/admins see every form, others only forms they hold grants on |
-| `GET`/`PUT /api/v1/organizations/:orgId/forms/:formId/grants` | `forms.manage_access` on the form; grantees must be active members |
+| `GET /api/v1/form-templates` | Signed in |
+| `GET /api/v1/organizations/:orgId/forms` | Active member; owners/admins see every form, others only forms they hold grants on. Archived forms only with `?state=archived`. Each item lists the caller's permissions. |
+| `POST /api/v1/organizations/:orgId/forms` | `forms.create`. Blank or `template`; returns the form with `ETag: "draft-1"` |
+| `GET /api/v1/organizations/:orgId/forms/:formId` | `forms.read` on the form |
+| `POST …/forms/:formId/duplicate` | `forms.create` and `forms.edit` on the source. Copies only the draft definition, never grants, workflow configuration, versions or responses |
+| `POST …/forms/:formId/archive`, `…/restore` | `forms.publish`; 409 if the form is already archived / not archived. Restore returns the form to draft |
+| `GET`/`PUT /api/v1/organizations/:orgId/forms/:formId/grants` | `forms.manage_access` on the form; grantees must be active members. PUT replaces every grant, including the creator's own |
+
+Every form has exactly one draft (`form_drafts`), holding the editable definition and its `revision` for optimistic concurrency (BLD-03). Slugs are server-generated (`f-` plus 12 random characters) and only locate a form; they never grant access.
+
+The console lists, creates, duplicates, archives and restores forms at `/o/:orgId/forms`, linked from the organization list on the home page.
 
 ## Form definitions and the engine
 

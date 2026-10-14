@@ -90,7 +90,7 @@ export function SessionPanel({ signInFailed }: { signInFailed: boolean }) {
         <ul style={{ paddingLeft: "var(--we-space-3)" }}>
           {me.organizations.map((org) => (
             <li key={org.id}>
-              {org.name} <span style={{ color: "var(--we-color-textMuted)" }}>({org.role})</span>
+              <a href={`/o/${org.id}/forms`}>{org.name}</a> <span style={{ color: "var(--we-color-textMuted)" }}>({org.role})</span>
             </li>
           ))}
         </ul>

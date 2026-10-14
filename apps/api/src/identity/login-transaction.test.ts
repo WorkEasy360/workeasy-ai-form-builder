@@ -14,8 +14,13 @@ describe("login transaction cookie", () => {
   it("rejects a different secret, tampering and garbage", () => {
     const sealed = sealLoginTransaction(transaction, secret);
     expect(unsealLoginTransaction(sealed, "another-secret-another-secret-0000", transaction.createdAt)).toBeUndefined();
-    const flipped = sealed.slice(0, -1) + (sealed.endsWith("A") ? "B" : "A");
-    expect(unsealLoginTransaction(flipped, secret, transaction.createdAt)).toBeUndefined();
+    // Flip a real byte (changing the last base64url character can alter only padding bits).
+    for (const index of [0, 13, 30, -1]) {
+      const bytes = Buffer.from(sealed, "base64url");
+      const at = index < 0 ? bytes.length + index : index;
+      bytes[at] = bytes[at]! ^ 0x01;
+      expect(unsealLoginTransaction(bytes.toString("base64url"), secret, transaction.createdAt)).toBeUndefined();
+    }
     expect(unsealLoginTransaction("not-a-cookie", secret, transaction.createdAt)).toBeUndefined();
   });
 

@@ -73,11 +73,23 @@ export interface FormGrantsTable {
   created_at: CreatedAt;
 }
 
+export interface FormDraftsTable {
+  tenant_id: string;
+  form_id: string;
+  revision: Generated<number>;
+  definition: Record<string, unknown>;
+  workflow_draft: Generated<Record<string, unknown>>;
+  updated_by: string;
+  created_at: CreatedAt;
+  updated_at: UpdatedAt;
+}
+
 export interface Database {
   tenants: TenantsTable;
   users: UsersTable;
   memberships: MembershipsTable;
   forms: FormsTable;
+  form_drafts: FormDraftsTable;
   auth_sessions: AuthSessionsTable;
   form_grants: FormGrantsTable;
 }
