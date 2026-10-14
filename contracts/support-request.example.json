@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "1.0",
+  "title": "Workeasy Support Request",
+  "description": "Tell us how we can help.",
+  "locale": "en-IN",
+  "pages": [{"id": "page_contact", "title": "Your request", "fieldIds": ["f_name", "f_email", "f_category", "f_details", "f_consent"]}],
+  "fields": [
+    {"id": "f_name", "type": "text", "label": "Your name", "required": true, "settings": {"maxLength": 150}},
+    {"id": "f_email", "type": "email", "label": "Email address", "required": true, "settings": {"maxLength": 254}},
+    {"id": "f_category", "type": "dropdown", "label": "Request category", "required": true, "settings": {"options": [{"id": "opt_technical", "label": "Technical support"}, {"id": "opt_general", "label": "General question"}]}},
+    {"id": "f_details", "type": "textarea", "label": "Technical details", "helpText": "Describe what happened. Do not include passwords.", "required": true, "settings": {"maxLength": 4000}},
+    {"id": "f_consent", "type": "consent", "label": "I agree that Workeasy may use these details to respond to my request.", "required": true, "settings": {"consentTextVersion": "support-contact-v1"}}
+  ],
+  "rules": [{"id": "rule_technical_details", "when": {"fieldId": "f_category", "op": "eq", "value": "opt_technical"}, "action": {"type": "setVisibility", "targetFieldId": "f_details", "onTrue": true, "onFalse": false}}],
+  "theme": {"accent": "#4F46E5", "background": "#FFFFFF", "text": "#111827", "radius": 8},
+  "success": {"message": "Your request has been received. Our team will get back to you."}
+}
