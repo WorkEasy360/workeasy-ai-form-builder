@@ -1,0 +1,13 @@
+{
+  "name": "@workeasy/events",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Versioned event envelopes and event type definitions for the outbox.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  }
+}

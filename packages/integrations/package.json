@@ -1,0 +1,13 @@
+{
+  "name": "@workeasy/integrations",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Server-only destination adapters (email, webhooks, Workeasy connectors). Never imported by browser code.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  }
+}

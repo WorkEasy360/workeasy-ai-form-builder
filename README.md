@@ -49,4 +49,14 @@ flowchart LR
 ```
 
 **First complete release:** sign in → create manually or with AI → validate and preview → publish → share → submit → view/export responses → deliver notification/webhook. Advanced approvals, payments, document processing, and offline collection follow in explicit phases.
-# workeasy-ai-form-builder
+
+## Local development
+
+The monorepo scaffold (FND-01) is in place. See [local development](docs/local-development.md) for prerequisites and commands:
+
+```bash
+cp .env.example .env
+pnpm install
+pnpm infra:up
+pnpm dev
+```

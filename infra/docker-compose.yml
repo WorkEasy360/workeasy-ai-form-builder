@@ -1,0 +1,100 @@
+# Local development dependencies (docs/06 §6). Every port is bound to
+# 127.0.0.1 only. Run from the repository root with `pnpm infra:up`, which
+# passes the root .env file for credentials and port overrides.
+#
+# Added by later backlog items: local OIDC provider (FND-03) and malware
+# scanner (FIL-01).
+name: workeasy-forms
+
+services:
+  postgres:
+    image: postgres:18.6-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      # PostgreSQL 18 images keep data in a major-version subdirectory of /var/lib/postgresql.
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:8.8.3-alpine
+    command: ["redis-server", "--appendonly", "no", "--save", ""]
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  object-storage:
+    image: rustfs/rustfs:1.0.1
+    environment:
+      RUSTFS_ADDRESS: ":9000"
+      RUSTFS_CONSOLE_ENABLE: "true"
+      RUSTFS_CONSOLE_ADDRESS: ":9001"
+      RUSTFS_ACCESS_KEY: ${OBJECT_STORAGE_ACCESS_KEY:?set OBJECT_STORAGE_ACCESS_KEY in .env}
+      RUSTFS_SECRET_KEY: ${OBJECT_STORAGE_SECRET_KEY:?set OBJECT_STORAGE_SECRET_KEY in .env}
+    ports:
+      - "127.0.0.1:${OBJECT_STORAGE_PORT:-9000}:9000"
+      - "127.0.0.1:${OBJECT_STORAGE_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - object-storage-data:/data
+
+  # One-shot job: creates the private buckets once object storage accepts requests.
+  # Kept out of the default `up` (profile) so `--wait` only tracks long-running
+  # services; `pnpm infra:up` runs it explicitly afterwards.
+  object-storage-init:
+    image: amazon/aws-cli:2.38.0
+    profiles: ["init"]
+    depends_on:
+      object-storage:
+        condition: service_started
+    environment:
+      AWS_ACCESS_KEY_ID: ${OBJECT_STORAGE_ACCESS_KEY}
+      AWS_SECRET_ACCESS_KEY: ${OBJECT_STORAGE_SECRET_KEY}
+      AWS_DEFAULT_REGION: ${OBJECT_STORAGE_REGION:-us-east-1}
+      BUCKETS: >-
+        ${OBJECT_STORAGE_BUCKET_QUARANTINE:?set OBJECT_STORAGE_BUCKET_QUARANTINE in .env}
+        ${OBJECT_STORAGE_BUCKET_CLEAN:?set OBJECT_STORAGE_BUCKET_CLEAN in .env}
+        ${OBJECT_STORAGE_BUCKET_EXPORTS:?set OBJECT_STORAGE_BUCKET_EXPORTS in .env}
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        s3="aws --endpoint-url http://object-storage:9000 s3api"
+        for attempt in $$(seq 1 30); do
+          if $$s3 list-buckets > /dev/null 2>&1; then break; fi
+          echo "waiting for object storage ($$attempt)"; sleep 2
+        done
+        for bucket in $$BUCKETS; do
+          if $$s3 head-bucket --bucket "$$bucket" > /dev/null 2>&1; then
+            echo "bucket exists: $$bucket"
+          else
+            $$s3 create-bucket --bucket "$$bucket" > /dev/null
+            echo "bucket created: $$bucket"
+          fi
+        done
+    restart: "no"
+
+  mail:
+    image: axllent/mailpit:v1.31.5
+    ports:
+      - "127.0.0.1:${MAIL_SMTP_PORT:-1025}:1025"
+      - "127.0.0.1:${MAIL_UI_PORT:-8025}:8025"
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  postgres-data:
+  object-storage-data:

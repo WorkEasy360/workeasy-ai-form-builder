@@ -1,0 +1,27 @@
+{
+  "name": "workeasy-ai-form-builder",
+  "private": true,
+  "description": "Multi-tenant form builder for the Workeasy product family.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "packageManager": "pnpm@12.11.2",
+  "engines": {
+    "node": ">=24.0.0 <25",
+    "pnpm": ">=12.11.2 <13"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --filter \"./apps/*\" dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "vitest run",
+    "infra:up": "docker compose -f infra/docker-compose.yml --env-file .env up -d --wait --wait-timeout 180 postgres redis object-storage mail && docker compose -f infra/docker-compose.yml --env-file .env run --rm object-storage-init",
+    "infra:down": "docker compose -f infra/docker-compose.yml --env-file .env down",
+    "infra:reset": "docker compose -f infra/docker-compose.yml --env-file .env down -v",
+    "infra:ps": "docker compose -f infra/docker-compose.yml --env-file .env ps"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "typescript": "7.0.2",
+    "vitest": "5.0.4"
+  }
+}

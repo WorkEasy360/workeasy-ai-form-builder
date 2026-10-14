@@ -1,0 +1,13 @@
+{
+  "name": "@workeasy/database",
+  "version": "0.0.0",
+  "private": true,
+  "description": "PostgreSQL migrations, repositories and the tenant-scoped transaction wrapper.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  }
+}

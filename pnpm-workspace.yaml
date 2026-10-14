@@ -1,0 +1,7 @@
+packages:
+  - apps/*
+  - packages/*
+
+# Install scripts are blocked by default; only explicitly reviewed packages may run them.
+allowBuilds:
+  esbuild: true

@@ -1,0 +1,13 @@
+{
+  "name": "@workeasy/auth",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Permission checks, role/grant model and identity-provider (OIDC) interfaces.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  }
+}
