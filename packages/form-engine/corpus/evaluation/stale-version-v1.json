@@ -1,0 +1,29 @@
+{
+  "description": "Version 1 of a form. A session pinned to v1 keeps validating under v1 after v2 is published (see stale-version-v2).",
+  "definition": {
+    "schemaVersion": "1.0",
+    "title": "Callback request",
+    "locale": "en",
+    "pages": [{ "id": "page_main", "title": "", "fieldIds": ["f_name", "f_phone"] }],
+    "fields": [
+      { "id": "f_name", "type": "text", "label": "Name", "required": true, "settings": {} },
+      { "id": "f_phone", "type": "phone", "label": "Phone", "required": true, "settings": {} }
+    ],
+    "rules": [],
+    "theme": { "accent": "#4F46E5", "background": "#FFFFFF", "text": "#111827", "radius": 8 },
+    "success": { "message": "We'll call you." }
+  },
+  "cases": [
+    {
+      "name": "a v1 answer set is valid against v1",
+      "answers": { "f_name": "Asha", "f_phone": "+1 555 0100" },
+      "expected": {
+        "answers": { "f_name": "Asha", "f_phone": "+1 555 0100" },
+        "errors": [],
+        "visibleFieldIds": ["f_name", "f_phone"],
+        "requiredFieldIds": ["f_name", "f_phone"],
+        "reachablePageIds": ["page_main"]
+      }
+    }
+  ]
+}

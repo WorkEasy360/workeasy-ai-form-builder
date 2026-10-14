@@ -75,9 +75,9 @@
         }
       },
       "allOf": [
-        {"if": {"properties": {"type": {"enum": ["dropdown", "radio", "multi_select"]}}}, "then": {"properties": {"settings": {"required": ["options"]}}}},
-        {"if": {"properties": {"type": {"const": "file"}}}, "then": {"properties": {"settings": {"required": ["allowedMimeTypes", "maxFileBytes", "maxFiles"]}}}},
-        {"if": {"properties": {"type": {"const": "consent"}}}, "then": {"properties": {"settings": {"required": ["consentTextVersion"]}}}}
+        {"if": {"properties": {"type": {"enum": ["dropdown", "radio", "multi_select"]}}}, "then": {"properties": {"settings": {"type": "object", "required": ["options"]}}}},
+        {"if": {"properties": {"type": {"const": "file"}}}, "then": {"properties": {"settings": {"type": "object", "required": ["allowedMimeTypes", "maxFileBytes", "maxFiles"]}}}},
+        {"if": {"properties": {"type": {"const": "consent"}}}, "then": {"properties": {"settings": {"type": "object", "required": ["consentTextVersion"]}}}}
       ]
     },
     "condition": {

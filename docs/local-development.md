@@ -45,7 +45,9 @@ Every container port is bound to `127.0.0.1`. Change host ports in `.env` if the
 | `pnpm typecheck` | Type-checks every workspace project |
 | `pnpm test` | Unit tests (no services needed) |
 | `pnpm test:integration` | PostgreSQL integration tests; needs `pnpm infra:up`, recreates `<db>_test` each run |
-| `pnpm test:all` | Both suites |
+| `pnpm test:browser` | Shared engine/schema tests in headless Chromium; needs `pnpm browsers:install` once |
+| `pnpm test:all` | All three suites |
+| `pnpm browsers:install` | Downloads Playwright's headless Chromium for `test:browser` |
 | `pnpm db:setup` | Creates/updates roles, database and schema, then applies migrations (idempotent) |
 | `pnpm db:migrate` | Applies pending migrations only, as the owner role |
 | `pnpm db:seed` | Inserts the two local seed tenants (idempotent; refused when `NODE_ENV=production`) |
@@ -140,6 +142,26 @@ Cookie-authenticated mutations must come from `CONSOLE_PUBLIC_URL`, checked by O
 | `GET /api/v1/organizations/:orgId/forms` | Active member; owners/admins see every form, others only forms they hold grants on |
 | `GET`/`PUT /api/v1/organizations/:orgId/forms/:formId/grants` | `forms.manage_access` on the form; grantees must be active members |
 
+## Form definitions and the engine
+
+`@workeasy/form-schema` and `@workeasy/form-engine` are pure TypeScript with no Node or DOM APIs. The same code runs in the API, the builder and the respondent app (docs/03).
+
+- **Structural validation** is generated from `contracts/form-definition.schema.json` into `packages/form-schema/src/generated/validate-definition.js`. This is Ajv's standalone output, which compiles no code at runtime and so stays compatible with a strict Content-Security-Policy. After editing the contract, run `pnpm --filter @workeasy/form-schema generate`; a test fails if the committed validator is stale. Nesting depth (40) and size (1 MiB) are checked before schema validation.
+- **`validateDefinition`** (engine) runs the schema validation, then the semantic checks:
+  - IDs are unique, and every field is on exactly one page.
+  - Settings suit the field type, and min/max/length ranges are valid.
+  - Rule conditions reference existing fields with operators and literals that suit the type, and are at most 8 levels deep and 100 parts.
+  - A visibility/required rule may only depend on **earlier** fields. This makes cycles impossible and keeps evaluation single-pass.
+  - At most one rule per target property, and at most one forward-only skip per page.
+- **`evaluate(definition, answers)`** decodes answers (unknown fields rejected, values never coerced), walks pages in order applying visibility and skip rules, drops answers for hidden or unreachable fields, applies conditional required state, and returns canonical answers plus field errors.
+  - `""`, `null` and `[]` are empty. `false` and `0` are not.
+  - Comparisons on absent values are false (including `neq`).
+  - Decimals are compared as exact base-10 strings.
+  - Text `contains` ignores case.
+- **Field registry** (`FIELD_REGISTRY`): the codec, allowed settings, rule operators, privacy default and export value for each P1 type. File answers are upload IDs. The engine checks only their shape and count; ownership and scan state are checked when a submission claims them (FIL-01).
+
+**Shared corpus.** `packages/form-engine/corpus/` holds JSON cases: definitions with raw answers and their exact expected outcome, plus definitions with their expected validation issues. `*.shared.test.ts` files run unchanged in Node (`pnpm test`) and headless Chromium (`pnpm test:browser`). To cover new behavior, add a case to the corpus instead of writing a one-off test.
+
 ## Dependency policy
 
 - Versions are pinned exactly (`save-exact`) and resolved in `pnpm-lock.yaml`.
@@ -150,7 +172,6 @@ Cookie-authenticated mutations must come from `CONSOLE_PUBLIC_URL`, checked by O
 
 Later backlog items add these:
 
-- Shared schema and engine packages (FND-04)
 - Readiness checks, request IDs and CI (FND-05)
 - Audit events for grant changes and sign-ins (GOV-01)
 - Rate limiting on sign-in, and invalidating sessions after high-risk account changes

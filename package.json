@@ -15,6 +15,7 @@
     "typecheck": "pnpm -r typecheck",
     "test": "vitest run --project unit",
     "test:integration": "vitest run --project integration",
+    "test:browser": "vitest run --project browser",
     "test:all": "vitest run",
     "db:setup": "pnpm --filter @workeasy/database db setup",
     "db:migrate": "pnpm --filter @workeasy/database db migrate",
@@ -22,10 +23,13 @@
     "infra:up": "docker compose -f infra/docker-compose.yml --env-file .env up -d --wait --wait-timeout 180 postgres redis object-storage mail identity && docker compose -f infra/docker-compose.yml --env-file .env run --rm object-storage-init",
     "infra:down": "docker compose -f infra/docker-compose.yml --env-file .env down",
     "infra:reset": "docker compose -f infra/docker-compose.yml --env-file .env down -v",
-    "infra:ps": "docker compose -f infra/docker-compose.yml --env-file .env ps"
+    "infra:ps": "docker compose -f infra/docker-compose.yml --env-file .env ps",
+    "browsers:install": "playwright install chromium-headless-shell"
   },
   "devDependencies": {
     "@types/node": "24.19.2",
+    "@vitest/browser-playwright": "5.0.4",
+    "playwright": "1.64.0",
     "typescript": "7.0.2",
     "vitest": "5.0.4"
   }

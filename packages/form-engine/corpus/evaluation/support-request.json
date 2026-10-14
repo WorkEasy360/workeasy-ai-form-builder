@@ -1,0 +1,370 @@
+{
+  "description": "The example support form from contracts/: a dropdown controls whether the required details field is visible.",
+  "definition": "contracts/support-request.example.json",
+  "cases": [
+    {
+      "name": "technical request with every answer, trimmed",
+      "answers": {
+        "f_name": "  Asha  ",
+        "f_email": "asha@example.com",
+        "f_category": "opt_technical",
+        "f_details": "I cannot access my account",
+        "f_consent": true
+      },
+      "expected": {
+        "answers": {
+          "f_name": "Asha",
+          "f_email": "asha@example.com",
+          "f_category": "opt_technical",
+          "f_details": "I cannot access my account",
+          "f_consent": true
+        },
+        "errors": [],
+        "visibleFieldIds": [
+          "f_name",
+          "f_email",
+          "f_category",
+          "f_details",
+          "f_consent"
+        ],
+        "requiredFieldIds": [
+          "f_name",
+          "f_email",
+          "f_category",
+          "f_details",
+          "f_consent"
+        ],
+        "reachablePageIds": [
+          "page_contact"
+        ]
+      }
+    },
+    {
+      "name": "general question hides details and drops a tampered hidden answer",
+      "answers": {
+        "f_name": "Asha",
+        "f_email": "asha@example.com",
+        "f_category": "opt_general",
+        "f_details": "sent by a modified client",
+        "f_consent": true
+      },
+      "expected": {
+        "answers": {
+          "f_name": "Asha",
+          "f_email": "asha@example.com",
+          "f_category": "opt_general",
+          "f_consent": true
+        },
+        "errors": [],
+        "visibleFieldIds": [
+          "f_name",
+          "f_email",
+          "f_category",
+          "f_consent"
+        ],
+        "requiredFieldIds": [
+          "f_name",
+          "f_email",
+          "f_category",
+          "f_consent"
+        ],
+        "reachablePageIds": [
+          "page_contact"
+        ]
+      }
+    },
+    {
+      "name": "details are required while visible",
+      "answers": {
+        "f_name": "Asha",
+        "f_email": "asha@example.com",
+        "f_category": "opt_technical",
+        "f_consent": true
+      },
+      "expected": {
+        "answers": {
+          "f_name": "Asha",
+          "f_email": "asha@example.com",
+          "f_category": "opt_technical",
+          "f_consent": true
+        },
+        "errors": [
+          {
+            "fieldId": "f_details",
+            "code": "REQUIRED"
+          }
+        ],
+        "visibleFieldIds": [
+          "f_name",
+          "f_email",
+          "f_category",
+          "f_details",
+          "f_consent"
+        ],
+        "requiredFieldIds": [
+          "f_name",
+          "f_email",
+          "f_category",
+          "f_details",
+          "f_consent"
+        ],
+        "reachablePageIds": [
+          "page_contact"
+        ]
+      }
+    },
+    {
+      "name": "unanswered category keeps details hidden (comparison on an absent value is false)",
+      "answers": {},
+      "expected": {
+        "answers": {},
+        "errors": [
+          {
+            "fieldId": "f_name",
+            "code": "REQUIRED"
+          },
+          {
+            "fieldId": "f_email",
+            "code": "REQUIRED"
+          },
+          {
+            "fieldId": "f_category",
+            "code": "REQUIRED"
+          },
+          {
+            "fieldId": "f_consent",
+            "code": "REQUIRED"
+          }
+        ],
+        "visibleFieldIds": [
+          "f_name",
+          "f_email",
+          "f_category",
+          "f_consent"
+        ],
+        "requiredFieldIds": [
+          "f_name",
+          "f_email",
+          "f_category",
+          "f_consent"
+        ],
+        "reachablePageIds": [
+          "page_contact"
+        ]
+      }
+    },
+    {
+      "name": "invalid email, and consent must be literally true",
+      "answers": {
+        "f_name": "Asha",
+        "f_email": "not-an-email",
+        "f_category": "opt_general",
+        "f_consent": false
+      },
+      "expected": {
+        "answers": {
+          "f_name": "Asha",
+          "f_category": "opt_general",
+          "f_consent": false
+        },
+        "errors": [
+          {
+            "fieldId": "f_email",
+            "code": "INVALID_EMAIL"
+          },
+          {
+            "fieldId": "f_consent",
+            "code": "REQUIRED"
+          }
+        ],
+        "visibleFieldIds": [
+          "f_name",
+          "f_email",
+          "f_category",
+          "f_consent"
+        ],
+        "requiredFieldIds": [
+          "f_name",
+          "f_email",
+          "f_category",
+          "f_consent"
+        ],
+        "reachablePageIds": [
+          "page_contact"
+        ]
+      }
+    },
+    {
+      "name": "unknown field and a removed choice option are rejected",
+      "answers": {
+        "f_name": "Asha",
+        "f_email": "asha@example.com",
+        "f_category": "opt_billing",
+        "f_details": "x",
+        "f_consent": true,
+        "f_password": "hunter2"
+      },
+      "expected": {
+        "answers": {
+          "f_name": "Asha",
+          "f_email": "asha@example.com",
+          "f_consent": true
+        },
+        "errors": [
+          {
+            "fieldId": "f_password",
+            "code": "UNKNOWN_FIELD"
+          },
+          {
+            "fieldId": "f_category",
+            "code": "INVALID_OPTION"
+          }
+        ],
+        "visibleFieldIds": [
+          "f_name",
+          "f_email",
+          "f_category",
+          "f_consent"
+        ],
+        "requiredFieldIds": [
+          "f_name",
+          "f_email",
+          "f_category",
+          "f_consent"
+        ],
+        "reachablePageIds": [
+          "page_contact"
+        ]
+      }
+    },
+    {
+      "name": "emoji count as one character each (exactly 150 allowed)",
+      "answers": {
+        "f_name": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+        "f_email": "asha@example.com",
+        "f_category": "opt_general",
+        "f_consent": true
+      },
+      "expected": {
+        "answers": {
+          "f_name": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+          "f_email": "asha@example.com",
+          "f_category": "opt_general",
+          "f_consent": true
+        },
+        "errors": [],
+        "visibleFieldIds": [
+          "f_name",
+          "f_email",
+          "f_category",
+          "f_consent"
+        ],
+        "requiredFieldIds": [
+          "f_name",
+          "f_email",
+          "f_category",
+          "f_consent"
+        ],
+        "reachablePageIds": [
+          "page_contact"
+        ]
+      }
+    },
+    {
+      "name": "151 emoji exceed the 150-character limit",
+      "answers": {
+        "f_name": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+        "f_email": "asha@example.com",
+        "f_category": "opt_general",
+        "f_consent": true
+      },
+      "expected": {
+        "answers": {
+          "f_email": "asha@example.com",
+          "f_category": "opt_general",
+          "f_consent": true
+        },
+        "errors": [
+          {
+            "fieldId": "f_name",
+            "code": "TOO_LONG"
+          }
+        ],
+        "visibleFieldIds": [
+          "f_name",
+          "f_email",
+          "f_category",
+          "f_consent"
+        ],
+        "requiredFieldIds": [
+          "f_name",
+          "f_email",
+          "f_category",
+          "f_consent"
+        ],
+        "reachablePageIds": [
+          "page_contact"
+        ]
+      }
+    },
+    {
+      "name": "values are never coerced between types",
+      "answers": {
+        "f_name": 42,
+        "f_email": "asha@example.com",
+        "f_category": "opt_general",
+        "f_consent": "true"
+      },
+      "expected": {
+        "answers": {
+          "f_email": "asha@example.com",
+          "f_category": "opt_general"
+        },
+        "errors": [
+          {
+            "fieldId": "f_name",
+            "code": "INVALID_TYPE"
+          },
+          {
+            "fieldId": "f_consent",
+            "code": "INVALID_TYPE"
+          }
+        ],
+        "visibleFieldIds": [
+          "f_name",
+          "f_email",
+          "f_category",
+          "f_consent"
+        ],
+        "requiredFieldIds": [
+          "f_name",
+          "f_email",
+          "f_category",
+          "f_consent"
+        ],
+        "reachablePageIds": [
+          "page_contact"
+        ]
+      }
+    },
+    {
+      "name": "answers must be an object",
+      "answers": [
+        "f_name",
+        "Asha"
+      ],
+      "expected": {
+        "answers": {},
+        "errors": [
+          {
+            "fieldId": "",
+            "code": "ANSWERS_NOT_OBJECT"
+          }
+        ],
+        "visibleFieldIds": [],
+        "requiredFieldIds": [],
+        "reachablePageIds": []
+      }
+    }
+  ]
+}

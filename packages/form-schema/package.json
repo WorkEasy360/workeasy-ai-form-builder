@@ -2,12 +2,17 @@
   "name": "@workeasy/form-schema",
   "version": "0.0.0",
   "private": true,
-  "description": "Form definition JSON Schema, TypeScript types and pure schema migrations.",
+  "description": "Form definition JSON Schema validator (generated from contracts/) and TypeScript types.",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
   },
   "scripts": {
-    "typecheck": "tsc -p tsconfig.json"
+    "typecheck": "tsc -p tsconfig.json",
+    "generate": "tsx scripts/generate-validator.ts"
+  },
+  "devDependencies": {
+    "tsx": "4.23.15",
+    "ajv": "8.20.0"
   }
 }

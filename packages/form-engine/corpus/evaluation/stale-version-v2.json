@@ -1,0 +1,32 @@
+{
+  "description": "Version 2 removed the phone field and added email. The same answers that are valid under v1 are rejected under v2: answers are always evaluated against the session's pinned version.",
+  "definition": {
+    "schemaVersion": "1.0",
+    "title": "Callback request",
+    "locale": "en",
+    "pages": [{ "id": "page_main", "title": "", "fieldIds": ["f_name", "f_email"] }],
+    "fields": [
+      { "id": "f_name", "type": "text", "label": "Name", "required": true, "settings": {} },
+      { "id": "f_email", "type": "email", "label": "Email", "required": true, "settings": {} }
+    ],
+    "rules": [],
+    "theme": { "accent": "#4F46E5", "background": "#FFFFFF", "text": "#111827", "radius": 8 },
+    "success": { "message": "We'll email you." }
+  },
+  "cases": [
+    {
+      "name": "v1 answers against v2: removed field is unknown, new field is required",
+      "answers": { "f_name": "Asha", "f_phone": "+1 555 0100" },
+      "expected": {
+        "answers": { "f_name": "Asha" },
+        "errors": [
+          { "fieldId": "f_phone", "code": "UNKNOWN_FIELD" },
+          { "fieldId": "f_email", "code": "REQUIRED" }
+        ],
+        "visibleFieldIds": ["f_name", "f_email"],
+        "requiredFieldIds": ["f_name", "f_email"],
+        "reachablePageIds": ["page_main"]
+      }
+    }
+  ]
+}

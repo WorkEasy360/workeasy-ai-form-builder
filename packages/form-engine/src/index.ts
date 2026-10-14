@@ -1,9 +1,19 @@
-/**
- * @workeasy/form-engine
- *
- * Pure normalization, rule evaluation and answer validation shared by browser and server.
- *
- * Package boundary created in FND-01. Its contents are delivered by backlog
- * item FND-04 (see docs/07-delivery-plan.md); nothing is exported until then.
- */
-export {};
+export { canonicalDecimal, compareDecimal, decimalFromLiteral, DECIMAL_MAX_DIGITS } from "./decimal.js";
+export { evaluate, type AnswerError, type EvaluationResult } from "./evaluate.js";
+export {
+  DEFAULT_MAX_LENGTH,
+  DEFAULT_RATING_RANGE,
+  FIELD_REGISTRY,
+  isEmptyValue,
+  type AnswerValue,
+  type DecodeResult,
+  type FieldTypeSpec,
+  type PrivacyClass,
+  type ValueKind,
+} from "./fields.js";
+export {
+  MAX_CONDITION_DEPTH,
+  MAX_CONDITION_NODES,
+  validateDefinition,
+  type DefinitionValidationResult,
+} from "./validate-definition.js";

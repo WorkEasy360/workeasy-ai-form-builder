@@ -1,4 +1,11 @@
+import { playwright } from "@vitest/browser-playwright";
 import { defineConfig } from "vitest/config";
+
+/**
+ * `*.shared.test.ts` files run in both Node (unit) and headless Chromium
+ * (browser) to prove that browser and server produce identical results.
+ */
+const SHARED_TESTS = ["packages/form-schema/src/**/*.shared.test.ts", "packages/form-engine/src/**/*.shared.test.ts"];
 
 export default defineConfig({
   test: {
@@ -20,6 +27,20 @@ export default defineConfig({
           globalSetup: ["packages/database/src/testing/global-setup.ts"],
           testTimeout: 20_000,
           hookTimeout: 60_000,
+        },
+      },
+      {
+        // Needs `pnpm browsers:install` once.
+        test: {
+          name: "browser",
+          include: SHARED_TESTS,
+          browser: {
+            enabled: true,
+            provider: playwright(),
+            headless: true,
+            screenshotFailures: false,
+            instances: [{ browser: "chromium" }],
+          },
         },
       },
     ],

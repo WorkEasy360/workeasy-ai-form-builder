@@ -1,0 +1,277 @@
+{
+  "description": "Every P1 value type with bounds, plus rules exercising decimal, date, multi-select, false/zero and absent-value semantics.",
+  "definition": {
+    "schemaVersion": "1.0",
+    "title": "Typed values",
+    "locale": "en-IN",
+    "pages": [
+      {
+        "id": "page_all",
+        "title": "All types",
+        "fieldIds": [
+          "f_age", "f_score", "f_reason", "f_amount", "f_premium", "f_start", "f_followup", "f_time",
+          "f_topics", "f_other", "f_site", "f_phone", "f_files", "f_count", "f_zero_note", "f_flag",
+          "f_flag_note", "f_neq_note"
+        ]
+      }
+    ],
+    "fields": [
+      { "id": "f_age", "type": "integer", "label": "Age", "required": false, "settings": { "min": 18, "max": 120 } },
+      { "id": "f_score", "type": "rating", "label": "Score", "required": true, "settings": { "min": 1, "max": 5 } },
+      { "id": "f_reason", "type": "textarea", "label": "What went wrong?", "required": false, "settings": {} },
+      { "id": "f_amount", "type": "decimal", "label": "Amount", "required": false, "settings": { "min": "0.01", "max": "9999.99" } },
+      { "id": "f_premium", "type": "checkbox", "label": "Premium handling", "required": false, "settings": {} },
+      { "id": "f_start", "type": "date", "label": "Start date", "required": false, "settings": { "min": "2026-01-01", "max": "2030-12-31" } },
+      { "id": "f_followup", "type": "date", "label": "Follow-up date", "required": false, "settings": {} },
+      { "id": "f_time", "type": "time", "label": "Preferred time", "required": false, "settings": {} },
+      {
+        "id": "f_topics",
+        "type": "multi_select",
+        "label": "Topics",
+        "required": false,
+        "settings": {
+          "options": [{ "id": "opt_a", "label": "Billing" }, { "id": "opt_b", "label": "Access" }, { "id": "opt_c", "label": "Other" }],
+          "minSelections": 1,
+          "maxSelections": 2
+        }
+      },
+      { "id": "f_other", "type": "text", "label": "Other topic", "required": false, "settings": {} },
+      { "id": "f_site", "type": "url", "label": "Website", "required": false, "settings": {} },
+      { "id": "f_phone", "type": "phone", "label": "Phone", "required": false, "settings": {} },
+      {
+        "id": "f_files",
+        "type": "file",
+        "label": "Screenshots",
+        "required": false,
+        "settings": { "allowedMimeTypes": ["image/png"], "maxFileBytes": 1048576, "maxFiles": 2 }
+      },
+      { "id": "f_count", "type": "integer", "label": "Count", "required": false, "settings": {} },
+      { "id": "f_zero_note", "type": "text", "label": "Why zero?", "required": false, "settings": {} },
+      { "id": "f_flag", "type": "checkbox", "label": "Flag", "required": false, "settings": {} },
+      { "id": "f_flag_note", "type": "text", "label": "Why not flagged?", "required": false, "settings": {} },
+      { "id": "f_neq_note", "type": "text", "label": "Shown unless age is 30", "required": false, "settings": {} }
+    ],
+    "rules": [
+      {
+        "id": "rule_reason_required",
+        "when": { "fieldId": "f_score", "op": "lt", "value": 3 },
+        "action": { "type": "setRequired", "targetFieldId": "f_reason", "onTrue": true, "onFalse": false }
+      },
+      {
+        "id": "rule_premium",
+        "when": { "fieldId": "f_amount", "op": "gt", "value": "100" },
+        "action": { "type": "setVisibility", "targetFieldId": "f_premium", "onTrue": true, "onFalse": false }
+      },
+      {
+        "id": "rule_followup",
+        "when": { "fieldId": "f_start", "op": "gte", "value": "2028-02-29" },
+        "action": { "type": "setVisibility", "targetFieldId": "f_followup", "onTrue": true, "onFalse": false }
+      },
+      {
+        "id": "rule_other",
+        "when": { "fieldId": "f_topics", "op": "contains", "value": "opt_c" },
+        "action": { "type": "setVisibility", "targetFieldId": "f_other", "onTrue": true, "onFalse": false }
+      },
+      {
+        "id": "rule_zero",
+        "when": { "all": [{ "fieldId": "f_count", "op": "isNotEmpty" }, { "not": { "fieldId": "f_count", "op": "gt", "value": 0 } }] },
+        "action": { "type": "setVisibility", "targetFieldId": "f_zero_note", "onTrue": true, "onFalse": false }
+      },
+      {
+        "id": "rule_flag_note",
+        "when": { "fieldId": "f_flag", "op": "eq", "value": false },
+        "action": { "type": "setVisibility", "targetFieldId": "f_flag_note", "onTrue": true, "onFalse": false }
+      },
+      {
+        "id": "rule_neq",
+        "when": { "fieldId": "f_age", "op": "neq", "value": 30 },
+        "action": { "type": "setVisibility", "targetFieldId": "f_neq_note", "onTrue": true, "onFalse": false }
+      }
+    ],
+    "theme": { "accent": "#4F46E5", "background": "#FFFFFF", "text": "#111827", "radius": 8 },
+    "success": { "message": "Saved." }
+  },
+  "cases": [
+    {
+      "name": "valid answers are canonicalized and drive every rule",
+      "answers": {
+        "f_score": 4,
+        "f_amount": "0150.50",
+        "f_premium": true,
+        "f_start": "2028-02-29",
+        "f_followup": "2028-03-01",
+        "f_time": "09:30",
+        "f_topics": ["opt_c", "opt_a"],
+        "f_other": "Something else",
+        "f_site": "https://workeasy.example/help",
+        "f_phone": "+91 98765 43210",
+        "f_files": ["3f1b2c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d"],
+        "f_count": 0,
+        "f_zero_note": "zero",
+        "f_flag": false,
+        "f_flag_note": "unchecked"
+      },
+      "expected": {
+        "answers": {
+          "f_score": 4,
+          "f_amount": "150.5",
+          "f_premium": true,
+          "f_start": "2028-02-29",
+          "f_followup": "2028-03-01",
+          "f_time": "09:30",
+          "f_topics": ["opt_a", "opt_c"],
+          "f_other": "Something else",
+          "f_site": "https://workeasy.example/help",
+          "f_phone": "+91 98765 43210",
+          "f_files": ["3f1b2c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d"],
+          "f_count": 0,
+          "f_zero_note": "zero",
+          "f_flag": false,
+          "f_flag_note": "unchecked"
+        },
+        "errors": [],
+        "visibleFieldIds": [
+          "f_age", "f_score", "f_reason", "f_amount", "f_premium", "f_start", "f_followup", "f_time", "f_topics",
+          "f_other", "f_site", "f_phone", "f_files", "f_count", "f_zero_note", "f_flag", "f_flag_note"
+        ],
+        "requiredFieldIds": ["f_score"],
+        "reachablePageIds": ["page_all"]
+      }
+    },
+    {
+      "name": "a low score makes the reason required",
+      "answers": { "f_score": 2 },
+      "expected": {
+        "answers": { "f_score": 2 },
+        "errors": [{ "fieldId": "f_reason", "code": "REQUIRED" }],
+        "visibleFieldIds": ["f_age", "f_score", "f_reason", "f_amount", "f_start", "f_time", "f_topics", "f_site", "f_phone", "f_files", "f_count", "f_flag"],
+        "requiredFieldIds": ["f_score", "f_reason"],
+        "reachablePageIds": ["page_all"]
+      }
+    },
+    {
+      "name": "100.0 is not greater than 100 (exact decimal comparison)",
+      "answers": { "f_score": 5, "f_amount": "100.0" },
+      "expected": {
+        "answers": { "f_score": 5, "f_amount": "100" },
+        "errors": [],
+        "visibleFieldIds": ["f_age", "f_score", "f_reason", "f_amount", "f_start", "f_time", "f_topics", "f_site", "f_phone", "f_files", "f_count", "f_flag"],
+        "requiredFieldIds": ["f_score"],
+        "reachablePageIds": ["page_all"]
+      }
+    },
+    {
+      "name": "100.000001 is greater than 100, and an unchecked box is kept as false",
+      "answers": { "f_score": 5, "f_amount": "100.000001", "f_premium": false },
+      "expected": {
+        "answers": { "f_score": 5, "f_amount": "100.000001", "f_premium": false },
+        "errors": [],
+        "visibleFieldIds": ["f_age", "f_score", "f_reason", "f_amount", "f_premium", "f_start", "f_time", "f_topics", "f_site", "f_phone", "f_files", "f_count", "f_flag"],
+        "requiredFieldIds": ["f_score"],
+        "reachablePageIds": ["page_all"]
+      }
+    },
+    {
+      "name": "malformed values of every type are rejected",
+      "answers": {
+        "f_age": 17.5,
+        "f_score": 3,
+        "f_amount": "1e3",
+        "f_start": "2027-02-29",
+        "f_time": "24:00",
+        "f_topics": ["opt_a", "opt_a"],
+        "f_site": "javascript:alert(1)",
+        "f_phone": "call me",
+        "f_files": ["not-a-uuid"],
+        "f_count": "0"
+      },
+      "expected": {
+        "answers": { "f_score": 3 },
+        "errors": [
+          { "fieldId": "f_age", "code": "INVALID_INTEGER" },
+          { "fieldId": "f_amount", "code": "INVALID_DECIMAL" },
+          { "fieldId": "f_start", "code": "INVALID_DATE" },
+          { "fieldId": "f_time", "code": "INVALID_TIME" },
+          { "fieldId": "f_topics", "code": "DUPLICATE_OPTION" },
+          { "fieldId": "f_site", "code": "INVALID_URL" },
+          { "fieldId": "f_phone", "code": "INVALID_PHONE" },
+          { "fieldId": "f_files", "code": "INVALID_TYPE" },
+          { "fieldId": "f_count", "code": "INVALID_TYPE" }
+        ],
+        "visibleFieldIds": ["f_age", "f_score", "f_reason", "f_amount", "f_start", "f_time", "f_topics", "f_site", "f_phone", "f_files", "f_count", "f_flag"],
+        "requiredFieldIds": ["f_score"],
+        "reachablePageIds": ["page_all"]
+      }
+    },
+    {
+      "name": "values outside configured bounds are rejected",
+      "answers": { "f_age": 17, "f_score": 1, "f_reason": "too slow", "f_amount": "10000", "f_start": "2025-12-31" },
+      "expected": {
+        "answers": { "f_score": 1, "f_reason": "too slow" },
+        "errors": [
+          { "fieldId": "f_age", "code": "TOO_SMALL" },
+          { "fieldId": "f_amount", "code": "TOO_LARGE" },
+          { "fieldId": "f_start", "code": "TOO_SMALL" }
+        ],
+        "visibleFieldIds": ["f_age", "f_score", "f_reason", "f_amount", "f_start", "f_time", "f_topics", "f_site", "f_phone", "f_files", "f_count", "f_flag"],
+        "requiredFieldIds": ["f_score", "f_reason"],
+        "reachablePageIds": ["page_all"]
+      }
+    },
+    {
+      "name": "too many selections or files",
+      "answers": {
+        "f_score": 4,
+        "f_topics": ["opt_a", "opt_b", "opt_c"],
+        "f_files": [
+          "3f1b2c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+          "4f1b2c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+          "5f1b2c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d"
+        ]
+      },
+      "expected": {
+        "answers": { "f_score": 4 },
+        "errors": [
+          { "fieldId": "f_topics", "code": "TOO_MANY_SELECTIONS" },
+          { "fieldId": "f_files", "code": "TOO_MANY_FILES" }
+        ],
+        "visibleFieldIds": ["f_age", "f_score", "f_reason", "f_amount", "f_start", "f_time", "f_topics", "f_site", "f_phone", "f_files", "f_count", "f_flag"],
+        "requiredFieldIds": ["f_score"],
+        "reachablePageIds": ["page_all"]
+      }
+    },
+    {
+      "name": "null, blank strings and empty arrays count as absent",
+      "answers": { "f_age": null, "f_score": 4, "f_reason": "   ", "f_topics": [], "f_files": [], "f_flag": null },
+      "expected": {
+        "answers": { "f_score": 4 },
+        "errors": [],
+        "visibleFieldIds": ["f_age", "f_score", "f_reason", "f_amount", "f_start", "f_time", "f_topics", "f_site", "f_phone", "f_files", "f_count", "f_flag"],
+        "requiredFieldIds": ["f_score"],
+        "reachablePageIds": ["page_all"]
+      }
+    },
+    {
+      "name": "neq is true for a different present value",
+      "answers": { "f_age": 31, "f_score": 4 },
+      "expected": {
+        "answers": { "f_age": 31, "f_score": 4 },
+        "errors": [],
+        "visibleFieldIds": ["f_age", "f_score", "f_reason", "f_amount", "f_start", "f_time", "f_topics", "f_site", "f_phone", "f_files", "f_count", "f_flag", "f_neq_note"],
+        "requiredFieldIds": ["f_score"],
+        "reachablePageIds": ["page_all"]
+      }
+    },
+    {
+      "name": "neq is false for the same value",
+      "answers": { "f_age": 30, "f_score": 4 },
+      "expected": {
+        "answers": { "f_age": 30, "f_score": 4 },
+        "errors": [],
+        "visibleFieldIds": ["f_age", "f_score", "f_reason", "f_amount", "f_start", "f_time", "f_topics", "f_site", "f_phone", "f_files", "f_count", "f_flag"],
+        "requiredFieldIds": ["f_score"],
+        "reachablePageIds": ["page_all"]
+      }
+    }
+  ]
+}
