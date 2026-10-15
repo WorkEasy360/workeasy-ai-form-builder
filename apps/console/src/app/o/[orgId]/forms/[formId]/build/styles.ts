@@ -32,6 +32,15 @@ export const BUILDER_CSS = `
 .b-issues { margin: 0; padding-left: 20px; font-size: 14px; }
 .b-banner { padding: 8px 16px; border-bottom: 1px solid var(--we-color-border); }
 .b-banner[data-kind="error"] { background: color-mix(in srgb, var(--we-color-danger) 12%, transparent); }
+.b-visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.b-color { display: grid; grid-template-columns: minmax(0, 1fr) 44px; gap: 0 8px; align-items: start; }
+.b-swatch { width: 44px; height: 36px; margin-top: 26px; padding: 2px; border: 1px solid var(--we-color-border); border-radius: var(--we-radius-sm); background: var(--we-color-background); }
+.b-canvas { border-radius: var(--we-form-radius); }
+.b-preview { padding: 16px 24px; }
+.b-preview-bar { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin-bottom: 8px; }
+.b-segmented { display: flex; flex-wrap: wrap; gap: 4px 12px; border: 0; margin: 0; padding: 0; }
+.b-device { margin: 0 auto; max-width: 100%; border: 1px solid var(--we-color-border); border-radius: var(--we-radius-md); overflow: hidden; }
+.b-device[data-device="mobile"] { border-width: 8px; border-radius: 24px; }
 @media (max-width: 1023px) {
   .b-columns { grid-template-columns: 1fr; }
   .b-panel, .b-panel:last-child { border: 0; border-bottom: 1px solid var(--we-color-border); }

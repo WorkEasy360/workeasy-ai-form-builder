@@ -16,12 +16,14 @@ import {
   type AutosaveState,
 } from "@workeasy/builder";
 import { validateDraft } from "@workeasy/form-engine";
-import { FormField, RENDERER_CSS } from "@workeasy/form-renderer";
+import { FormField, RENDERER_CSS, themeStyle } from "@workeasy/form-renderer";
 import type { FieldType, FormDefinition } from "@workeasy/form-schema";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError, type FormResponse } from "../../../../../../lib/api";
 import { ConflictPanel } from "./conflict-panel";
+import { DesignInspector } from "./design";
 import { FieldInspector, FormInspector, PageInspector } from "./inspector";
+import { PreviewPane } from "./preview";
 import { BUILDER_CSS } from "./styles";
 import { useEditor, type DraftBody } from "./use-editor";
 
@@ -134,18 +136,29 @@ export function BuilderApp({ orgId, formId }: { orgId: string; formId: string })
       </main>
     );
   }
-  return <Editor draftPath={`${formPath}/draft`} listHref={listHref} formName={load.formName} archived={load.archived} initial={load.draft} />;
+  return (
+    <Editor
+      draftPath={`${formPath}/draft`}
+      listHref={listHref}
+      previewHref={`/o/${orgId}/forms/${formId}/preview`}
+      formName={load.formName}
+      archived={load.archived}
+      initial={load.draft}
+    />
+  );
 }
 
 function Editor({
   draftPath,
   listHref,
+  previewHref,
   formName,
   archived,
   initial,
 }: {
   draftPath: string;
   listHref: string;
+  previewHref: string;
   formName: string;
   archived: boolean;
   initial: DraftBody;
@@ -155,6 +168,9 @@ function Editor({
   const [selected, setSelected] = useState<Selection>({ kind: "form" });
   const [currentPageId, setCurrentPageId] = useState<string | undefined>();
   const [notice, setNotice] = useState("");
+  const [mode, setMode] = useState<"edit" | "preview">("edit");
+  // After a move, focus returns to the moved item's controls (docs/01 §3: keyboard reordering).
+  const pendingFocus = useRef<{ kind: "field" | "page"; id: string; direction: -1 | 1 } | undefined>(undefined);
 
   const issues = useMemo(() => validateDraft(definition).issues, [definition]);
   const page = definition.pages.find((p) => p.id === currentPageId) ?? definition.pages[0]!;
@@ -216,6 +232,44 @@ function Editor({
     }
   }
 
+  useLayoutEffect(() => {
+    const target = pendingFocus.current;
+    if (!target) return;
+    pendingFocus.current = undefined;
+    const item = document.querySelector(`[data-${target.kind}-item="${target.id}"]`);
+    // The same direction again if possible, otherwise the other way, otherwise the item's main button.
+    const candidates = [`[data-move="${target.direction}"]`, `[data-move="${-target.direction}"]`, "[data-primary]"];
+    const button = candidates.map((sel) => item?.querySelector<HTMLButtonElement>(sel)).find((b) => b && !b.disabled);
+    button?.focus();
+  });
+
+  function moveQuestion(fieldId: string, name: string, direction: -1 | 1) {
+    let next: FormDefinition;
+    try {
+      next = moveField(definition, fieldId, direction);
+    } catch (err) {
+      setNotice(err instanceof BuilderError ? err.message : "That change isn't possible.");
+      return;
+    }
+    const error = editor.apply(next);
+    if (error) {
+      setNotice(error);
+      return;
+    }
+    const toPage = next.pages.find((p) => p.fieldIds.includes(fieldId))!;
+    const toPageIndex = next.pages.indexOf(toPage);
+    const position = toPage.fieldIds.indexOf(fieldId) + 1;
+    if (toPage.id !== page.id) setCurrentPageId(toPage.id);
+    pendingFocus.current = { kind: "field", id: fieldId, direction };
+    setNotice(`Moved ${name} to position ${position} of ${toPage.fieldIds.length} on ${toPage.title || `page ${toPageIndex + 1}`}.`);
+  }
+
+  function movePageBy(pageId: string, name: string, direction: -1 | 1) {
+    const from = definition.pages.findIndex((p) => p.id === pageId);
+    run(() => movePage(definition, pageId, direction), `Moved ${name} to position ${from + direction + 1} of ${definition.pages.length}.`);
+    pendingFocus.current = { kind: "page", id: pageId, direction };
+  }
+
   function selectPage(id: string) {
     setCurrentPageId(id);
     setSelected({ kind: "page", id });
@@ -254,6 +308,9 @@ function Editor({
             {statusText(editor.saveState)}
           </span>
           <span className="b-muted">{issues.length === 0 ? "Ready to publish" : `${issues.length} to fix before publishing`}</span>
+          <button type="button" className="b-btn" aria-pressed={mode === "preview"} onClick={() => setMode(mode === "preview" ? "edit" : "preview")}>
+            Preview
+          </button>
           <button
             type="button"
             className="b-btn b-primary"
@@ -285,180 +342,230 @@ function Editor({
         {notice}
       </p>
 
-      <div className="b-columns">
-        <nav className="b-panel" aria-label="Pages and questions">
-          <h2>Pages</h2>
-          <ol className="b-list">
-            {definition.pages.map((p, i) => (
-              <li key={p.id} className="b-row">
-                <button type="button" className="b-btn b-grow" aria-current={p.id === page.id ? "true" : undefined} onClick={() => selectPage(p.id)}>
-                  {p.title || `Page ${i + 1}`}
-                  {skipRuleOf(definition, p.id) && <span className="b-badge"> · skips ahead</span>}
-                </button>
-                <button type="button" className="b-btn" disabled={readOnly || i === 0} aria-label={`Move ${p.title || `page ${i + 1}`} up`} onClick={() => run(() => movePage(definition, p.id, -1))}>
-                  ↑
-                </button>
-                <button
-                  type="button"
-                  className="b-btn"
-                  disabled={readOnly || i === definition.pages.length - 1}
-                  aria-label={`Move ${p.title || `page ${i + 1}`} down`}
-                  onClick={() => run(() => movePage(definition, p.id, 1))}
-                >
-                  ↓
-                </button>
-                <button
-                  type="button"
-                  className="b-btn"
-                  disabled={readOnly || definition.pages.length <= 1 || p.fieldIds.length > 0}
-                  title={p.fieldIds.length > 0 ? "Move or delete this page's questions first" : undefined}
-                  aria-label={`Delete ${p.title || `page ${i + 1}`}`}
-                  onClick={() => {
-                    run(() => removePage(definition, p.id), "Page deleted.");
-                    if (p.id === page.id) setCurrentPageId(undefined);
-                    setSelected({ kind: "form" });
-                  }}
-                >
-                  ✕
-                </button>
-              </li>
-            ))}
-          </ol>
-          <p>
-            <button
-              type="button"
-              className="b-btn"
-              disabled={readOnly || definition.pages.length >= 20}
-              onClick={() => {
-                const added = addPage(definition, page.id);
-                if (!editor.apply(added.definition)) selectPage(added.pageId);
-              }}
-            >
-              Add page
-            </button>
-          </p>
-
-          <h2>Add a question</h2>
-          <p className="b-muted" style={{ marginTop: 0 }}>
-            Adds to {page.title || `page ${pageIndex + 1}`}.
-          </p>
-          {PALETTE_GROUPS.map(({ group, types }) => (
-            <div key={group} role="group" aria-label={group} style={{ marginBottom: 12 }}>
-              <h3 style={{ fontSize: 13, margin: "0 0 4px" }} className="b-muted">
-                {group}
-              </h3>
-              <div className="b-palette">
-                {types.map((type: FieldType) => (
+      {mode === "preview" ? (
+        <PreviewPane definition={definition} openHref={previewHref} />
+      ) : (
+        <div className="b-columns">
+          <nav className="b-panel" aria-label="Pages and questions">
+            <p style={{ marginTop: 0 }}>
+              <button type="button" className="b-btn" aria-pressed={selection.kind === "form"} onClick={() => setSelected({ kind: "form" })}>
+                Form details and design
+              </button>
+            </p>
+            <h2>Pages</h2>
+            <ol className="b-list">
+              {definition.pages.map((p, i) => (
+                <li key={p.id} className="b-row" data-page-item={p.id}>
+                  <button type="button" className="b-btn b-grow" data-primary aria-current={p.id === page.id ? "true" : undefined} onClick={() => selectPage(p.id)}>
+                    {p.title || `Page ${i + 1}`}
+                    {skipRuleOf(definition, p.id) && <span className="b-badge"> · skips ahead</span>}
+                  </button>
                   <button
-                    key={type}
                     type="button"
                     className="b-btn"
-                    style={{ textAlign: "left" }}
-                    disabled={readOnly || definition.fields.length >= 100}
-                    onClick={() => {
-                      const added = addField(definition, type, page.id);
-                      const error = editor.apply(added.definition);
-                      if (error) setNotice(error);
-                      else {
-                        setSelected({ kind: "field", id: added.fieldId });
-                        setNotice(`Added ${FIELD_TYPE_INFO[type].label}.`);
-                      }
-                    }}
+                    data-move="-1"
+                    disabled={readOnly || i === 0}
+                    aria-label={`Move ${p.title || `page ${i + 1}`} up`}
+                    onClick={() => movePageBy(p.id, p.title || `page ${i + 1}`, -1)}
                   >
-                    {FIELD_TYPE_INFO[type].label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ))}
-        </nav>
-
-        <main className="b-canvas" aria-label="Form preview">
-          <h2 style={{ marginTop: 0 }}>{definition.title}</h2>
-          {page.title && <h3>{page.title}</h3>}
-          {page.fieldIds.length === 0 && <p className="b-muted">This page has no questions yet. Add one from the list on the left.</p>}
-          <SkipNote definition={definition} pageId={page.id} />
-          {page.fieldIds.map((fieldId, i) => {
-            const field = definition.fields.find((f) => f.id === fieldId);
-            if (!field) return null;
-            const isSelected = selection.kind === "field" && selection.id === field.id;
-            const name = field.label || FIELD_TYPE_INFO[field.type].label;
-            const first = pageIndex === 0 && i === 0;
-            const last = pageIndex === definition.pages.length - 1 && i === page.fieldIds.length - 1;
-            return (
-              <div key={field.id} className="b-card" data-selected={isSelected ? "true" : undefined} onClick={() => setSelected({ kind: "field", id: field.id })}>
-                <div className="b-card-tools" onClick={(e) => e.stopPropagation()}>
-                  <button type="button" className="b-btn" aria-pressed={isSelected} aria-label={`Edit ${name}`} onClick={() => setSelected({ kind: "field", id: field.id })}>
-                    Edit
-                  </button>
-                  <button type="button" className="b-btn" disabled={readOnly || first} aria-label={`Move ${name} up`} onClick={() => run(() => moveField(definition, field.id, -1))}>
                     ↑
                   </button>
-                  <button type="button" className="b-btn" disabled={readOnly || last} aria-label={`Move ${name} down`} onClick={() => run(() => moveField(definition, field.id, 1))}>
+                  <button
+                    type="button"
+                    className="b-btn"
+                    data-move="1"
+                    disabled={readOnly || i === definition.pages.length - 1}
+                    aria-label={`Move ${p.title || `page ${i + 1}`} down`}
+                    onClick={() => movePageBy(p.id, p.title || `page ${i + 1}`, 1)}
+                  >
                     ↓
                   </button>
                   <button
                     type="button"
                     className="b-btn"
-                    disabled={readOnly || definition.fields.length >= 100}
-                    aria-label={`Duplicate ${name}`}
+                    disabled={readOnly || definition.pages.length <= 1 || p.fieldIds.length > 0}
+                    title={p.fieldIds.length > 0 ? "Move or delete this page's questions first" : undefined}
+                    aria-label={`Delete ${p.title || `page ${i + 1}`}`}
                     onClick={() => {
-                      const copy = duplicateField(definition, field.id);
-                      if (!editor.apply(copy.definition)) setSelected({ kind: "field", id: copy.fieldId });
+                      run(() => removePage(definition, p.id), "Page deleted.");
+                      if (p.id === page.id) setCurrentPageId(undefined);
+                      setSelected({ kind: "form" });
                     }}
                   >
-                    Duplicate
+                    ✕
                   </button>
-                  <button
-                    type="button"
-                    className="b-btn"
-                    disabled={readOnly}
-                    aria-label={`Delete ${name}`}
-                    onClick={() => {
-                      const { definition: next, removedRules } = removeField(definition, field.id);
-                      const extra = removedRules.length > 0 ? ` and ${removedRules.length} rule${removedRules.length === 1 ? "" : "s"} that depend on it` : "";
-                      // Deleting can be undone, so only ask when rules go with it.
-                      if (removedRules.length > 0 && !window.confirm(`Delete "${name}"${extra}?`)) return;
-                      const error = editor.apply(next);
-                      if (error) setNotice(error);
-                      else {
-                        setSelected({ kind: "form" });
-                        setNotice(`Deleted ${name}${extra}. Undo brings it back.`);
-                      }
-                    }}
-                  >
-                    Delete
-                  </button>
-                </div>
-                <RuleBadges definition={definition} fieldId={field.id} />
-                <FormField field={field} value={undefined} required={field.required} disabled onChange={() => undefined} idPrefix="canvas" />
-              </div>
-            );
-          })}
-        </main>
+                </li>
+              ))}
+            </ol>
+            <p>
+              <button
+                type="button"
+                className="b-btn"
+                disabled={readOnly || definition.pages.length >= 20}
+                onClick={() => {
+                  const added = addPage(definition, page.id);
+                  if (!editor.apply(added.definition)) selectPage(added.pageId);
+                }}
+              >
+                Add page
+              </button>
+            </p>
 
-        <aside className="b-panel" aria-label="Properties">
-          <fieldset disabled={readOnly} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
-            {selection.kind === "field" ? (
-              <FieldInspector definition={definition} fieldId={selection.id} issues={issues} tryApply={editor.apply} />
-            ) : selection.kind === "page" ? (
-              <PageInspector definition={definition} pageId={selection.id} tryApply={editor.apply} />
-            ) : (
-              <FormInspector definition={definition} tryApply={editor.apply} />
+            <h2>Add a question</h2>
+            <p className="b-muted" style={{ marginTop: 0 }}>
+              Adds to {page.title || `page ${pageIndex + 1}`}.
+            </p>
+            {PALETTE_GROUPS.map(({ group, types }) => (
+              <div key={group} role="group" aria-label={group} style={{ marginBottom: 12 }}>
+                <h3 style={{ fontSize: 13, margin: "0 0 4px" }} className="b-muted">
+                  {group}
+                </h3>
+                <div className="b-palette">
+                  {types.map((type: FieldType) => (
+                    <button
+                      key={type}
+                      type="button"
+                      className="b-btn"
+                      style={{ textAlign: "left" }}
+                      disabled={readOnly || definition.fields.length >= 100}
+                      onClick={() => {
+                        const added = addField(definition, type, page.id);
+                        const error = editor.apply(added.definition);
+                        if (error) setNotice(error);
+                        else {
+                          setSelected({ kind: "field", id: added.fieldId });
+                          setNotice(`Added ${FIELD_TYPE_INFO[type].label}.`);
+                        }
+                      }}
+                    >
+                      {FIELD_TYPE_INFO[type].label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </nav>
+
+          <main className="b-canvas" aria-label="Form canvas" style={themeStyle(definition.theme)}>
+            <h2 style={{ marginTop: 0 }}>{definition.title}</h2>
+            {page.title && <h3>{page.title}</h3>}
+            {page.fieldIds.length === 0 && <p className="b-muted">This page has no questions yet. Add one from the list on the left.</p>}
+            <SkipNote definition={definition} pageId={page.id} />
+            {page.fieldIds.map((fieldId, i) => {
+              const field = definition.fields.find((f) => f.id === fieldId);
+              if (!field) return null;
+              const isSelected = selection.kind === "field" && selection.id === field.id;
+              const name = field.label || FIELD_TYPE_INFO[field.type].label;
+              const first = pageIndex === 0 && i === 0;
+              const last = pageIndex === definition.pages.length - 1 && i === page.fieldIds.length - 1;
+              return (
+                <div
+                  key={field.id}
+                  className="b-card"
+                  data-field-item={field.id}
+                  onKeyDown={(e) => {
+                    // Alt+Arrow moves the question from any of its buttons.
+                    if (!e.altKey || readOnly || (e.key !== "ArrowUp" && e.key !== "ArrowDown") || inTextControl(e.target)) return;
+                    const direction = e.key === "ArrowUp" ? -1 : 1;
+                    if ((direction === -1 && first) || (direction === 1 && last)) return;
+                    e.preventDefault();
+                    moveQuestion(field.id, name, direction);
+                  }}
+                  data-selected={isSelected ? "true" : undefined} onClick={() => setSelected({ kind: "field", id: field.id })}>
+                  <div className="b-card-tools" onClick={(e) => e.stopPropagation()}>
+                    <button type="button" className="b-btn" data-primary aria-pressed={isSelected} aria-label={`Edit ${name}`} onClick={() => setSelected({ kind: "field", id: field.id })}>
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      className="b-btn"
+                      data-move="-1"
+                      disabled={readOnly || first}
+                      aria-label={`Move ${name} up`}
+                      aria-keyshortcuts="Alt+ArrowUp"
+                      onClick={() => moveQuestion(field.id, name, -1)}
+                    >
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      className="b-btn"
+                      data-move="1"
+                      disabled={readOnly || last}
+                      aria-label={`Move ${name} down`}
+                      aria-keyshortcuts="Alt+ArrowDown"
+                      onClick={() => moveQuestion(field.id, name, 1)}
+                    >
+                      ↓
+                    </button>
+                    <button
+                      type="button"
+                      className="b-btn"
+                      disabled={readOnly || definition.fields.length >= 100}
+                      aria-label={`Duplicate ${name}`}
+                      onClick={() => {
+                        const copy = duplicateField(definition, field.id);
+                        if (!editor.apply(copy.definition)) setSelected({ kind: "field", id: copy.fieldId });
+                      }}
+                    >
+                      Duplicate
+                    </button>
+                    <button
+                      type="button"
+                      className="b-btn"
+                      disabled={readOnly}
+                      aria-label={`Delete ${name}`}
+                      onClick={() => {
+                        const { definition: next, removedRules } = removeField(definition, field.id);
+                        const extra = removedRules.length > 0 ? ` and ${removedRules.length} rule${removedRules.length === 1 ? "" : "s"} that depend on it` : "";
+                        // Deleting can be undone, so only ask when rules go with it.
+                        if (removedRules.length > 0 && !window.confirm(`Delete "${name}"${extra}?`)) return;
+                        const error = editor.apply(next);
+                        if (error) setNotice(error);
+                        else {
+                          setSelected({ kind: "form" });
+                          setNotice(`Deleted ${name}${extra}. Undo brings it back.`);
+                        }
+                      }}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                  <RuleBadges definition={definition} fieldId={field.id} />
+                  <FormField field={field} value={undefined} required={field.required} disabled onChange={() => undefined} idPrefix="canvas" />
+                </div>
+              );
+            })}
+          </main>
+
+          <aside className="b-panel" aria-label="Properties">
+            <fieldset disabled={readOnly} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
+              {selection.kind === "field" ? (
+                <FieldInspector definition={definition} fieldId={selection.id} issues={issues} tryApply={editor.apply} />
+              ) : selection.kind === "page" ? (
+                <PageInspector definition={definition} pageId={selection.id} tryApply={editor.apply} />
+              ) : (
+                <FormInspector definition={definition} tryApply={editor.apply} />
+              )}
+            </fieldset>
+            {selection.kind === "form" && (
+              <fieldset disabled={readOnly} style={{ border: 0, padding: 0, margin: "16px 0 0", minWidth: 0 }}>
+                <DesignInspector definition={definition} issues={issues} tryApply={editor.apply} />
+              </fieldset>
             )}
-          </fieldset>
-          {selection.kind !== "field" && issues.length > 0 && (
-            <div style={{ marginTop: 16 }}>
-              <h2>To fix before publishing</h2>
-              <ul className="b-issues">
-                {issues.map((issue) => (
-                  <li key={`${issue.path}:${issue.code}`}>{issue.code === "SCHEMA_MINITEMS" && issue.path === "/fields" ? "Add at least one question." : issue.message}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </aside>
-      </div>
+            {selection.kind !== "field" && issues.length > 0 && (
+              <div style={{ marginTop: 16 }}>
+                <h2>To fix before publishing</h2>
+                <ul className="b-issues">
+                  {issues.map((issue) => (
+                    <li key={`${issue.path}:${issue.code}`}>{issue.code === "SCHEMA_MINITEMS" && issue.path === "/fields" ? "Add at least one question." : issue.message}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </aside>
+        </div>
+      )}
     </div>
   );
 }

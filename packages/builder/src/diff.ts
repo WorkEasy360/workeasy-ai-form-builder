@@ -67,7 +67,7 @@ export function summarizeChanges(changes: readonly DefinitionChange[]): { label:
   if (pick("removed", "page")) return { label: "Delete page" };
   const [only] = changes;
   if (changes.length === 1 && only?.kind === "changed") {
-    const what = only.target === "form" ? "form details" : only.name;
+    const what = only.target !== "form" ? only.name : only.details.join() === "theme" ? "theme" : "form details";
     return { label: `Edit ${what}`, key: `${only.target}:${only.id}:${only.details.join(",")}` };
   }
   const question = pick("changed", "question");

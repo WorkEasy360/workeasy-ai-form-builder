@@ -20,6 +20,15 @@ export {
   type FormTemplate,
 } from "./templates";
 export {
+  contrastRatio,
+  isHexColor,
+  MIN_ACCENT_CONTRAST,
+  MIN_TEXT_CONTRAST,
+  readableTextOn,
+  relativeLuminance,
+  themeIssues,
+} from "./theme";
+export {
   MAX_CONDITION_DEPTH,
   MAX_CONDITION_NODES,
   validateDefinition,

@@ -10,6 +10,7 @@ import {
 } from "@workeasy/form-schema";
 import { compareDecimal, decimalFromLiteral } from "./decimal";
 import { FIELD_REGISTRY, isValidDate, isValidTime, MAX_RATING } from "./fields";
+import { themeIssues } from "./theme";
 
 /** Condition limits (docs/03 §3), checked before any condition is evaluated. */
 export const MAX_CONDITION_DEPTH = 8;
@@ -155,6 +156,9 @@ function semanticIssues(def: FormDefinition): DefinitionIssue[] {
       }
     }
   });
+
+  // Theme -----------------------------------------------------------------------
+  issues.push(...themeIssues(def.theme));
 
   return issues;
 }

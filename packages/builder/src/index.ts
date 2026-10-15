@@ -69,6 +69,7 @@ export {
   updateField,
   updateFieldSettings,
   updateFormDetails,
+  updateTheme,
   type FieldPatch,
   type SettingsInput,
 } from "./operations";

@@ -18,7 +18,9 @@ import {
   updateField,
   updateFieldSettings,
   updateFormDetails,
+  updateTheme,
 } from "./operations";
+import { summarizeChanges, diffDefinitions } from "./diff";
 
 const runtime = typeof window === "undefined" ? "node" : "browser";
 const ID_PATTERN = /^[A-Za-z][A-Za-z0-9_-]{1,79}$/;
@@ -141,5 +143,20 @@ describe(`builder operations (${runtime})`, () => {
     expect(def).toMatchObject({ title: "New", description: "About", success: { message: "Done" } });
     expect(updateFormDetails(def, { description: "" })).not.toHaveProperty("description");
     expect(validateDraft(def).ok).toBe(true);
+  });
+
+  it("updates theme tokens, normalising colours and refusing malformed values", () => {
+    const def = definitionFromTemplate("contact", "Contact")!;
+    const themed = updateTheme(def, { accent: "#15803d", radius: 0 });
+    expect(themed.theme).toEqual({ ...def.theme, accent: "#15803D", radius: 0 });
+    expect(def.theme.accent).not.toBe("#15803D");
+    expect(summarizeChanges(diffDefinitions(def, themed)).label).toBe("Edit theme");
+    expect(() => updateTheme(def, { text: "red" })).toThrow(/six hex digits/);
+    expect(() => updateTheme(def, { radius: 25 })).toThrow(/0 to 24/);
+    expect(() => updateTheme(def, { radius: 2.5 })).toThrow(BuilderError);
+    // Low contrast is allowed in a draft but blocks publishing.
+    const faint = updateTheme(def, { text: "#D1D5DB" });
+    expect(validateDraft(faint)).toMatchObject({ ok: true, issues: [expect.objectContaining({ code: "THEME_LOW_CONTRAST" })] });
+    expect(validateDefinition(faint).ok).toBe(false);
   });
 });

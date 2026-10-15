@@ -1,4 +1,4 @@
-import type { Condition, Field, FieldSettings, FieldType, FormDefinition, Rule } from "@workeasy/form-schema";
+import type { Condition, Field, FieldSettings, FieldType, FormDefinition, Rule, Theme } from "@workeasy/form-schema";
 import { newField, newId } from "./field-types";
 
 /**
@@ -66,6 +66,22 @@ export function updateFormDetails(
     else next.description = details.description;
   }
   if (details.successMessage !== undefined) next.success = { message: details.successMessage };
+  return next;
+}
+
+/** Changes theme tokens. Colours must be #RRGGBB and the radius 0–24; contrast is checked by validation. */
+export function updateTheme(def: FormDefinition, patch: Partial<Theme>): FormDefinition {
+  const next = clone(def);
+  for (const key of ["accent", "background", "text"] as const) {
+    const value = patch[key];
+    if (value === undefined) continue;
+    if (!/^#[0-9a-fA-F]{6}$/.test(value)) throw new BuilderError("Enter a colour as # followed by six hex digits, like #4F46E5.");
+    next.theme[key] = value.toUpperCase();
+  }
+  if (patch.radius !== undefined) {
+    if (!Number.isInteger(patch.radius) || patch.radius < 0 || patch.radius > 24) throw new BuilderError("Corner rounding must be a whole number from 0 to 24.");
+    next.theme.radius = patch.radius;
+  }
   return next;
 }
 
