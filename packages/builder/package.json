@@ -9,5 +9,11 @@
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@workeasy/form-schema": "workspace:*"
+  },
+  "devDependencies": {
+    "@workeasy/form-engine": "workspace:*"
   }
 }

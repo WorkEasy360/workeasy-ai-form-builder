@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { blankDefinition, definitionFromTemplate, FORM_TEMPLATES } from "./templates.js";
-import { validateDefinition } from "./validate-definition.js";
+import { blankDefinition, definitionFromTemplate, FORM_TEMPLATES } from "./templates";
+import { validateDefinition } from "./validate-definition";
 
 const runtime = typeof window === "undefined" ? "node" : "browser";
 

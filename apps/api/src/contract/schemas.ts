@@ -22,7 +22,25 @@ export const ProblemSchema = z.object({
   requestId: z.string(),
   errors: z.array(z.object({ field: z.string(), code: z.string(), message: z.string() })).optional(),
   checks: z.record(z.string(), z.string()).optional(),
+  currentRevision: z.number().int().optional(),
 });
+
+const DefinitionIssueSchema = z.object({ path: z.string(), code: z.string(), message: z.string() });
+
+export const DraftResponseSchema = z.object({
+  revision: z.number().int().min(1),
+  /** The form definition (contracts/form-definition.schema.json), possibly incomplete. */
+  definition: z.record(z.string(), z.unknown()),
+  /** Problems to fix before publishing; a draft may still be saved with them. */
+  issues: z.array(DefinitionIssueSchema),
+});
+export type DraftResponse = z.infer<typeof DraftResponseSchema>;
+
+export const SaveDraftResponseSchema = z.object({
+  revision: z.number().int().min(1),
+  issues: z.array(DefinitionIssueSchema),
+});
+export type SaveDraftResponse = z.infer<typeof SaveDraftResponseSchema>;
 
 export const ReadyResponseSchema = z.object({
   status: z.literal("ready"),

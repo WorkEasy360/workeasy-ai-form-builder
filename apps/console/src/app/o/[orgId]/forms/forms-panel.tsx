@@ -327,7 +327,9 @@ export function FormsPanel({ orgId }: { orgId: string }) {
               const canArchive = f.permissions.includes("forms.publish");
               return (
                 <tr key={f.id} style={{ borderBottom: "1px solid var(--we-color-border)" }}>
-                  <td data-label="Name" style={{ padding: "var(--we-space-1)", fontWeight: 600 }}>{f.name}</td>
+                  <td data-label="Name" style={{ padding: "var(--we-space-1)", fontWeight: 600 }}>
+                    {f.permissions.includes("forms.edit") && f.state !== "archived" ? <a href={`/o/${orgId}/forms/${f.id}/build`}>{f.name}</a> : f.name}
+                  </td>
                   <td data-label="State" style={{ padding: "var(--we-space-1)" }}>{STATE_LABELS[f.state]}</td>
                   <td data-label="Last changed" style={{ padding: "var(--we-space-1)" }}>
                     <time dateTime={f.updatedAt}>{new Date(f.updatedAt).toLocaleString()}</time>

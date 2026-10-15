@@ -18,7 +18,7 @@ import {
   type MembershipRecord,
   type ResolvedSession,
 } from "@workeasy/database";
-import { blankDefinition, definitionFromTemplate, FORM_TEMPLATES } from "@workeasy/form-engine";
+import { blankDefinition, definitionFromTemplate, FORM_TEMPLATES, validateDraft } from "@workeasy/form-engine";
 import type { z } from "zod";
 import type { AppDependencies } from "../app.js";
 import {
@@ -28,12 +28,14 @@ import {
   FormListQuerySchema,
   type FormGrantsResponse,
   type FormListResponse,
+  type DraftResponse,
   type FormResponse,
   type FormSummaryBody,
   type MeResponse,
+  type SaveDraftResponse,
 } from "../contract/schemas.js";
 import { parseCookies } from "../http/cookies.js";
-import { problems, sendProblem, type FieldError } from "../http/problem.js";
+import { problems, sendProblem, type FieldError, type ProblemExtensions } from "../http/problem.js";
 import { requireSameOrigin } from "../http/same-origin.js";
 import { sessionCookieName } from "./auth.js";
 
@@ -90,6 +92,16 @@ function summaryBody(form: FormSummary, permissions: Set<FormPermission>): FormS
   };
 }
 
+function draftEtag(revision: number): string {
+  return `"draft-${revision}"`;
+}
+
+/** Parses `"draft-N"`; undefined for anything else (weak or list ETags are not accepted). */
+function parseDraftEtag(header: string): number | undefined {
+  const match = /^"draft-([1-9]\d{0,9})"$/.exec(header.trim());
+  return match ? Number(match[1]) : undefined;
+}
+
 /** Retries `fn` when a freshly generated slug collides with an existing one. */
 async function withSlugRetry<T>(fn: () => Promise<T>): Promise<T> {
   for (let attempt = 1; ; attempt++) {
@@ -109,13 +121,15 @@ type Outcome<T> =
   | { kind: "not_found" }
   | { kind: "forbidden" }
   | { kind: "invalid"; errors: FieldError[] }
-  | { kind: "conflict"; code: string; title: string };
+  | { kind: "conflict"; code: string; title: string }
+  | { kind: "problem"; status: number; code: string; title: string; extra?: ProblemExtensions };
 
 function respond<T>(res: Response, outcome: Outcome<T> | typeof NOT_VISIBLE): void {
   if (outcome === NOT_VISIBLE || outcome.kind === "not_found") problems.notFound(res);
   else if (outcome.kind === "forbidden") problems.forbidden(res);
   else if (outcome.kind === "invalid") problems.validation(res, outcome.errors);
   else if (outcome.kind === "conflict") sendProblem(res, 409, outcome.code, outcome.title);
+  else if (outcome.kind === "problem") sendProblem(res, outcome.status, outcome.code, outcome.title, outcome.extra);
   else {
     if (outcome.headers) res.set(outcome.headers);
     res.status(outcome.status ?? 200).json(outcome.body);
@@ -205,7 +219,7 @@ export function apiV1Router({ db, settings }: AppDependencies): Router {
       status: 201,
       body,
       headers: {
-        ETag: `"draft-${body.draft.revision}"`,
+        ETag: draftEtag(body.draft.revision),
         Location: `/api/v1/organizations/${orgId}/forms/${body.form.id}`,
       },
     };
@@ -367,6 +381,67 @@ export function apiV1Router({ db, settings }: AppDependencies): Router {
         const form = await orgRepo.transitionFormState(trx, formId, ["archived"], "draft");
         if (!form) return { kind: "conflict", code: "FORM_STATE_CONFLICT", title: "The form is not archived" };
         return { kind: "ok", body: await formResponse(trx, form, permissions) };
+      }),
+    );
+  });
+
+  router.get("/organizations/:orgId/forms/:formId/draft", async (req, res) => {
+    const { orgId, formId } = req.params;
+    respond(
+      res,
+      await onForm(res, orgId, formId, "forms.edit", async (trx): Promise<Outcome<DraftResponse>> => {
+        const draft = await orgRepo.getDraft(trx, formId);
+        if (!draft) throw new Error(`Form ${formId} has no draft`);
+        const checked = validateDraft(draft.definition);
+        return {
+          kind: "ok",
+          body: { revision: draft.revision, definition: draft.definition, issues: checked.issues },
+          headers: { ETag: draftEtag(draft.revision) },
+        };
+      }),
+    );
+  });
+
+  /**
+   * Saves the whole draft (the request body is the definition) if the
+   * If-Match revision is still current (docs/03 §2). A stale revision is
+   * rejected with 412 so changes are never silently overwritten.
+   */
+  router.put("/organizations/:orgId/forms/:formId/draft", async (req, res) => {
+    const ifMatch = req.get("if-match");
+    if (!ifMatch) {
+      sendProblem(res, 428, "IF_MATCH_REQUIRED", "Send the draft revision you edited in an If-Match header");
+      return;
+    }
+    const expected = parseDraftEtag(ifMatch);
+    if (expected === undefined) {
+      sendProblem(res, 400, "INVALID_IF_MATCH", 'If-Match must be a draft ETag such as "draft-3"');
+      return;
+    }
+    const checked = validateDraft(req.body);
+    if (!checked.ok) {
+      problems.validation(res, checked.issues.map((i) => ({ field: i.path || "/", code: i.code, message: i.message })));
+      return;
+    }
+    const { orgId, formId } = req.params;
+    const userId = sessionOf(res).userId;
+    respond(
+      res,
+      await onForm(res, orgId, formId, "forms.edit", async (trx, { form }): Promise<Outcome<SaveDraftResponse>> => {
+        if (form.state === "archived") return { kind: "conflict", code: "FORM_ARCHIVED", title: "Restore the form before editing it" };
+        const definition = checked.definition as unknown as Record<string, unknown>;
+        const revision = await orgRepo.saveDraft(trx, formId, expected, definition, userId);
+        if (revision === undefined) {
+          const current = await orgRepo.getDraft(trx, formId);
+          return {
+            kind: "problem",
+            status: 412,
+            code: "DRAFT_CONFLICT",
+            title: "This draft was changed by someone else",
+            extra: current ? { currentRevision: current.revision } : {},
+          };
+        }
+        return { kind: "ok", body: { revision, issues: checked.issues }, headers: { ETag: draftEtag(revision) } };
       }),
     );
   });

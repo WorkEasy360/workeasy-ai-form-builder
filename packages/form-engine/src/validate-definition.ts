@@ -8,8 +8,8 @@ import {
   type FormDefinition,
   type Literal,
 } from "@workeasy/form-schema";
-import { compareDecimal, decimalFromLiteral } from "./decimal.js";
-import { FIELD_REGISTRY, isValidDate, isValidTime, MAX_RATING } from "./fields.js";
+import { compareDecimal, decimalFromLiteral } from "./decimal";
+import { FIELD_REGISTRY, isValidDate, isValidTime, MAX_RATING } from "./fields";
 
 /** Condition limits (docs/03 §3), checked before any condition is evaluated. */
 export const MAX_CONDITION_DEPTH = 8;
@@ -31,6 +31,30 @@ export function validateDefinition(input: unknown): DefinitionValidationResult {
   if (!structure.ok) return structure;
   const issues = semanticIssues(structure.definition);
   return issues.length === 0 ? { ok: true, definition: structure.definition } : { ok: false, issues };
+}
+
+export type DraftValidationResult =
+  | { ok: true; definition: FormDefinition; issues: DefinitionIssue[] }
+  | { ok: false; issues: DefinitionIssue[] };
+
+/** The only structural gap a saved draft may have: no fields yet. */
+function isMissingFieldsOnly(issue: DefinitionIssue): boolean {
+  return issue.code === "SCHEMA_MINITEMS" && issue.path === "/fields";
+}
+
+/**
+ * Validation for saving a draft. Drafts may be incomplete, so a draft is
+ * accepted when it is structurally sound apart from having no fields yet;
+ * every remaining problem (including semantic ones) is returned as an issue
+ * for the builder to show, and publishing still requires validateDefinition.
+ * Malformed drafts are rejected, so stored drafts are always safe to load.
+ */
+export function validateDraft(input: unknown): DraftValidationResult {
+  const structure = validateStructure(input);
+  if (!structure.ok && !structure.issues.every(isMissingFieldsOnly)) return structure;
+  const definition = (structure.ok ? structure.definition : input) as FormDefinition;
+  const structural = structure.ok ? [] : structure.issues;
+  return { ok: true, definition, issues: [...structural, ...semanticIssues(definition)] };
 }
 
 function semanticIssues(def: FormDefinition): DefinitionIssue[] {

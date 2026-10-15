@@ -1,6 +1,6 @@
 import type { Condition, Field, FormDefinition, Literal, Rule } from "@workeasy/form-schema";
-import { compareDecimal } from "./decimal.js";
-import { FIELD_REGISTRY, type AnswerValue } from "./fields.js";
+import { compareDecimal } from "./decimal";
+import { FIELD_REGISTRY, type AnswerValue } from "./fields";
 
 export interface AnswerError {
   /** Field the error belongs to; "" for errors about the whole answer set. */

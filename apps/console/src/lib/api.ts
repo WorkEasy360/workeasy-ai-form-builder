@@ -19,13 +19,20 @@ export class ApiError extends Error {
   }
 }
 
-export async function api<T>(path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
+export async function api<T>(
+  path: string,
+  init: { method?: string; body?: unknown; headers?: Record<string, string> } = {},
+): Promise<T> {
   let res: Response;
   try {
     res = await fetch(path, {
       method: init.method ?? "GET",
       credentials: "same-origin",
-      headers: { accept: "application/json", ...(init.body !== undefined ? { "content-type": "application/json" } : {}) },
+      headers: {
+        accept: "application/json",
+        ...(init.body !== undefined ? { "content-type": "application/json" } : {}),
+        ...init.headers,
+      },
       ...(init.body !== undefined ? { body: JSON.stringify(init.body) } : {}),
     });
   } catch {

@@ -1,5 +1,5 @@
-export { canonicalDecimal, compareDecimal, decimalFromLiteral, DECIMAL_MAX_DIGITS } from "./decimal.js";
-export { evaluate, type AnswerError, type EvaluationResult } from "./evaluate.js";
+export { canonicalDecimal, compareDecimal, decimalFromLiteral, DECIMAL_MAX_DIGITS } from "./decimal";
+export { evaluate, type AnswerError, type EvaluationResult } from "./evaluate";
 export {
   DEFAULT_MAX_LENGTH,
   DEFAULT_RATING_RANGE,
@@ -10,7 +10,7 @@ export {
   type FieldTypeSpec,
   type PrivacyClass,
   type ValueKind,
-} from "./fields.js";
+} from "./fields";
 export {
   blankDefinition,
   DEFAULT_SUCCESS_MESSAGE,
@@ -18,10 +18,12 @@ export {
   definitionFromTemplate,
   FORM_TEMPLATES,
   type FormTemplate,
-} from "./templates.js";
+} from "./templates";
 export {
   MAX_CONDITION_DEPTH,
   MAX_CONDITION_NODES,
   validateDefinition,
+  validateDraft,
   type DefinitionValidationResult,
-} from "./validate-definition.js";
+  type DraftValidationResult,
+} from "./validate-definition";

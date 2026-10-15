@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canonicalDecimal, compareDecimal, decimalFromLiteral } from "./decimal.js";
+import { canonicalDecimal, compareDecimal, decimalFromLiteral } from "./decimal";
 
 const runtime = typeof window === "undefined" ? "node" : "browser";
 

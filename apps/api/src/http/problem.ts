@@ -11,6 +11,8 @@ export interface ProblemExtensions {
   errors?: FieldError[];
   /** Per-dependency status for readiness failures. */
   checks?: Record<string, string>;
+  /** Current draft revision, returned with a 412 draft conflict. */
+  currentRevision?: number;
 }
 
 /**

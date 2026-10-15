@@ -1,9 +1,30 @@
-/**
- * @workeasy/builder
- *
- * Editor commands, selection, undo/redo history and AI proposal diffs.
- *
- * Package boundary created in FND-01. Its contents are delivered by backlog
- * item BLD-03 (see docs/07-delivery-plan.md); nothing is exported until then.
- */
-export {};
+export {
+  defaultSettings,
+  FIELD_TYPE_INFO,
+  newField,
+  newId,
+  PALETTE_GROUPS,
+  type FieldTypeInfo,
+} from "./field-types";
+export {
+  addField,
+  addOption,
+  addPage,
+  BuilderError,
+  duplicateField,
+  moveField,
+  moveFieldToPage,
+  moveOption,
+  movePage,
+  removeField,
+  removeOption,
+  removePage,
+  renameOption,
+  renamePage,
+  rulesDependingOnField,
+  updateField,
+  updateFieldSettings,
+  updateFormDetails,
+  type FieldPatch,
+  type SettingsInput,
+} from "./operations";

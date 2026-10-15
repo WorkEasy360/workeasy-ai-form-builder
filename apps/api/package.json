@@ -26,6 +26,8 @@
   "devDependencies": {
     "@types/express": "5.0.6",
     "@types/supertest": "7.2.1",
+    "@workeasy/builder": "workspace:*",
+    "@workeasy/form-schema": "workspace:*",
     "@workeasy/test-fixtures": "workspace:*",
     "supertest": "7.3.1",
     "tsup": "8.5.1",

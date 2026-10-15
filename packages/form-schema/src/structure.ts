@@ -1,5 +1,5 @@
 import { validate } from "./generated/validate-definition.js";
-import type { FormDefinition } from "./types.js";
+import type { FormDefinition } from "./types";
 
 /** Total definition size limit (docs/03 §3). */
 export const DEFINITION_MAX_BYTES = 1024 * 1024;

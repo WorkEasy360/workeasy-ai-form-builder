@@ -161,6 +161,31 @@ export async function getDraft(trx: Trx, formId: string): Promise<FormDraft | un
   return trx.selectFrom("form_drafts").select(["revision", "definition"]).where("form_id", "=", formId).executeTakeFirst();
 }
 
+/**
+ * Replaces the draft only if it is still at `expectedRevision` (optimistic
+ * concurrency, docs/03 §2), incrementing the revision and the form's
+ * last-changed time. Returns the new revision, or undefined on a conflict.
+ */
+export async function saveDraft(
+  trx: Trx,
+  formId: string,
+  expectedRevision: number,
+  definition: Record<string, unknown>,
+  updatedBy: string,
+): Promise<number | undefined> {
+  const row = await trx
+    .updateTable("form_drafts")
+    .set((eb) => ({ definition, updated_by: updatedBy, revision: eb("revision", "+", 1) }))
+    .where("form_id", "=", formId)
+    .where("revision", "=", expectedRevision)
+    .returning("revision")
+    .executeTakeFirst();
+  if (!row) return undefined;
+  // The forms_set_updated_at trigger stamps updated_at on any update.
+  await trx.updateTable("forms").set((eb) => ({ name: eb.ref("name") })).where("id", "=", formId).execute();
+  return row.revision;
+}
+
 export interface CreateFormInput {
   tenantId: string;
   ownerId: string;

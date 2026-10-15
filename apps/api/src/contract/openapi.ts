@@ -1,5 +1,7 @@
 import { z } from "zod";
 import {
+  DraftResponseSchema,
+  SaveDraftResponseSchema,
   CreateFormBodySchema,
   DuplicateFormBodySchema,
   FormResponseSchema,
@@ -140,6 +142,46 @@ export function buildOpenApiDocument(): JsonSchema {
             "200": json("Form", FormResponseSchema),
             "401": unauthenticated,
             "404": problem("Organization or form not found or not visible"),
+          },
+        },
+      },
+      "/api/v1/organizations/{orgId}/forms/{formId}/draft": {
+        parameters: [uuidPath("orgId", "Organization (tenant) ID"), uuidPath("formId", "Form ID")],
+        get: {
+          operationId: "getDraft",
+          summary: "The editable draft definition and its revision (requires forms.edit)",
+          security: [{ consoleSession: [] }],
+          responses: {
+            "200": json("Draft; the ETag header carries its revision", DraftResponseSchema),
+            "401": unauthenticated,
+            "403": crossOrigin,
+            "404": problem("Organization or form not found or not visible"),
+          },
+        },
+        put: {
+          operationId: "saveDraft",
+          summary: "Replace the draft definition if the If-Match revision is current (requires forms.edit)",
+          description:
+            "The body is the form definition. Drafts may be incomplete (no fields yet); remaining problems are returned as issues. Malformed definitions are rejected with 422.",
+          security: [{ consoleSession: [] }],
+          parameters: [
+            { name: "If-Match", in: "header", required: true, description: 'Draft ETag, e.g. "draft-3"', schema: { type: "string" } },
+          ],
+          requestBody: {
+            required: true,
+            content: { "application/json": { schema: { $ref: "urn:workeasy:forms:definition:1.0" } } },
+          },
+          responses: {
+            "200": json("Saved; the ETag header carries the new revision", SaveDraftResponseSchema),
+            "400": problem("If-Match is not a draft ETag, or the body is not JSON"),
+            "401": unauthenticated,
+            "403": crossOrigin,
+            "404": problem("Organization or form not found or not visible"),
+            "409": problem("The form is archived"),
+            "412": problem("DRAFT_CONFLICT: the draft changed since that revision; currentRevision is included"),
+            "413": problem("Definition larger than 1 MiB"),
+            "422": problem("Malformed definition"),
+            "428": problem("If-Match header missing"),
           },
         },
       },

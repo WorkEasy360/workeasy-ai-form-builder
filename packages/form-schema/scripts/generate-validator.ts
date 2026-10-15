@@ -8,7 +8,7 @@
  */
 import { writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { generateValidatorSource } from "./validator-source.js";
+import { generateValidatorSource } from "./validator-source";
 
 const target = fileURLToPath(new URL("../src/generated/validate-definition.js", import.meta.url));
 writeFileSync(target, generateValidatorSource());

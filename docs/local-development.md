@@ -76,7 +76,11 @@ contracts/      JSON Schema contracts (OpenAPI added per API slice)
 
 Workspace packages export their TypeScript source directly (`"exports": "./src/index.ts"`). Next.js compiles them via `transpilePackages`; the api and worker bundle them with tsup. There is no separate package build step.
 
-Packages without an implementation yet (`auth`, `form-engine`, …) are boundaries only: each `src/index.ts` names the backlog item that delivers it and exports nothing.
+Packages used by the Next.js apps (`form-schema`, `form-engine`, `form-renderer`, `builder`, `ui`) import TypeScript files **without** an extension (`from "./fields"`, not `"./fields.js"`): Next's Turbopack cannot resolve a `.js` specifier to a `.ts` file. Imports of real `.js` files, such as the generated validator, keep their extension. `pnpm build` fails if this is broken.
+
+Both Next.js apps set `logging.browserToTerminal: false`. With it on, every page load writes to `.next/dev/logs`, the repo-wide watcher sees that write, and the page reloads in an endless loop.
+
+Packages without an implementation yet (`events`, `integrations`, …) are boundaries only: each `src/index.ts` names the backlog item that delivers it and exports nothing.
 
 ## Database and tenant isolation
 
@@ -150,10 +154,22 @@ Cookie-authenticated mutations must come from `CONSOLE_PUBLIC_URL`, checked by O
 | `POST …/forms/:formId/duplicate` | `forms.create` and `forms.edit` on the source. Copies only the draft definition, never grants, workflow configuration, versions or responses |
 | `POST …/forms/:formId/archive`, `…/restore` | `forms.publish`; 409 if the form is already archived / not archived. Restore returns the form to draft |
 | `GET`/`PUT /api/v1/organizations/:orgId/forms/:formId/grants` | `forms.manage_access` on the form; grantees must be active members. PUT replaces every grant, including the creator's own |
+| `GET /api/v1/organizations/:orgId/forms/:formId/draft` | `forms.edit`. Returns the definition, its `revision` (also as `ETag: "draft-N"`) and the issues to fix before publishing |
+| `PUT …/forms/:formId/draft` | `forms.edit`. The body is the whole definition, and `If-Match: "draft-N"` is required. Returns 428 if `If-Match` is missing, 412 `DRAFT_CONFLICT` (with `currentRevision`) if someone saved first, 409 if the form is archived, and 422 if the definition is malformed |
 
-Every form has exactly one draft (`form_drafts`), holding the editable definition and its `revision` for optimistic concurrency (BLD-03). Slugs are server-generated (`f-` plus 12 random characters) and only locate a form; they never grant access.
+Every form has exactly one draft (`form_drafts`), holding the editable definition and its `revision`. A save succeeds only if the revision is unchanged, so concurrent edits are never silently overwritten. Drafts may be incomplete: a draft with no questions yet is accepted, and the remaining problems come back as `issues`. Malformed drafts are rejected, so a stored draft can always be loaded. Slugs are server-generated (`f-` plus 12 random characters) and only locate a form; they never grant access.
 
-The console lists, creates, duplicates, archives and restores forms at `/o/:orgId/forms`, linked from the organization list on the home page.
+The console lists, creates, duplicates, archives and restores forms at `/o/:orgId/forms`, linked from the organization list on the home page. Form names link to the builder when you can edit them.
+
+**Builder** (`/o/:orgId/forms/:formId/build`):
+- **Left:** pages (add, reorder, delete when empty) and the question palette.
+- **Centre:** the current page rendered by the shared `@workeasy/form-renderer`, with move, duplicate and delete per question.
+- **Right:** the inspector, for form details, page title, or the selected question's label, help text, required state and type-specific settings (lengths, number/date/time bounds, options, selection limits, file types and sizes, consent version).
+- **Validation:** issues are recomputed in the browser with the same `validateDraft` the server uses. An edit that would make the draft unsaveable, such as an empty label, isn't applied; it shows an inline error and keeps what you typed.
+- **Saving:** the Save button or Ctrl/Cmd+S. You're warned before leaving with unsaved changes. If someone else saved first, the builder says so and offers to load their version.
+- **Keyboard:** every action is a button, so nothing needs dragging.
+
+Pure editing operations live in `@workeasy/builder` (add/update/move/duplicate/remove questions, options and pages). Removing a question also removes the rules that depend on it, and reports them. New fields and options get random opaque IDs, so labels can change without changing identity.
 
 ## Form definitions and the engine
 
@@ -174,6 +190,16 @@ The console lists, creates, duplicates, archives and restores forms at `/o/:orgI
 - **Field registry** (`FIELD_REGISTRY`): the codec, allowed settings, rule operators, privacy default and export value for each P1 type. File answers are upload IDs. The engine checks only their shape and count; ownership and scan state are checked when a submission claims them (FIL-01).
 
 **Shared corpus.** `packages/form-engine/corpus/` holds JSON cases: definitions with raw answers and their exact expected outcome, plus definitions with their expected validation issues. `*.shared.test.ts` files run unchanged in Node (`pnpm test`) and headless Chromium (`pnpm test:browser`). To cover new behavior, add a case to the corpus instead of writing a one-off test.
+
+**Renderer.** `@workeasy/form-renderer` has one accessible React component per field type (`FIELD_COMPONENTS`, `FormField`):
+- Labels stay visible.
+- Help text and errors are linked with `aria-describedby`, and invalid controls carry `aria-invalid`.
+- Required state uses the native `required` attribute.
+- Radios, checkboxes and ratings are grouped in a `fieldset` with a `legend`.
+- Decimals are entered as text, so no precision is lost.
+- Markup in labels is shown as text.
+
+`*.browser.test.tsx` files run only in headless Chromium and drive the components with real input events. They also check that every P1 field type has a renderer, codec, validator and export serializer.
 
 ## Errors, logs and health
 

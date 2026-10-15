@@ -4,5 +4,5 @@ export {
   validateStructure,
   type DefinitionIssue,
   type StructureResult,
-} from "./structure.js";
-export * from "./types.js";
+} from "./structure";
+export * from "./types";

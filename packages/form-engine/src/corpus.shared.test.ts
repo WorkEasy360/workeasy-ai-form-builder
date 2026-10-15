@@ -2,7 +2,7 @@ import type { FormDefinition } from "@workeasy/form-schema";
 import { describe, expect, it } from "vitest";
 import example from "../../../contracts/support-request.example.json";
 import definitionCorpus from "../corpus/definitions.json";
-import { evaluate, validateDefinition, type AnswerValue } from "./index.js";
+import { evaluate, validateDefinition, type AnswerValue } from "./index";
 
 /**
  * The shared engine corpus (docs/03 §3). This file runs unchanged in Node

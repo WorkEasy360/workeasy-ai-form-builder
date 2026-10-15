@@ -1,5 +1,5 @@
 import type { Field, FieldSettings, FieldType, Literal, Operator } from "@workeasy/form-schema";
-import { canonicalDecimal, compareDecimal, decimalFromLiteral } from "./decimal.js";
+import { canonicalDecimal, compareDecimal, decimalFromLiteral } from "./decimal";
 
 /**
  * Field registry (docs/03 §1): one entry per P1 field type with its answer

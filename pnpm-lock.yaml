@@ -224,6 +224,12 @@ importers:
       '@types/supertest':
         specifier: 7.2.1
         version: 7.2.1
+      '@workeasy/builder':
+        specifier: workspace:*
+        version: link:../../packages/builder
+      '@workeasy/form-schema':
+        specifier: workspace:*
+        version: link:../../packages/form-schema
       '@workeasy/test-fixtures':
         specifier: workspace:*
         version: link:../../packages/test-fixtures
@@ -239,6 +245,18 @@ importers:
 
   apps/console:
     dependencies:
+      '@workeasy/builder':
+        specifier: workspace:*
+        version: link:../../packages/builder
+      '@workeasy/form-engine':
+        specifier: workspace:*
+        version: link:../../packages/form-engine
+      '@workeasy/form-renderer':
+        specifier: workspace:*
+        version: link:../../packages/form-renderer
+      '@workeasy/form-schema':
+        specifier: workspace:*
+        version: link:../../packages/form-schema
       '@workeasy/ui':
         specifier: workspace:*
         version: link:../../packages/ui
@@ -302,7 +320,15 @@ importers:
 
   packages/auth: {}
 
-  packages/builder: {}
+  packages/builder:
+    dependencies:
+      '@workeasy/form-schema':
+        specifier: workspace:*
+        version: link:../form-schema
+    devDependencies:
+      '@workeasy/form-engine':
+        specifier: workspace:*
+        version: link:../form-engine
 
   packages/database:
     dependencies:
@@ -337,7 +363,30 @@ importers:
         specifier: workspace:*
         version: link:../form-schema
 
-  packages/form-renderer: {}
+  packages/form-renderer:
+    dependencies:
+      '@workeasy/form-engine':
+        specifier: workspace:*
+        version: link:../form-engine
+      '@workeasy/form-schema':
+        specifier: workspace:*
+        version: link:../form-schema
+    devDependencies:
+      '@types/react':
+        specifier: 19.3.0
+        version: 19.3.0
+      '@types/react-dom':
+        specifier: 19.3.0
+        version: 19.3.0(@types/react@19.3.0)
+      '@workeasy/builder':
+        specifier: workspace:*
+        version: link:../builder
+      react:
+        specifier: 19.3.0
+        version: 19.3.0
+      react-dom:
+        specifier: 19.3.0
+        version: 19.3.0(react@19.3.0)
 
   packages/form-schema:
     devDependencies:

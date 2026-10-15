@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import example from "../../../contracts/support-request.example.json";
-import { DEFINITION_MAX_BYTES, validateStructure } from "./structure.js";
-import type { FormDefinition } from "./types.js";
+import { DEFINITION_MAX_BYTES, validateStructure } from "./structure";
+import type { FormDefinition } from "./types";
 
 // Compile-time check: the example contract satisfies the TypeScript types.
 const typedExample: FormDefinition = example as FormDefinition;
