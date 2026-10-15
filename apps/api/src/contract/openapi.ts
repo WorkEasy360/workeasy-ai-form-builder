@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   ActivateVersionBodySchema,
+  CloseFormBodySchema,
   DraftResponseSchema,
   SaveDraftResponseSchema,
   CreateFormBodySchema,
@@ -13,8 +14,11 @@ import {
   FormListResponseSchema,
   MeResponseSchema,
   ProblemSchema,
+  PublicAcceptanceResponseSchema,
+  PublicFormResponseSchema,
   PublishResponseSchema,
   ReadyResponseSchema,
+  ShareResponseSchema,
   ValidateResponseSchema,
   VersionListResponseSchema,
   VersionResponseSchema,
@@ -65,7 +69,7 @@ export function buildOpenApiDocument(): JsonSchema {
       title: "Workeasy Forms API",
       version: "0.1.0",
       description:
-        "Routes implemented through PUB-01. Organization routes derive the tenant from the authenticated membership; resources outside the caller's organizations return 404. Every response carries an X-Request-Id header, and every error is application/problem+json with the same requestId.",
+        "Routes implemented through PUB-02. Organization routes derive the tenant from the authenticated membership; resources outside the caller's organizations return 404. Every response carries an X-Request-Id header, and every error is application/problem+json with the same requestId.",
     },
     servers: [{ url: "/" }],
     components: {
@@ -347,6 +351,81 @@ export function buildOpenApiDocument(): JsonSchema {
             "404": problem("Organization or form not found or not visible"),
             "409": problem("FORM_ARCHIVED"),
             "422": problem("UNKNOWN_VERSION: not a version of this form"),
+          },
+        },
+      },
+      "/api/v1/organizations/{orgId}/forms/{formId}/share": {
+        parameters: [uuidPath("orgId", "Organization (tenant) ID"), uuidPath("formId", "Form ID")],
+        get: {
+          operationId: "getFormShare",
+          summary: "Public link, embed snippet and QR payload (requires forms.read)",
+          security: [{ consoleSession: [] }],
+          responses: {
+            "200": json("Sharing options; live says whether respondents can open the form now", ShareResponseSchema),
+            "401": unauthenticated,
+            "404": problem("Organization or form not found or not visible"),
+          },
+        },
+      },
+      "/api/v1/organizations/{orgId}/forms/{formId}/close": {
+        parameters: [uuidPath("orgId", "Organization (tenant) ID"), uuidPath("formId", "Form ID")],
+        post: {
+          operationId: "closeForm",
+          summary: "Stop accepting responses, immediately and including pages already open (requires forms.publish)",
+          security: [{ consoleSession: [] }],
+          requestBody: { required: false, content: { "application/json": { schema: schemaOf(CloseFormBodySchema, "input") } } },
+          responses: {
+            "200": json("The closed form", FormResponseSchema),
+            "401": unauthenticated,
+            "403": crossOrigin,
+            "404": problem("Organization or form not found or not visible"),
+            "409": problem("FORM_STATE_CONFLICT: only a published form can be closed"),
+            "422": problem("Reason longer than 500 characters"),
+          },
+        },
+      },
+      "/api/v1/organizations/{orgId}/forms/{formId}/reopen": {
+        parameters: [uuidPath("orgId", "Organization (tenant) ID"), uuidPath("formId", "Form ID")],
+        post: {
+          operationId: "reopenForm",
+          summary: "Accept responses again for the active version (requires forms.publish)",
+          security: [{ consoleSession: [] }],
+          responses: {
+            "200": json("The reopened form", FormResponseSchema),
+            "401": unauthenticated,
+            "403": crossOrigin,
+            "404": problem("Organization or form not found or not visible"),
+            "409": problem("FORM_STATE_CONFLICT: only a closed form can be reopened"),
+          },
+        },
+      },
+      "/public/v1/forms/{slug}": {
+        parameters: [{ name: "slug", in: "path", required: true, description: "Public form locator; never a credential", schema: { type: "string" } }],
+        get: {
+          operationId: "getPublicForm",
+          summary: "A published form's active version, for respondents (no session)",
+          description: "Cache-Control: public, max-age=30. Unknown, draft, archived and deleted forms are all 404.",
+          responses: {
+            "200": json("The active version's public projection", PublicFormResponseSchema),
+            "404": problem("No published form at this slug"),
+            "410": problem("FORM_CLOSED: the form is closed"),
+          },
+        },
+      },
+      "/public/v1/forms/{slug}/acceptance": {
+        parameters: [
+          { name: "slug", in: "path", required: true, description: "Public form locator", schema: { type: "string" } },
+          { name: "versionId", in: "query", required: true, description: "The version the page was loaded with", schema: { type: "string", format: "uuid" } },
+        ],
+        get: {
+          operationId: "getPublicFormAcceptance",
+          summary: "Whether the form accepts a response for this version right now (never cached)",
+          responses: {
+            "200": json("Accepting", PublicAcceptanceResponseSchema),
+            "404": problem("No published form at this slug"),
+            "409": problem("VERSION_CHANGED: a newer version is live; reload the form"),
+            "410": problem("FORM_CLOSED: the form was closed"),
+            "422": problem("versionId missing or not a UUID"),
           },
         },
       },

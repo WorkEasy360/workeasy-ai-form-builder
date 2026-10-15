@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Embed sample host</title>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 0; background: #f3f4f6; color: #111827; }
+      header, main { max-width: 860px; margin: 0 auto; padding: 16px; }
+      textarea { width: 100%; box-sizing: border-box; font: 13px ui-monospace, monospace; }
+      #host { background: #fff; border: 1px dashed #6b7280; padding: 16px; margin-top: 16px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Embed sample host</h1>
+      <p>
+        A third-party page on its own origin, for checking embedded forms (PUB-02). Paste the embed code from the
+        builder's Share panel and press <strong>Embed</strong>. The form should appear below and resize itself.
+      </p>
+    </header>
+    <main>
+      <label for="snippet">Embed code</label>
+      <textarea id="snippet" rows="8"></textarea>
+      <p><button id="embed" type="button">Embed</button></p>
+      <p>Content above the form.</p>
+      <div id="host"></div>
+      <p id="after">Content after the form.</p>
+    </main>
+    <script>
+      // Inserts the pasted snippet the way a page author would: markup as-is, and the script re-created so it runs.
+      document.getElementById("embed").addEventListener("click", function () {
+        var host = document.getElementById("host");
+        host.innerHTML = document.getElementById("snippet").value;
+        host.querySelectorAll("script").forEach(function (old) {
+          var script = document.createElement("script");
+          script.textContent = old.textContent;
+          old.replaceWith(script);
+        });
+      });
+    </script>
+  </body>
+</html>

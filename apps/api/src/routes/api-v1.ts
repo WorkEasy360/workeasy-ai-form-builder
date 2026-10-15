@@ -36,6 +36,7 @@ import type { z } from "zod";
 import type { AppDependencies } from "../app.js";
 import {
   ActivateVersionBodySchema,
+  CloseFormBodySchema,
   CreateFormBodySchema,
   IDEMPOTENCY_KEY_PATTERN,
   DuplicateFormBodySchema,
@@ -49,6 +50,7 @@ import {
   type MeResponse,
   type PublishResponse,
   type SaveDraftResponse,
+  type ShareResponse,
   type ValidateResponse,
   type VersionListResponse,
   type VersionResponse,
@@ -84,6 +86,34 @@ function versionBody(version: VersionSummary, activeVersionId: string | null): V
     publishedBy: version.publishedBy,
     active: version.id === activeVersionId,
   };
+}
+
+const HTML_ESCAPES: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+const escapeHtml = (text: string) => text.replace(/[&<>"']/g, (c) => HTML_ESCAPES[c]!);
+
+/**
+ * The snippet a host page pastes in: an iframe plus a script that resizes it
+ * when the form reports its height. The script accepts messages only from
+ * the respondent origin and only from this iframe, and the messages carry
+ * nothing but a height (docs/06 §3).
+ */
+function embedSnippet(embedUrl: string, respondentOrigin: string, slug: string, title: string): string {
+  const id = `workeasy-form-${slug}`;
+  return [
+    `<iframe id="${id}" src="${escapeHtml(embedUrl)}" title="${escapeHtml(title)}" loading="lazy" style="width:100%;height:480px;border:0"></iframe>`,
+    "<script>",
+    "(function () {",
+    `  var frame = document.getElementById(${JSON.stringify(id)});`,
+    "  window.addEventListener(\"message\", function (event) {",
+    `    if (event.origin !== ${JSON.stringify(respondentOrigin)} || !frame || event.source !== frame.contentWindow) return;`,
+    "    var data = event.data;",
+    "    if (data && data.type === \"workeasy:form-height\" && typeof data.height === \"number\" && data.height > 0 && data.height < 100000) {",
+    "      frame.style.height = Math.ceil(data.height) + \"px\";",
+    "    }",
+    "  });",
+    "})();",
+    "</script>",
+  ].join("\n");
 }
 
 function issuesAsErrors(issues: readonly DefinitionIssue[]): FieldError[] {
@@ -694,6 +724,80 @@ export function apiV1Router({ db, settings }: AppDependencies): Router {
         }
         const form = await orgRepo.getFormSummary(trx, formId);
         return { kind: "ok", body: { form: summaryBody(form!, permissions), version: versionBody(version, version.id) } };
+      }),
+    );
+  });
+
+  // Sharing and closing (PUB-02) --------------------------------------------
+
+  router.get("/organizations/:orgId/forms/:formId/share", async (req, res) => {
+    const { orgId, formId } = req.params;
+    respond(
+      res,
+      await onForm(res, orgId, formId, "forms.read", async (_trx, { form }): Promise<Outcome<ShareResponse>> => {
+        const url = new URL(`/f/${form.slug}`, settings.respondentOrigin).toString();
+        const embedUrl = `${url}?embed=1`;
+        return {
+          kind: "ok",
+          body: {
+            url,
+            embedUrl,
+            embedHtml: embedSnippet(embedUrl, settings.respondentOrigin, form.slug, form.name),
+            qrPayload: url,
+            live: form.state === "published",
+          },
+        };
+      }),
+    );
+  });
+
+  /** Stops accepting responses immediately, including from pages already open (docs/02 §5). */
+  router.post("/organizations/:orgId/forms/:formId/close", async (req, res) => {
+    const body = CloseFormBodySchema.safeParse(req.body ?? {});
+    if (!body.success) {
+      problems.validation(res, issuesToErrors(body.error));
+      return;
+    }
+    const { orgId, formId } = req.params;
+    const userId = sessionOf(res).userId;
+    respond(
+      res,
+      await onForm(res, orgId, formId, "forms.publish", async (trx, { permissions }): Promise<Outcome<FormResponse>> => {
+        const form = await orgRepo.transitionFormState(trx, formId, ["published"], "closed");
+        if (!form) return { kind: "conflict", code: "FORM_STATE_CONFLICT", title: "Only a published form can be closed" };
+        await publishRepo.appendAudit(trx, {
+          tenantId: orgId,
+          actor: { type: "user", id: userId },
+          action: "form.closed",
+          resourceType: "form",
+          resourceId: formId,
+          requestId: requestIdOf(res),
+          metadata: { activeVersionId: form.activeVersionId, ...(body.data.reason ? { reason: body.data.reason } : {}) },
+        });
+        return { kind: "ok", body: await formResponse(trx, form, permissions) };
+      }),
+    );
+  });
+
+  /** Accepts responses again, for the active version. */
+  router.post("/organizations/:orgId/forms/:formId/reopen", async (req, res) => {
+    const { orgId, formId } = req.params;
+    const userId = sessionOf(res).userId;
+    respond(
+      res,
+      await onForm(res, orgId, formId, "forms.publish", async (trx, { permissions }): Promise<Outcome<FormResponse>> => {
+        const form = await orgRepo.transitionFormState(trx, formId, ["closed"], "published");
+        if (!form) return { kind: "conflict", code: "FORM_STATE_CONFLICT", title: "Only a closed form can be reopened" };
+        await publishRepo.appendAudit(trx, {
+          tenantId: orgId,
+          actor: { type: "user", id: userId },
+          action: "form.reopened",
+          resourceType: "form",
+          resourceId: formId,
+          requestId: requestIdOf(res),
+          metadata: { activeVersionId: form.activeVersionId },
+        });
+        return { kind: "ok", body: await formResponse(trx, form, permissions) };
       }),
     );
   });

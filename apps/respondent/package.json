@@ -11,6 +11,9 @@
     "typecheck": "next typegen && tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@workeasy/form-engine": "workspace:*",
+    "@workeasy/form-renderer": "workspace:*",
+    "@workeasy/form-schema": "workspace:*",
     "@workeasy/ui": "workspace:*",
     "next": "16.4.0",
     "react": "19.3.0",

@@ -7,9 +7,11 @@ import { createApp, type AppSettings } from "./app.js";
 
 /** Shared setup for API integration tests. Not part of the production bundle. */
 export const TEST_CONSOLE_ORIGIN = "http://localhost:3000";
+export const TEST_RESPONDENT_ORIGIN = "http://localhost:3001";
 
 export const testSettings: AppSettings = {
   consoleOrigin: TEST_CONSOLE_ORIGIN,
+  respondentOrigin: TEST_RESPONDENT_ORIGIN,
   sessionSecret: "integration-test-secret-integration-test-0000",
   sessionTtlMs: 60 * 60 * 1000,
   secureCookies: false,
@@ -21,10 +23,15 @@ export const unusedIdentityProvider: IdentityProvider = {
   completeLogin: () => Promise.reject(new Error("identity provider not available in this test")),
 };
 
-export function buildTestApp(db: Db, identityProvider: IdentityProvider = unusedIdentityProvider, settings = testSettings): Express {
+/**
+ * `publicDb` should be a connection as the public role whenever a test calls
+ * /public/v1; it defaults to `db` only for tests that never do.
+ */
+export function buildTestApp(db: Db, identityProvider: IdentityProvider = unusedIdentityProvider, settings = testSettings, publicDb: Db = db): Express {
   return createApp({
     logger: createLogger({ service: "api-test", level: "silent" }),
     db,
+    publicDb,
     identityProvider,
     settings,
     readinessChecks: { database: () => sql`SELECT 1`.execute(db) },

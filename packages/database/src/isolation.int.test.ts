@@ -365,10 +365,15 @@ describe("role and policy hardening", () => {
     }
   });
 
-  it("gives the public role no access to tenant tables yet", async () => {
+  it("gives the public role only the published-form columns, and no rows without a tenant context", async () => {
     const publicDb = createDb({ connectionString: urls.public, maxConnections: 1 });
     try {
-      await expectPgError(publicDb.selectFrom("forms").select("id").execute(), RLS_VIOLATION, /permission denied/);
+      // PUB-02 grants a few form columns; row security still hides every row without a context.
+      expect(await publicDb.selectFrom("forms").select("id").where("id", "in", [...formIds(a), ...formIds(b)]).execute()).toEqual([]);
+      await expectPgError(publicDb.selectFrom("forms").select("name").execute(), RLS_VIOLATION, /permission denied/);
+      for (const table of ["memberships", "form_drafts", "form_grants", "auth_sessions", "users", "tenants"] as const) {
+        await expectPgError(sql`SELECT 1 FROM ${sql.table(`app.${table}`)}`.execute(publicDb), RLS_VIOLATION, /permission denied/);
+      }
     } finally {
       await publicDb.destroy();
     }

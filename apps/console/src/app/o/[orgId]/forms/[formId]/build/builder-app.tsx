@@ -26,6 +26,7 @@ import { DesignInspector } from "./design";
 import { FieldInspector, FormInspector, PageInspector } from "./inspector";
 import { PreviewPane } from "./preview";
 import { PublishPanel } from "./publish-panel";
+import { SharePanel } from "./share-panel";
 import { BUILDER_CSS } from "./styles";
 import { useEditor, type DraftBody } from "./use-editor";
 
@@ -179,7 +180,7 @@ function Editor({
   const [selected, setSelected] = useState<Selection>({ kind: "form" });
   const [currentPageId, setCurrentPageId] = useState<string | undefined>();
   const [notice, setNotice] = useState("");
-  const [mode, setMode] = useState<"edit" | "preview" | "publish">("edit");
+  const [mode, setMode] = useState<"edit" | "preview" | "publish" | "share">("edit");
   const [live, setLive] = useState<{ id: string; definition: FormDefinition } | undefined>();
   // After a move, focus returns to the moved item's controls (docs/01 §3: keyboard reordering).
   const pendingFocus = useRef<{ kind: "field" | "page"; id: string; direction: -1 | 1 } | undefined>(undefined);
@@ -346,6 +347,9 @@ function Editor({
           <button type="button" className="b-btn" aria-pressed={mode === "publish"} onClick={() => setMode(mode === "publish" ? "edit" : "publish")}>
             Publish…
           </button>
+          <button type="button" className="b-btn" aria-pressed={mode === "share"} onClick={() => setMode(mode === "share" ? "edit" : "share")}>
+            Share…
+          </button>
           <button
             type="button"
             className="b-btn b-primary"
@@ -379,6 +383,8 @@ function Editor({
 
       {mode === "preview" ? (
         <PreviewPane definition={definition} openHref={previewHref} />
+      ) : mode === "share" ? (
+        <SharePanel formPath={formPath} form={form} readOnly={readOnly} onFormChange={setForm} announce={setNotice} />
       ) : mode === "publish" ? (
         <PublishPanel
           formPath={formPath}

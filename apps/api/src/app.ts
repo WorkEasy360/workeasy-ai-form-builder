@@ -6,6 +6,7 @@ import { healthRouter, type ReadinessCheck } from "./http/health.js";
 import { sendProblem } from "./http/problem.js";
 import { requestContext, requestLog } from "./http/request-context.js";
 import { apiV1Router } from "./routes/api-v1.js";
+import { publicV1Router } from "./routes/public-v1.js";
 import { authRouter } from "./routes/auth.js";
 
 /** JSON body cap for non-upload routes (docs/05 §1). */
@@ -14,6 +15,8 @@ const JSON_BODY_LIMIT = "1mb";
 export interface AppSettings {
   /** Public console origin: OIDC redirect base and the only origin allowed to mutate with cookies. */
   consoleOrigin: string;
+  /** Public respondent origin: share links, QR codes and embed snippets point here. */
+  respondentOrigin: string;
   /** Key material for the encrypted login-transaction cookie. */
   sessionSecret: string;
   sessionTtlMs: number;
@@ -23,6 +26,8 @@ export interface AppSettings {
 export interface AppDependencies {
   logger: Logger;
   db: Db;
+  /** Connection as the public role, for respondent routes only. */
+  publicDb: Db;
   identityProvider: IdentityProvider;
   settings: AppSettings;
   /** Dependencies that must be reachable for /health/ready (e.g. the database). */
@@ -52,6 +57,7 @@ export function createApp(deps: AppDependencies): Express {
   app.use("/health", healthRouter(deps.readinessChecks, deps.isDraining));
   app.use("/auth", authRouter(deps));
   app.use("/api/v1", apiV1Router(deps));
+  app.use("/public/v1", publicV1Router(deps));
 
   app.use((_req, res) => {
     sendProblem(res, 404, "NOT_FOUND", "Not found");

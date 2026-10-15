@@ -8,14 +8,19 @@ import { createOidcIdentityProvider } from "./identity/oidc-provider.js";
 const config = loadConfig();
 const logger = createLogger({ service: "api", level: config.LOG_LEVEL });
 const db = createDb({ connectionString: config.DATABASE_URL, applicationName: "workeasy-api" });
+const publicDb = createDb({ connectionString: config.DATABASE_PUBLIC_URL, applicationName: "workeasy-api-public" });
 const consoleOrigin = new URL(config.CONSOLE_PUBLIC_URL).origin;
 let draining = false;
 
 const app = createApp({
-  readinessChecks: { database: () => sql`SELECT 1`.execute(db) },
+  readinessChecks: {
+    database: () => sql`SELECT 1`.execute(db),
+    publicDatabase: () => sql`SELECT 1`.execute(publicDb),
+  },
   isDraining: () => draining,
   logger,
   db,
+  publicDb,
   identityProvider: createOidcIdentityProvider({
     issuerUrl: config.OIDC_ISSUER_URL,
     clientId: config.OIDC_CLIENT_ID,
@@ -26,6 +31,7 @@ const app = createApp({
   }),
   settings: {
     consoleOrigin,
+    respondentOrigin: new URL(config.RESPONDENT_PUBLIC_URL).origin,
     sessionSecret: config.SESSION_SECRET,
     sessionTtlMs: config.SESSION_TTL_HOURS * 60 * 60 * 1000,
     secureCookies: config.SESSION_COOKIE_SECURE,
@@ -44,7 +50,7 @@ function shutdown(signal: NodeJS.Signals): void {
   draining = true;
   logger.info({ signal }, "api shutting down; draining connections");
   server.close((err) => {
-    void db.destroy().finally(() => {
+    void Promise.all([db.destroy(), publicDb.destroy()]).finally(() => {
       if (err) {
         logger.error({ err }, "api shutdown failed");
         process.exit(1);

@@ -14,6 +14,11 @@ ${tokensCss()}
 body{margin:0;font-family:var(--we-font-family);font-size:16px;line-height:1.5;background:var(--we-color-background);color:var(--we-color-text)}
 :focus-visible{outline:2px solid var(--we-color-focus);outline-offset:2px}
 @media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
+.r-page{min-height:100vh}
+.r-page>.we-surface{min-height:100vh}
+.r-page>h1,.r-page>p{max-width:680px;margin-left:auto;margin-right:auto;padding:0 16px}
+.r-page>h1{padding-top:48px}
+.r-embed{margin:0}
 `;
 
 export default function RootLayout({ children }: { children: ReactNode }) {

@@ -5,6 +5,8 @@ export { DEFAULT_MIGRATIONS_DIR, migrate, type MigrateOptions, type MigrateResul
 export * as identityRepo from "./repositories/identity.js";
 export * as orgRepo from "./repositories/organization.js";
 export * as publishRepo from "./repositories/publishing.js";
+export * as publicFormsRepo from "./repositories/public-forms.js";
+export type { Acceptance, PublicForm } from "./repositories/public-forms.js";
 export type { AuditInput, FormVersion, NewVersionInput, OutboxInput, VersionSummary } from "./repositories/publishing.js";
 export type { CreatedSession, IdentityClaims, ResolvedSession, UserProfile } from "./repositories/identity.js";
 export type {

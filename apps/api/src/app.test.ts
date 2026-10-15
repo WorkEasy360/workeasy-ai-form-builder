@@ -20,6 +20,7 @@ const unused = new Proxy(
 
 const settings = {
   consoleOrigin: "http://localhost:3000",
+  respondentOrigin: "http://localhost:3001",
   sessionSecret: "unit-test-secret-unit-test-secret-0000",
   sessionTtlMs: 60_000,
   secureCookies: false,
@@ -36,6 +37,7 @@ function build(overrides: Partial<AppDependencies> = {}) {
   const app = createApp({
     logger: createLogger({ service: "api-test", level: "info", destination }),
     db: unused as Db,
+    publicDb: unused as Db,
     identityProvider: unused as IdentityProvider,
     settings,
     readinessChecks: { database: () => Promise.resolve() },

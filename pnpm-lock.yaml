@@ -266,6 +266,9 @@ importers:
       next:
         specifier: 16.4.0
         version: 16.4.0(@types/node@24.19.2)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      qrcode-generator:
+        specifier: 2.0.4
+        version: 2.0.4
       react:
         specifier: 19.3.0
         version: 19.3.0
@@ -282,6 +285,15 @@ importers:
 
   apps/respondent:
     dependencies:
+      '@workeasy/form-engine':
+        specifier: workspace:*
+        version: link:../../packages/form-engine
+      '@workeasy/form-renderer':
+        specifier: workspace:*
+        version: link:../../packages/form-renderer
+      '@workeasy/form-schema':
+        specifier: workspace:*
+        version: link:../../packages/form-schema
       '@workeasy/ui':
         specifier: workspace:*
         version: link:../../packages/ui
@@ -2218,6 +2230,9 @@ packages:
     resolution: {integrity: sha512-5nnx0yGyVUcY6t9RnWcARWtwT9F1D8O9rt08htPvnd49W1IgZtmLkhu9WfMzQj1cFxjHIO6connUNVW5k7AVyQ==}
     engines: {node: '>= 0.10'}
 
+  qrcode-generator@2.0.4:
+    resolution: {integrity: sha512-mZSiP6RnbHl4xL2Ap5HfkjLnmxfKcPWpWe/c+5XxCuetEenqmNFf1FH/ftXPCtFG5/TDobjsjz6sSNL0Sr8Z9g==}
+
   qs@6.16.0:
     resolution: {integrity: sha512-h6fhOIaRrID2CbEY2fqs+7t+UXZo+MLAnU5gRIq85uFtdiUPCdsApMlHhXogKVM4HM2DVbIjGNTTYH2OcmP1vA==}
     engines: {node: '>=0.6'}
@@ -3934,6 +3949,8 @@ snapshots:
     dependencies:
       forwarded: 0.2.0
       ipaddr.js: 1.9.1
+
+  qrcode-generator@2.0.4: {}
 
   qs@6.16.0:
     dependencies:

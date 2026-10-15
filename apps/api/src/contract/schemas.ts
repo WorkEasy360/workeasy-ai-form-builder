@@ -177,3 +177,35 @@ export const ActivateVersionBodySchema = z.object({ versionId: Uuid });
 
 /** Client-chosen key that makes a publish request safe to retry. */
 export const IDEMPOTENCY_KEY_PATTERN = /^[!-~]{8,200}$/;
+
+export const CloseFormBodySchema = z.object({
+  /** Optional note kept in the audit log; not shown to respondents. */
+  reason: z.string().trim().max(500).optional(),
+});
+
+export const ShareResponseSchema = z.object({
+  /** The public form link. A slug only locates a form; it never grants access. */
+  url: z.url(),
+  /** The same link for embedding: no outer page chrome, and it reports its height to the host page. */
+  embedUrl: z.url(),
+  /** Paste-ready HTML for a host page: the iframe plus a small script that resizes it. */
+  embedHtml: z.string(),
+  /** Text to encode in a QR code (the public link). */
+  qrPayload: z.string(),
+  /** Whether respondents can open the form right now. */
+  live: z.boolean(),
+});
+export type ShareResponse = z.infer<typeof ShareResponseSchema>;
+
+export const PublicFormResponseSchema = z.object({
+  slug: z.string(),
+  /** Send this back when submitting, so a closed or replaced form is detected. */
+  versionId: Uuid,
+  versionNumber: z.number().int().min(1),
+  /** The version's public projection: what the renderer needs, nothing internal. */
+  definition: z.record(z.string(), z.unknown()),
+});
+export type PublicFormResponse = z.infer<typeof PublicFormResponseSchema>;
+
+export const PublicAcceptanceResponseSchema = z.object({ accepting: z.literal(true) });
+export type PublicAcceptanceResponse = z.infer<typeof PublicAcceptanceResponseSchema>;
