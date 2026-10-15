@@ -1,5 +1,6 @@
 "use client";
 
+import { canonicalJson, type AnswerValue } from "@workeasy/form-engine";
 import { FormRenderer, RENDERER_CSS } from "@workeasy/form-renderer";
 import type { FormDefinition } from "@workeasy/form-schema";
 import { useEffect, useRef, useState } from "react";
@@ -13,6 +14,12 @@ interface Session {
   capability: string;
   versionId: string;
   definition: FormDefinition;
+}
+
+interface Receipt {
+  submissionId: string;
+  receiptId: string;
+  receivedAt: string;
 }
 
 type SessionState = { kind: "starting" } | { kind: "ready"; session: Session } | { kind: "failed"; message: string };
@@ -31,38 +38,26 @@ async function startSession(slug: string, embed: boolean): Promise<SessionState>
   return { kind: "failed", message: "Something went wrong. Please reload the page." };
 }
 
-/**
- * Before anything is sent, asks the API whether this session may still
- * submit. A page left open (or served from a cache) after the form was
- * closed, or after the respondent lost access, finds out here.
- *
- * Storing responses arrives with RUN-02, which repeats this check inside its
- * intake transaction; until then an accepting form says so plainly.
- */
-async function submit(state: SessionState): Promise<string | undefined> {
-  if (state.kind !== "ready") return state.kind === "failed" ? state.message : "The form is still getting ready. Try again in a moment.";
-  const { sessionId, capability } = state.session;
-  let res: Response;
-  try {
-    res = await fetch(`/public/v1/sessions/${encodeURIComponent(sessionId)}/acceptance`, {
-      cache: "no-store",
-      headers: { authorization: `Bearer ${capability}` },
-    });
-  } catch {
-    return "We couldn't reach Workeasy Forms. Check your connection and try again; your answers are still here.";
-  }
-  if (res.status === 410) return "This form has closed and isn't accepting responses any more. Your answers weren't sent.";
-  if (res.status === 401) return "This form session has expired. Copy anything you need, then reload the page to start again; your answers weren't sent.";
-  if (res.status === 403) return "You no longer have access to this form. Your answers weren't sent.";
-  if (res.status === 404) return "This form is no longer available. Your answers weren't sent.";
-  if (!res.ok) return "Something went wrong. Please try again; your answers are still here.";
-  return "This form isn't collecting responses yet. Your answers weren't sent.";
+/** Problem messages for refusals; the respondent's answers always stay on screen. */
+function refusal(status: number, body: { errors?: Array<{ message: string }> }): string {
+  if (status === 410) return "This form has closed and isn't accepting responses any more. Your answers weren't sent.";
+  if (status === 401) return "This form session has expired. Copy anything you need, then reload the page to start again; your answers weren't sent.";
+  if (status === 403) return "You no longer have access to this form. Your answers weren't sent.";
+  if (status === 404) return "This form is no longer available. Your answers weren't sent.";
+  if (status === 409) return "This form changed after you opened it. Reload the page to continue; your answers weren't sent.";
+  if (status === 413) return "Your answers are too long to send. Shorten them and try again.";
+  if (status === 422) return `Some answers need attention: ${(body.errors ?? []).map((e) => e.message).join(" ") || "please check them."}`;
+  if (status === 429) return "Too many attempts. Wait a moment and try again; your answers are still here.";
+  return "Something went wrong. Please try again; your answers are still here.";
 }
 
 export function PublicForm({ slug, versionId, definition, embed }: { slug: string; versionId: string; definition: FormDefinition; embed: boolean }) {
   const main = useRef<HTMLElement>(null);
   const [state, setState] = useState<SessionState>({ kind: "starting" });
+  const [receipt, setReceipt] = useState<Receipt | undefined>();
   const started = useRef(false);
+  // One Idempotency-Key per set of answers: a retry after a lost response reuses it and can never submit twice.
+  const attempt = useRef<{ digest: string; key: string } | undefined>(undefined);
 
   // One session per page load. The ref survives React's development double-mount.
   useEffect(() => {
@@ -91,6 +86,29 @@ export function PublicForm({ slug, versionId, definition, embed }: { slug: strin
     return () => observer.disconnect();
   }, [embed]);
 
+  async function submit(answers: Record<string, AnswerValue>): Promise<string | undefined> {
+    if (state.kind !== "ready") return state.kind === "failed" ? state.message : "The form is still getting ready. Try again in a moment.";
+    const { sessionId, capability, versionId: sessionVersion } = state.session;
+    const digest = canonicalJson(answers);
+    if (attempt.current?.digest !== digest) attempt.current = { digest, key: crypto.randomUUID() };
+    let res: Response;
+    try {
+      res = await fetch(`/public/v1/sessions/${encodeURIComponent(sessionId)}/submissions`, {
+        method: "POST",
+        cache: "no-store",
+        headers: { authorization: `Bearer ${capability}`, "content-type": "application/json", "idempotency-key": attempt.current.key },
+        body: JSON.stringify({ formVersionId: sessionVersion, answers }),
+      });
+    } catch {
+      return "We couldn't reach Workeasy Forms. Check your connection and try again; your answers are still here and won't be sent twice.";
+    }
+    if (res.ok) {
+      setReceipt((await res.json()) as Receipt);
+      return undefined;
+    }
+    return refusal(res.status, (await res.json().catch(() => ({}))) as { errors?: Array<{ message: string }> });
+  }
+
   // The session decides the version; it matches the page unless a new version went live in between.
   const shown = state.kind === "ready" && state.session.versionId !== versionId ? state.session.definition : definition;
   return (
@@ -101,7 +119,13 @@ export function PublicForm({ slug, versionId, definition, embed }: { slug: strin
           {state.message}
         </p>
       )}
-      <FormRenderer key={state.kind === "ready" ? state.session.versionId : versionId} definition={shown} idPrefix="form" onSubmit={() => submit(state)} />
+      <FormRenderer
+        key={state.kind === "ready" ? state.session.versionId : versionId}
+        definition={shown}
+        idPrefix="form"
+        onSubmit={submit}
+        successDetail={receipt ? `Your receipt number is ${receipt.receiptId.slice(0, 8).toUpperCase()}. Keep it if you need to refer to this response.` : undefined}
+      />
     </main>
   );
 }

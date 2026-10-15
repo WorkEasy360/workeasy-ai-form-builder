@@ -151,6 +151,32 @@ export interface RespondentSessionsTable {
   created_at: CreatedAt;
 }
 
+export interface SubmissionsTable {
+  id: string;
+  tenant_id: string;
+  form_id: string;
+  form_version_id: string;
+  session_id: string;
+  answers: Record<string, unknown>;
+  consents: Generated<unknown[]>;
+  revision: Generated<number>;
+  intake_state: Generated<"accepted">;
+  receipt_id: string;
+  received_at: ColumnType<Date, Date | undefined, never>;
+  deleted_at: Date | null;
+}
+
+export interface SubmissionRequestsTable {
+  tenant_id: string;
+  session_id: string;
+  key_hash: Buffer;
+  request_hash: Buffer;
+  submission_id: string;
+  response_code: number;
+  receipt: Record<string, unknown>;
+  created_at: CreatedAt;
+}
+
 export interface Database {
   tenants: TenantsTable;
   users: UsersTable;
@@ -164,6 +190,8 @@ export interface Database {
   outbox_events: OutboxEventsTable;
   form_access_policies: FormAccessPoliciesTable;
   respondent_sessions: RespondentSessionsTable;
+  submissions: SubmissionsTable;
+  submission_requests: SubmissionRequestsTable;
 }
 
 export type Tenant = Selectable<TenantsTable>;

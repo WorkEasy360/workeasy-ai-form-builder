@@ -232,3 +232,25 @@ export const PublicAcceptanceResponseSchema = z.object({
   versionId: Uuid,
 });
 export type PublicAcceptanceResponse = z.infer<typeof PublicAcceptanceResponseSchema>;
+
+/** Answer JSON cap (docs/01 §5): 256 KiB. */
+export const MAX_ANSWERS_BYTES = 256 * 1024;
+
+export const SubmitBodySchema = z.object({
+  /** Must be the version the session is pinned to. */
+  formVersionId: Uuid,
+  /** Answers keyed by field ID; the engine decodes and validates them. */
+  answers: z.record(z.string(), z.unknown()),
+});
+
+export const ReceiptSchema = z.object({
+  submissionId: Uuid,
+  receiptId: Uuid,
+  receivedAt: Timestamp,
+  intakeState: z.literal("accepted"),
+  /** The form's message after submitting. No answers are echoed back. */
+  message: z.string(),
+  /** Consents given, with the version of the wording the respondent saw. */
+  consents: z.array(z.object({ fieldId: z.string(), consentTextVersion: z.string().nullable() })),
+});
+export type ReceiptBody = z.infer<typeof ReceiptSchema>;

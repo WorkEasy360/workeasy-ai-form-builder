@@ -1,10 +1,19 @@
 import { Router, type Request, type Response } from "express";
 import { identityRepo, publicFormsRepo, withTenant, type PublicForm } from "@workeasy/database";
 import type { AppDependencies } from "../app.js";
-import type { PublicAcceptanceResponse, PublicFormResponse, SessionStartResponse } from "../contract/schemas.js";
+import {
+  IDEMPOTENCY_KEY_PATTERN,
+  MAX_ANSWERS_BYTES,
+  SubmitBodySchema,
+  type PublicAcceptanceResponse,
+  type PublicFormResponse,
+  type ReceiptBody,
+  type SessionStartResponse,
+} from "../contract/schemas.js";
+import { intake } from "../intake.js";
 import { parseCookies } from "../http/cookies.js";
 import { problems, sendProblem } from "../http/problem.js";
-import { requestLog } from "../http/request-context.js";
+import { requestIdOf, requestLog } from "../http/request-context.js";
 import { requireSameOrigin } from "../http/same-origin.js";
 import { respondentAuthRouter, respondentSessionCookieName } from "./auth.js";
 
@@ -138,21 +147,101 @@ export function publicV1Router(deps: AppDependencies): Router {
    * and never cached: a page that loaded before the form was closed, or before
    * the respondent lost access, learns it here.
    */
-  router.get("/sessions/:sessionId/acceptance", async (req, res) => {
-    res.set("Cache-Control", "no-store");
+  /** The session behind the bearer capability, if it is exactly the session in the path; answers 401 itself otherwise. */
+  async function sessionOf(req: Request, res: Response) {
     const auth = req.get("authorization") ?? "";
     const capability = auth.startsWith("Bearer ") ? auth.slice("Bearer ".length).trim() : "";
     const session = capability ? await publicFormsRepo.resolveCapability(publicDb, capability) : undefined;
     // The capability must belong to exactly this session; anything else looks like a missing session.
     if (!session || session.id !== req.params.sessionId) {
-      sendProblem(res, 401, "SESSION_INVALID", "This form session has expired. Reload the page to start again.");
-      return;
+      sessionInvalid(res);
+      return undefined;
     }
+    return session;
+  }
+
+  function sessionInvalid(res: Response) {
+    sendProblem(res, 401, "SESSION_INVALID", "This form session has expired. Reload the page to start again.");
+  }
+
+  router.get("/sessions/:sessionId/acceptance", async (req, res) => {
+    res.set("Cache-Control", "no-store");
+    const session = await sessionOf(req, res);
+    if (!session) return;
     const acceptance = await withTenant(publicDb, session.tenantId, (trx) => publicFormsRepo.checkSessionAcceptance(trx, session));
     if (acceptance.accepting) res.json({ accepting: true, versionId: session.formVersionId } satisfies PublicAcceptanceResponse);
     else if (acceptance.reason === "closed") closed(res, 0);
     else if (acceptance.reason === "access_revoked") sendProblem(res, 403, "NOT_A_MEMBER", "You no longer have access to this form");
     else notFound(res);
+  });
+
+  /**
+   * Submits the session's answers (docs/04 §5). Retrying with the same
+   * Idempotency-Key returns the recorded receipt; the session accepts one
+   * response at most. Answers are never logged or echoed back.
+   */
+  router.post("/sessions/:sessionId/submissions", async (req, res) => {
+    res.set("Cache-Control", "no-store");
+    const session = await sessionOf(req, res);
+    if (!session) return;
+    const idempotencyKey = req.get("idempotency-key");
+    if (!idempotencyKey || !IDEMPOTENCY_KEY_PATTERN.test(idempotencyKey)) {
+      sendProblem(res, 400, "IDEMPOTENCY_KEY_REQUIRED", "Send an Idempotency-Key header of 8 to 200 visible characters");
+      return;
+    }
+    const body = SubmitBodySchema.safeParse(req.body);
+    if (!body.success) {
+      problems.validation(
+        res,
+        body.error.issues.map((i) => ({ field: i.path.map(String).join(".") || "body", code: i.code.toUpperCase(), message: i.message })),
+      );
+      return;
+    }
+    if (Buffer.byteLength(JSON.stringify(body.data.answers), "utf8") > MAX_ANSWERS_BYTES) {
+      sendProblem(res, 413, "ANSWERS_TOO_LARGE", "The answers are larger than this form accepts");
+      return;
+    }
+    const outcome = await intake(publicDb, {
+      session,
+      idempotencyKey,
+      formVersionId: body.data.formVersionId,
+      answers: body.data.answers,
+      requestId: requestIdOf(res),
+    });
+    const log = requestLog(res, logger);
+    switch (outcome.kind) {
+      case "accepted":
+        log.info({ respondentSessionId: session.id, submissionId: outcome.receipt.submissionId }, "submission accepted");
+        res.status(201).json(outcome.receipt satisfies ReceiptBody);
+        return;
+      case "replayed":
+        res.set("Idempotent-Replayed", "true").status(outcome.status).json(outcome.receipt satisfies ReceiptBody);
+        return;
+      case "already_submitted":
+        res.set("Submission-Already-Accepted", "true").status(200).json(outcome.receipt satisfies ReceiptBody);
+        return;
+      case "idempotency_conflict":
+        sendProblem(res, 409, "IDEMPOTENCY_CONFLICT", "This Idempotency-Key was already used with different answers");
+        return;
+      case "version_mismatch":
+        sendProblem(res, 409, "VERSION_MISMATCH", "These answers are for a different version than this session's");
+        return;
+      case "session_invalid":
+        sessionInvalid(res);
+        return;
+      case "closed":
+        closed(res, 0);
+        return;
+      case "access_revoked":
+        sendProblem(res, 403, "NOT_A_MEMBER", "You no longer have access to this form");
+        return;
+      case "not_found":
+        notFound(res);
+        return;
+      case "invalid":
+        problems.validation(res, outcome.errors);
+        return;
+    }
   });
 
   return router;

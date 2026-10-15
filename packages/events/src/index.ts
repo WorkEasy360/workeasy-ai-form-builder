@@ -7,7 +7,8 @@
  * consumers must ignore fields they do not know.
  *
  * PUB-01 defines the envelope and `form.published.v1`, written to the outbox
- * with each publication. Dispatching arrives with JOB-01.
+ * with each publication; RUN-02 adds `submission.accepted.v1`, written with
+ * each stored response. Dispatching arrives with JOB-01.
  */
 
 export interface EventEnvelope<Type extends string, Data extends object> {
@@ -44,6 +45,36 @@ export function formPublishedV1(input: {
     occurredAt: input.occurredAt.toISOString(),
     tenantId: input.tenantId,
     aggregateId: input.data.formId,
+    ...(input.traceId ? { traceId: input.traceId } : {}),
+    data: input.data,
+  };
+}
+
+export interface SubmissionAcceptedData {
+  formId: string;
+  formVersionId: string;
+  submissionId: string;
+  submissionRevision: number;
+}
+
+export type SubmissionAcceptedV1 = EventEnvelope<"submission.accepted.v1", SubmissionAcceptedData>;
+
+export const SUBMISSION_ACCEPTED_V1 = "submission.accepted.v1";
+
+/** Refers to the submission only; consumers fetch the answers they are allowed to see. */
+export function submissionAcceptedV1(input: {
+  eventId: string;
+  occurredAt: Date;
+  tenantId: string;
+  traceId?: string | undefined;
+  data: SubmissionAcceptedData;
+}): SubmissionAcceptedV1 {
+  return {
+    eventId: input.eventId,
+    eventType: SUBMISSION_ACCEPTED_V1,
+    occurredAt: input.occurredAt.toISOString(),
+    tenantId: input.tenantId,
+    aggregateId: input.data.submissionId,
     ...(input.traceId ? { traceId: input.traceId } : {}),
     data: input.data,
   };

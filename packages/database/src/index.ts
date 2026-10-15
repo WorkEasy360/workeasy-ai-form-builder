@@ -6,6 +6,8 @@ export * as identityRepo from "./repositories/identity.js";
 export * as orgRepo from "./repositories/organization.js";
 export * as publishRepo from "./repositories/publishing.js";
 export * as publicFormsRepo from "./repositories/public-forms.js";
+export * as intakeRepo from "./repositories/intake.js";
+export type { LockedSession, NewSubmission, RecordedRequest } from "./repositories/intake.js";
 export type { Acceptance, PublicForm, RespondentSession, StartedSession } from "./repositories/public-forms.js";
 export type { AuditInput, FormVersion, NewVersionInput, OutboxInput, VersionSummary } from "./repositories/publishing.js";
 export type { CreatedSession, IdentityClaims, ResolvedSession, UserProfile } from "./repositories/identity.js";

@@ -30,6 +30,8 @@ export interface FormRendererProps {
   titleLevel?: 1 | 2 | undefined;
   /** Shown on the success screen, e.g. "Start again" in a preview. */
   restartLabel?: string | undefined;
+  /** Extra text under the success message, such as a receipt reference. */
+  successDetail?: string | undefined;
 }
 
 type Phase = { kind: "filling" } | { kind: "submitting" } | { kind: "failed"; message: string } | { kind: "done" };
@@ -50,7 +52,7 @@ function focusControl(event: MouseEvent<HTMLAnchorElement>, id: string) {
   target.scrollIntoView?.({ block: "center" });
 }
 
-export function FormRenderer({ definition, onSubmit, idPrefix = "we", titleLevel = 1, restartLabel }: FormRendererProps) {
+export function FormRenderer({ definition, onSubmit, idPrefix = "we", titleLevel = 1, restartLabel, successDetail }: FormRendererProps) {
   const [answers, setAnswers] = useState<Answers>({});
   const [pageId, setPageId] = useState<string | undefined>();
   const [attempted, setAttempted] = useState<ReadonlySet<string>>(new Set());
@@ -148,6 +150,7 @@ export function FormRenderer({ definition, onSubmit, idPrefix = "we", titleLevel
             {definition.title}
           </Title>
           <p className="we-success">{definition.success.message}</p>
+        {successDetail && <p className="we-help">{successDetail}</p>}
           {restartLabel && (
             <button type="button" className="we-button" onClick={restart}>
               {restartLabel}

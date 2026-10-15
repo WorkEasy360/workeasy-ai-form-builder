@@ -140,9 +140,22 @@ export async function checkSessionAcceptance(trx: Trx, session: RespondentSessio
     .where("f.id", "=", session.formId)
     .where("f.deleted_at", "is", null)
     .executeTakeFirst();
-  if (!form?.active_version_id || form.state === "draft" || form.state === "archived") return { accepting: false, reason: "not_found" };
+  return judgeAcceptance(trx, form ? { state: form.state, activeVersionId: form.active_version_id, accessMode: form.mode ?? "public" } : undefined, session);
+}
+
+/**
+ * The single rule for whether a session may submit, given the form's current
+ * lifecycle and policy: shared by the acceptance check and the intake
+ * transaction (which passes the row it has locked).
+ */
+export async function judgeAcceptance(
+  trx: Trx,
+  form: { state: FormState; activeVersionId: string | null; accessMode: AccessMode } | undefined,
+  session: Pick<RespondentSession, "tenantId" | "actorId">,
+): Promise<Acceptance> {
+  if (!form?.activeVersionId || form.state === "draft" || form.state === "archived") return { accepting: false, reason: "not_found" };
   if (form.state !== "published") return { accepting: false, reason: "closed" };
-  if (form.mode === "organization") {
+  if (form.accessMode === "organization") {
     if (!session.actorId || !(await isActiveMember(trx, session.tenantId, session.actorId))) return { accepting: false, reason: "access_revoked" };
   }
   return { accepting: true };
