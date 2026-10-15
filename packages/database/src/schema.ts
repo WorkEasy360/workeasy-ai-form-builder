@@ -45,6 +45,7 @@ export interface FormsTable {
   name: string;
   owner_id: string;
   state: Generated<FormState>;
+  active_version_id: Generated<string | null>;
   retention_days: Generated<number>;
   deleted_at: Date | null;
   created_at: CreatedAt;
@@ -84,6 +85,48 @@ export interface FormDraftsTable {
   updated_at: UpdatedAt;
 }
 
+export interface FormVersionsTable {
+  id: Generated<string>;
+  tenant_id: string;
+  form_id: string;
+  version_number: number;
+  schema_version: string;
+  definition: Record<string, unknown>;
+  public_projection: Record<string, unknown>;
+  content_hash: Buffer;
+  workflow_snapshot: Generated<Record<string, unknown>>;
+  draft_revision: number;
+  publish_key_hash: Buffer;
+  published_by: string;
+  published_at: ColumnType<Date, never, never>;
+}
+
+export type AuditActorType = "user" | "system";
+
+export interface AuditEventsTable {
+  id: Generated<string>;
+  tenant_id: string;
+  actor_type: AuditActorType;
+  actor_id: string | null;
+  action: string;
+  resource_type: string;
+  resource_id: string;
+  request_id: string | null;
+  metadata: Generated<Record<string, unknown>>;
+  occurred_at: ColumnType<Date, never, never>;
+}
+
+export interface OutboxEventsTable {
+  id: Generated<string>;
+  tenant_id: string;
+  event_type: string;
+  aggregate_id: string;
+  payload: Record<string, unknown>;
+  trace_id: string | null;
+  occurred_at: ColumnType<Date, Date | undefined, never>;
+  dispatched_at: Date | null;
+}
+
 export interface Database {
   tenants: TenantsTable;
   users: UsersTable;
@@ -92,6 +135,9 @@ export interface Database {
   form_drafts: FormDraftsTable;
   auth_sessions: AuthSessionsTable;
   form_grants: FormGrantsTable;
+  form_versions: FormVersionsTable;
+  audit_events: AuditEventsTable;
+  outbox_events: OutboxEventsTable;
 }
 
 export type Tenant = Selectable<TenantsTable>;

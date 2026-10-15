@@ -11,6 +11,7 @@ export {
   type PrivacyClass,
   type ValueKind,
 } from "./fields";
+export { canonicalJson, publicProjection } from "./publish";
 export {
   blankDefinition,
   DEFAULT_SUCCESS_MESSAGE,

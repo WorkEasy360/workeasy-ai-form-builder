@@ -23,6 +23,8 @@ export interface FormSummary {
   name: string;
   state: FormState;
   ownerId: string;
+  /** The published version new respondents get, if any. */
+  activeVersionId: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -77,6 +79,7 @@ export async function listForms(trx: Trx, options: ListFormsOptions): Promise<Fo
       "f.name",
       "f.state",
       "f.owner_id",
+      "f.active_version_id",
       "f.created_at",
       "f.updated_at",
       // Full-precision text keeps the cursor exact (JS Dates only hold milliseconds).
@@ -119,7 +122,7 @@ export async function listForms(trx: Trx, options: ListFormsOptions): Promise<Fo
   };
 }
 
-const SUMMARY_COLUMNS = ["id", "slug", "name", "state", "owner_id", "created_at", "updated_at"] as const;
+const SUMMARY_COLUMNS = ["id", "slug", "name", "state", "owner_id", "active_version_id", "created_at", "updated_at"] as const;
 
 function toSummary(row: {
   id: string;
@@ -127,6 +130,7 @@ function toSummary(row: {
   name: string;
   state: FormState;
   owner_id: string;
+  active_version_id: string | null;
   created_at: Date;
   updated_at: Date;
 }): FormSummary {
@@ -136,6 +140,7 @@ function toSummary(row: {
     name: row.name,
     state: row.state,
     ownerId: row.owner_id,
+    activeVersionId: row.active_version_id,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

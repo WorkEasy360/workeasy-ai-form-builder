@@ -1,3 +1,4 @@
+import { createHash, randomUUID } from "node:crypto";
 import { Router, type Response } from "express";
 import type { Transaction } from "kysely";
 import {
@@ -11,18 +12,32 @@ import {
 import {
   identityRepo,
   orgRepo,
+  publishRepo,
   withContext,
   type Database,
   type FormListCursor,
   type FormSummary,
   type MembershipRecord,
   type ResolvedSession,
+  type VersionSummary,
 } from "@workeasy/database";
-import { blankDefinition, definitionFromTemplate, FORM_TEMPLATES, validateDraft } from "@workeasy/form-engine";
+import { FORM_PUBLISHED_V1, formPublishedV1 } from "@workeasy/events";
+import {
+  blankDefinition,
+  canonicalJson,
+  definitionFromTemplate,
+  FORM_TEMPLATES,
+  publicProjection,
+  validateDefinition,
+  validateDraft,
+} from "@workeasy/form-engine";
+import type { DefinitionIssue, FormDefinition } from "@workeasy/form-schema";
 import type { z } from "zod";
 import type { AppDependencies } from "../app.js";
 import {
+  ActivateVersionBodySchema,
   CreateFormBodySchema,
+  IDEMPOTENCY_KEY_PATTERN,
   DuplicateFormBodySchema,
   FormGrantsBodySchema,
   FormListQuerySchema,
@@ -32,10 +47,16 @@ import {
   type FormResponse,
   type FormSummaryBody,
   type MeResponse,
+  type PublishResponse,
   type SaveDraftResponse,
+  type ValidateResponse,
+  type VersionListResponse,
+  type VersionResponse,
+  type VersionSummaryBody,
 } from "../contract/schemas.js";
 import { parseCookies } from "../http/cookies.js";
 import { problems, sendProblem, type FieldError, type ProblemExtensions } from "../http/problem.js";
+import { requestIdOf } from "../http/request-context.js";
 import { requireSameOrigin } from "../http/same-origin.js";
 import { sessionCookieName } from "./auth.js";
 
@@ -48,6 +69,26 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
  */
 const CREATOR_GRANTS: readonly FormPermission[] = ["forms.edit", "forms.publish", "forms.manage_access"];
 const SLUG_ATTEMPTS = 3;
+const MAX_VERSIONS_LISTED = 100;
+
+const sha256 = (text: string) => createHash("sha256").update(text, "utf8").digest();
+
+function versionBody(version: VersionSummary, activeVersionId: string | null): VersionSummaryBody {
+  return {
+    id: version.id,
+    versionNumber: version.versionNumber,
+    schemaVersion: version.schemaVersion,
+    draftRevision: version.draftRevision,
+    contentHash: version.contentHash.toString("hex"),
+    publishedAt: version.publishedAt.toISOString(),
+    publishedBy: version.publishedBy,
+    active: version.id === activeVersionId,
+  };
+}
+
+function issuesAsErrors(issues: readonly DefinitionIssue[]): FieldError[] {
+  return issues.map((i) => ({ field: i.path || "/", code: i.code, message: i.message }));
+}
 
 function sessionOf(res: Response): ResolvedSession {
   return res.locals.session as ResolvedSession;
@@ -85,6 +126,7 @@ function summaryBody(form: FormSummary, permissions: Set<FormPermission>): FormS
     name: form.name,
     state: form.state,
     ownerId: form.ownerId,
+    activeVersionId: form.activeVersionId,
     createdAt: form.createdAt.toISOString(),
     updatedAt: form.updatedAt.toISOString(),
     // Stable order, so clients and tests can compare lists.
@@ -371,14 +413,14 @@ export function apiV1Router({ db, settings }: AppDependencies): Router {
     );
   });
 
-  // Restored forms return to draft. Once publishing exists (PUB-01), a form
-  // with a published version will restore to closed instead.
+  // A restored form returns to draft if it was never published, otherwise to
+  // closed: reopening it to respondents is a separate, deliberate step.
   router.post("/organizations/:orgId/forms/:formId/restore", async (req, res) => {
     const { orgId, formId } = req.params;
     respond(
       res,
-      await onForm(res, orgId, formId, "forms.publish", async (trx, { permissions }): Promise<Outcome<FormResponse>> => {
-        const form = await orgRepo.transitionFormState(trx, formId, ["archived"], "draft");
+      await onForm(res, orgId, formId, "forms.publish", async (trx, { form: current, permissions }): Promise<Outcome<FormResponse>> => {
+        const form = await orgRepo.transitionFormState(trx, formId, ["archived"], current.activeVersionId ? "closed" : "draft");
         if (!form) return { kind: "conflict", code: "FORM_STATE_CONFLICT", title: "The form is not archived" };
         return { kind: "ok", body: await formResponse(trx, form, permissions) };
       }),
@@ -448,6 +490,210 @@ export function apiV1Router({ db, settings }: AppDependencies): Router {
           };
         }
         return { kind: "ok", body: { revision, issues: checked.issues }, headers: { ETag: draftEtag(revision) } };
+      }),
+    );
+  });
+
+  // Publishing (PUB-01, docs/02 §5) -----------------------------------------
+
+  /** The same checks publishing runs, for the publish checklist. Nothing is changed. */
+  router.post("/organizations/:orgId/forms/:formId/validate", async (req, res) => {
+    const { orgId, formId } = req.params;
+    respond(
+      res,
+      await onForm(res, orgId, formId, "forms.edit", async (trx, { form }): Promise<Outcome<ValidateResponse>> => {
+        const draft = await orgRepo.getDraft(trx, formId);
+        if (!draft) throw new Error(`Form ${formId} has no draft`);
+        const checked = validateDefinition(draft.definition);
+        const warnings: ValidateResponse["warnings"] = [];
+        if (checked.ok && form.activeVersionId) {
+          const active = await publishRepo.getVersion(trx, formId, form.activeVersionId);
+          if (active && active.contentHash.equals(sha256(canonicalJson(checked.definition)))) {
+            warnings.push({ code: "NO_CHANGES", message: `The draft is the same as version ${active.versionNumber}, which is already live.` });
+          }
+        }
+        return {
+          kind: "ok",
+          body: { revision: draft.revision, publishable: checked.ok, issues: checked.ok ? [] : checked.issues, warnings },
+          headers: { ETag: draftEtag(draft.revision) },
+        };
+      }),
+    );
+  });
+
+  /**
+   * Publishes the draft revision named in If-Match as a new immutable
+   * version and makes it active, in one transaction with its audit entry and
+   * outbox event. The Idempotency-Key makes retries safe: the same key returns
+   * the version it created; reusing it for a different revision is a conflict.
+   */
+  router.post("/organizations/:orgId/forms/:formId/publish", async (req, res) => {
+    const ifMatch = req.get("if-match");
+    if (!ifMatch) {
+      sendProblem(res, 428, "IF_MATCH_REQUIRED", "Send the draft revision you are publishing in an If-Match header");
+      return;
+    }
+    const expected = parseDraftEtag(ifMatch);
+    if (expected === undefined) {
+      sendProblem(res, 400, "INVALID_IF_MATCH", 'If-Match must be a draft ETag such as "draft-3"');
+      return;
+    }
+    const idempotencyKey = req.get("idempotency-key");
+    if (!idempotencyKey || !IDEMPOTENCY_KEY_PATTERN.test(idempotencyKey)) {
+      sendProblem(res, 400, "IDEMPOTENCY_KEY_REQUIRED", "Send an Idempotency-Key header of 8 to 200 visible characters");
+      return;
+    }
+    const keyHash = sha256(idempotencyKey);
+    const { orgId, formId } = req.params;
+    const userId = sessionOf(res).userId;
+    const requestId = requestIdOf(res);
+    respond(
+      res,
+      await onForm(res, orgId, formId, "forms.publish", async (trx, { permissions }): Promise<Outcome<PublishResponse>> => {
+        const locked = await publishRepo.lockForm(trx, formId);
+        if (!locked) return { kind: "not_found" };
+
+        const replay = await publishRepo.versionByPublishKey(trx, formId, keyHash);
+        if (replay) {
+          if (replay.draftRevision !== expected) {
+            return { kind: "conflict", code: "IDEMPOTENCY_CONFLICT", title: "This Idempotency-Key was already used to publish a different revision" };
+          }
+          const form = await orgRepo.getFormSummary(trx, formId);
+          return {
+            kind: "ok",
+            body: { form: summaryBody(form!, permissions), version: versionBody(replay, form!.activeVersionId) },
+            headers: { "Idempotent-Replayed": "true" },
+          };
+        }
+
+        if (locked.state === "archived") return { kind: "conflict", code: "FORM_ARCHIVED", title: "Restore the form before publishing it" };
+        const draft = await orgRepo.getDraft(trx, formId);
+        if (!draft) throw new Error(`Form ${formId} has no draft`);
+        if (draft.revision !== expected) {
+          return {
+            kind: "problem",
+            status: 412,
+            code: "DRAFT_CONFLICT",
+            title: "The draft changed since you checked it",
+            extra: { currentRevision: draft.revision },
+          };
+        }
+        const checked = validateDefinition(draft.definition);
+        if (!checked.ok) {
+          return { kind: "problem", status: 422, code: "NOT_PUBLISHABLE", title: "Fix these problems before publishing", extra: { errors: issuesAsErrors(checked.issues) } };
+        }
+
+        const definition: FormDefinition = checked.definition;
+        const { version, state } = await publishRepo.insertActiveVersion(trx, {
+          tenantId: orgId,
+          formId,
+          schemaVersion: definition.schemaVersion,
+          definition: definition as unknown as Record<string, unknown>,
+          publicProjection: publicProjection(definition) as unknown as Record<string, unknown>,
+          contentHash: sha256(canonicalJson(definition)),
+          draftRevision: draft.revision,
+          publishKeyHash: keyHash,
+          publishedBy: userId,
+          currentState: locked.state,
+        });
+        await publishRepo.appendAudit(trx, {
+          tenantId: orgId,
+          actor: { type: "user", id: userId },
+          action: "form.published",
+          resourceType: "form",
+          resourceId: formId,
+          requestId,
+          metadata: { versionId: version.id, versionNumber: version.versionNumber, draftRevision: draft.revision, previousVersionId: locked.activeVersionId },
+        });
+        const event = formPublishedV1({
+          eventId: randomUUID(),
+          occurredAt: version.publishedAt,
+          tenantId: orgId,
+          traceId: requestId,
+          data: { formId, formVersionId: version.id, versionNumber: version.versionNumber },
+        });
+        await publishRepo.appendOutbox(trx, {
+          id: event.eventId,
+          tenantId: orgId,
+          eventType: FORM_PUBLISHED_V1,
+          aggregateId: event.aggregateId,
+          occurredAt: version.publishedAt,
+          payload: { ...event.data },
+          traceId: requestId,
+        });
+        const form = await orgRepo.getFormSummary(trx, formId);
+        if (!form || form.state !== state) throw new Error(`Form ${formId} changed during publish`);
+        return {
+          kind: "ok",
+          status: 201,
+          body: { form: summaryBody(form, permissions), version: versionBody(version, version.id) },
+          headers: { Location: `/api/v1/organizations/${orgId}/forms/${formId}/versions/${version.id}` },
+        };
+      }),
+    );
+  });
+
+  router.get("/organizations/:orgId/forms/:formId/versions", async (req, res) => {
+    const { orgId, formId } = req.params;
+    respond(
+      res,
+      await onForm(res, orgId, formId, "forms.read", async (trx, { form }): Promise<Outcome<VersionListResponse>> => ({
+        kind: "ok",
+        body: { items: (await publishRepo.listVersions(trx, formId, MAX_VERSIONS_LISTED)).map((v) => versionBody(v, form.activeVersionId)) },
+      })),
+    );
+  });
+
+  router.get("/organizations/:orgId/forms/:formId/versions/:versionId", async (req, res) => {
+    const { orgId, formId, versionId } = req.params;
+    if (!UUID_PATTERN.test(versionId)) {
+      problems.notFound(res);
+      return;
+    }
+    respond(
+      res,
+      await onForm(res, orgId, formId, "forms.read", async (trx, { form }): Promise<Outcome<VersionResponse>> => {
+        const version = await publishRepo.getVersion(trx, formId, versionId);
+        if (!version) return { kind: "not_found" };
+        // Versions never change, but the active flag does, so clients revalidate.
+        return { kind: "ok", body: { version: versionBody(version, form.activeVersionId), definition: version.definition } };
+      }),
+    );
+  });
+
+  /** Rollback (or roll forward): makes an existing version of this form the one new respondents get. */
+  router.post("/organizations/:orgId/forms/:formId/activate-version", async (req, res) => {
+    const body = ActivateVersionBodySchema.safeParse(req.body);
+    if (!body.success) {
+      problems.validation(res, issuesToErrors(body.error));
+      return;
+    }
+    const { orgId, formId } = req.params;
+    const userId = sessionOf(res).userId;
+    respond(
+      res,
+      await onForm(res, orgId, formId, "forms.publish", async (trx, { permissions }): Promise<Outcome<PublishResponse>> => {
+        const locked = await publishRepo.lockForm(trx, formId);
+        if (!locked) return { kind: "not_found" };
+        if (locked.state === "archived") return { kind: "conflict", code: "FORM_ARCHIVED", title: "Restore the form before changing its live version" };
+        const version = await publishRepo.getVersion(trx, formId, body.data.versionId);
+        if (!version) {
+          return { kind: "invalid", errors: [{ field: "versionId", code: "UNKNOWN_VERSION", message: "This form has no such version" }] };
+        }
+        if (locked.activeVersionId !== version.id) {
+          await publishRepo.setActiveVersion(trx, formId, version.id);
+          await publishRepo.appendAudit(trx, {
+            tenantId: orgId,
+            actor: { type: "user", id: userId },
+            action: "form.version_activated",
+            resourceType: "form",
+            resourceId: formId,
+            requestId: requestIdOf(res),
+            metadata: { versionId: version.id, versionNumber: version.versionNumber, previousVersionId: locked.activeVersionId },
+          });
+        }
+        const form = await orgRepo.getFormSummary(trx, formId);
+        return { kind: "ok", body: { form: summaryBody(form!, permissions), version: versionBody(version, version.id) } };
       }),
     );
   });

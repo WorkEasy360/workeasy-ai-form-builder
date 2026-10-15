@@ -4,6 +4,7 @@ import {
   addField,
   addPage,
   BuilderError,
+  diffDefinitions,
   duplicateField,
   FIELD_TYPE_INFO,
   fieldRuleOf,
@@ -19,11 +20,12 @@ import { validateDraft } from "@workeasy/form-engine";
 import { FormField, RENDERER_CSS, themeStyle } from "@workeasy/form-renderer";
 import type { FieldType, FormDefinition } from "@workeasy/form-schema";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { api, ApiError, type FormResponse } from "../../../../../../lib/api";
+import { api, ApiError, type FormResponse, type FormSummary } from "../../../../../../lib/api";
 import { ConflictPanel } from "./conflict-panel";
 import { DesignInspector } from "./design";
 import { FieldInspector, FormInspector, PageInspector } from "./inspector";
 import { PreviewPane } from "./preview";
+import { PublishPanel } from "./publish-panel";
 import { BUILDER_CSS } from "./styles";
 import { useEditor, type DraftBody } from "./use-editor";
 
@@ -33,7 +35,7 @@ type Load =
   | { kind: "not-found" }
   | { kind: "read-only" }
   | { kind: "error"; message: string }
-  | { kind: "ready"; formName: string; archived: boolean; draft: DraftBody };
+  | { kind: "ready"; form: FormSummary; draft: DraftBody };
 
 type Selection = { kind: "form" } | { kind: "page"; id: string } | { kind: "field"; id: string };
 
@@ -97,7 +99,7 @@ export function BuilderApp({ orgId, formId }: { orgId: string; formId: string })
     let cancelled = false;
     Promise.all([api<FormResponse>(formPath), api<DraftBody>(`${formPath}/draft`)])
       .then(([form, draft]) => {
-        if (!cancelled) setLoad({ kind: "ready", formName: form.form.name, archived: form.form.state === "archived", draft });
+        if (!cancelled) setLoad({ kind: "ready", form: form.form, draft });
       })
       .catch((err: unknown) => {
         if (cancelled) return;
@@ -138,41 +140,70 @@ export function BuilderApp({ orgId, formId }: { orgId: string; formId: string })
   }
   return (
     <Editor
-      draftPath={`${formPath}/draft`}
+      formPath={formPath}
       listHref={listHref}
       previewHref={`/o/${orgId}/forms/${formId}/preview`}
-      formName={load.formName}
-      archived={load.archived}
+      initialForm={load.form}
       initial={load.draft}
     />
   );
 }
 
+/** Where the form stands for respondents, for the top bar. */
+function publicationText(form: FormSummary, unpublishedChanges: number | undefined): string {
+  if (!form.activeVersionId) return "Not published yet";
+  const where = form.state === "closed" ? "Published, closed" : form.state === "archived" ? "Archived" : "Published";
+  if (unpublishedChanges === undefined) return where;
+  if (unpublishedChanges === 0) return `${where} · no unpublished changes`;
+  return `${where} · ${unpublishedChanges === 1 ? "1 unpublished change" : `${unpublishedChanges} unpublished changes`}`;
+}
+
 function Editor({
-  draftPath,
+  formPath,
   listHref,
   previewHref,
-  formName,
-  archived,
+  initialForm,
   initial,
 }: {
-  draftPath: string;
+  formPath: string;
   listHref: string;
   previewHref: string;
-  formName: string;
-  archived: boolean;
+  initialForm: FormSummary;
   initial: DraftBody;
 }) {
-  const editor = useEditor(draftPath, initial);
+  const editor = useEditor(`${formPath}/draft`, initial);
+  const [form, setForm] = useState(initialForm);
+  const formName = form.name;
+  const archived = form.state === "archived";
   const definition = editor.definition;
   const [selected, setSelected] = useState<Selection>({ kind: "form" });
   const [currentPageId, setCurrentPageId] = useState<string | undefined>();
   const [notice, setNotice] = useState("");
-  const [mode, setMode] = useState<"edit" | "preview">("edit");
+  const [mode, setMode] = useState<"edit" | "preview" | "publish">("edit");
+  const [live, setLive] = useState<{ id: string; definition: FormDefinition } | undefined>();
   // After a move, focus returns to the moved item's controls (docs/01 §3: keyboard reordering).
   const pendingFocus = useRef<{ kind: "field" | "page"; id: string; direction: -1 | 1 } | undefined>(undefined);
 
   const issues = useMemo(() => validateDraft(definition).issues, [definition]);
+  const unpublishedChanges = useMemo(
+    () => (live && live.id === form.activeVersionId ? diffDefinitions(live.definition, definition).length : undefined),
+    [live, form.activeVersionId, definition],
+  );
+
+  // The live version's definition: what respondents get, compared with the draft.
+  useEffect(() => {
+    const activeId = form.activeVersionId;
+    if (!activeId) return;
+    let cancelled = false;
+    api<{ definition: FormDefinition }>(`${formPath}/versions/${activeId}`)
+      .then((v) => {
+        if (!cancelled) setLive({ id: activeId, definition: v.definition });
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [form.activeVersionId, formPath]);
   const page = definition.pages.find((p) => p.id === currentPageId) ?? definition.pages[0]!;
   const pageIndex = definition.pages.indexOf(page);
   // Undo can remove what was selected; fall back to the form details.
@@ -307,9 +338,13 @@ function Editor({
           <span role="status" className="b-muted">
             {statusText(editor.saveState)}
           </span>
+          <span className="b-muted">{publicationText(form, unpublishedChanges)}</span>
           <span className="b-muted">{issues.length === 0 ? "Ready to publish" : `${issues.length} to fix before publishing`}</span>
           <button type="button" className="b-btn" aria-pressed={mode === "preview"} onClick={() => setMode(mode === "preview" ? "edit" : "preview")}>
             Preview
+          </button>
+          <button type="button" className="b-btn" aria-pressed={mode === "publish"} onClick={() => setMode(mode === "publish" ? "edit" : "publish")}>
+            Publish…
           </button>
           <button
             type="button"
@@ -344,6 +379,17 @@ function Editor({
 
       {mode === "preview" ? (
         <PreviewPane definition={definition} openHref={previewHref} />
+      ) : mode === "publish" ? (
+        <PublishPanel
+          formPath={formPath}
+          form={form}
+          definition={definition}
+          live={live}
+          readOnly={readOnly}
+          saveForPublish={editor.saveForPublish}
+          onFormChange={setForm}
+          announce={setNotice}
+        />
       ) : (
         <div className="b-columns">
           <nav className="b-panel" aria-label="Pages and questions">

@@ -7,7 +7,8 @@ import type { DraftBody } from "./use-editor";
 const VERBS: Record<DefinitionChange["kind"], string> = { added: "Added", removed: "Removed", changed: "Changed" };
 const TARGETS: Record<Exclude<DefinitionChange["target"], "form">, string> = { page: "page", question: "question", rule: "rule" };
 
-function describe(change: DefinitionChange): string {
+/** One change in plain words, e.g. Changed question “Email”: label. */
+export function describeChange(change: DefinitionChange): string {
   if (change.target === "form") return `Changed the form's ${change.details.join(", ")}`;
   const subject = `${TARGETS[change.target]} “${change.name}”`;
   return change.kind === "changed" ? `Changed ${subject}: ${change.details.join(", ")}` : `${VERBS[change.kind]} ${subject}`;
@@ -24,7 +25,7 @@ function ChangeList({ title, changes }: { title: string; changes: DefinitionChan
       ) : (
         <ul className="b-issues">
           {changes.map((c) => (
-            <li key={`${c.target}:${c.id}:${c.kind}`}>{describe(c)}</li>
+            <li key={`${c.target}:${c.id}:${c.kind}`}>{describeChange(c)}</li>
           ))}
         </ul>
       )}

@@ -76,6 +76,8 @@ export const FormSummarySchema = z.object({
   name: z.string(),
   state: z.enum(FORM_STATES),
   ownerId: Uuid,
+  /** The published version new respondents get; null until the form is first published. */
+  activeVersionId: Uuid.nullable(),
   createdAt: Timestamp,
   updatedAt: Timestamp,
   /** The caller's effective permissions on this form (role defaults plus grants). */
@@ -126,3 +128,52 @@ export const FormGrantsResponseSchema = z.object({
   grants: z.array(FormGrantSchema),
 });
 export type FormGrantsResponse = z.infer<typeof FormGrantsResponseSchema>;
+
+export const VersionSummarySchema = z.object({
+  id: Uuid,
+  versionNumber: z.number().int().min(1),
+  schemaVersion: z.string(),
+  /** The draft revision this version was published from. */
+  draftRevision: z.number().int().min(1),
+  /** SHA-256 (hex) of the canonical definition; equal hashes mean identical content. */
+  contentHash: z.string().regex(/^[0-9a-f]{64}$/),
+  publishedAt: Timestamp,
+  publishedBy: z.object({ id: Uuid, displayName: z.string().nullable() }),
+  /** True for the version new respondents currently get. */
+  active: z.boolean(),
+});
+export type VersionSummaryBody = z.infer<typeof VersionSummarySchema>;
+
+export const VersionListResponseSchema = z.object({ items: z.array(VersionSummarySchema) });
+export type VersionListResponse = z.infer<typeof VersionListResponseSchema>;
+
+export const VersionResponseSchema = z.object({
+  version: VersionSummarySchema,
+  /** The immutable published definition (contracts/form-definition.schema.json). */
+  definition: z.record(z.string(), z.unknown()),
+});
+export type VersionResponse = z.infer<typeof VersionResponseSchema>;
+
+const PublishWarningSchema = z.object({ code: z.string(), message: z.string() });
+
+export const ValidateResponseSchema = z.object({
+  revision: z.number().int().min(1),
+  /** True when the draft passes the same checks publishing runs. */
+  publishable: z.boolean(),
+  /** Blocking problems; publishing is refused while any remain. */
+  issues: z.array(DefinitionIssueSchema),
+  /** Non-blocking notes, such as publishing content identical to the active version. */
+  warnings: z.array(PublishWarningSchema),
+});
+export type ValidateResponse = z.infer<typeof ValidateResponseSchema>;
+
+export const PublishResponseSchema = z.object({
+  form: FormSummarySchema,
+  version: VersionSummarySchema,
+});
+export type PublishResponse = z.infer<typeof PublishResponseSchema>;
+
+export const ActivateVersionBodySchema = z.object({ versionId: Uuid });
+
+/** Client-chosen key that makes a publish request safe to retry. */
+export const IDEMPOTENCY_KEY_PATTERN = /^[!-~]{8,200}$/;

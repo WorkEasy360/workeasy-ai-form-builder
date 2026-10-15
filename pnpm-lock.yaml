@@ -193,6 +193,9 @@ importers:
       '@workeasy/database':
         specifier: workspace:*
         version: link:../../packages/database
+      '@workeasy/events':
+        specifier: workspace:*
+        version: link:../../packages/events
       '@workeasy/form-engine':
         specifier: workspace:*
         version: link:../../packages/form-engine

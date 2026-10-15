@@ -4,6 +4,8 @@ export { InvalidDbContextError, withContext, withTenant, type DbContext } from "
 export { DEFAULT_MIGRATIONS_DIR, migrate, type MigrateOptions, type MigrateResult } from "./migrate.js";
 export * as identityRepo from "./repositories/identity.js";
 export * as orgRepo from "./repositories/organization.js";
+export * as publishRepo from "./repositories/publishing.js";
+export type { AuditInput, FormVersion, NewVersionInput, OutboxInput, VersionSummary } from "./repositories/publishing.js";
 export type { CreatedSession, IdentityClaims, ResolvedSession, UserProfile } from "./repositories/identity.js";
 export type {
   CreateFormInput,

@@ -107,6 +107,14 @@ export function useEditor(draftPath: string, initial: DraftBody) {
     return undefined;
   }, []);
 
+  /** Saves anything pending and returns the saved revision, or undefined if the draft could not be saved. */
+  const saveForPublish = useCallback(async (): Promise<number | undefined> => {
+    const current = autosave.current;
+    if (!current) return undefined;
+    await current.flush();
+    return current.dirty ? undefined : current.currentRevision;
+  }, []);
+
   const keepMine = useCallback(async () => {
     if (!theirs) return;
     await autosave.current?.keepLocal(theirs.revision);
@@ -133,6 +141,7 @@ export function useEditor(draftPath: string, initial: DraftBody) {
     undoLabel: undoLabel(history),
     redoLabel: redoLabel(history),
     saveNow: () => autosave.current?.flush(),
+    saveForPublish,
     unsaved: saveState.kind !== "saved",
     theirs: conflicted ? theirs : null,
     base: conflicted ? base : null,

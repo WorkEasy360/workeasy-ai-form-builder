@@ -56,9 +56,26 @@ export interface FormSummary {
   name: string;
   state: FormState;
   ownerId: string;
+  activeVersionId: string | null;
   createdAt: string;
   updatedAt: string;
   permissions: string[];
+}
+
+export interface VersionSummary {
+  id: string;
+  versionNumber: number;
+  schemaVersion: string;
+  draftRevision: number;
+  contentHash: string;
+  publishedAt: string;
+  publishedBy: { id: string; displayName: string | null };
+  active: boolean;
+}
+
+export interface PublishResponse {
+  form: FormSummary;
+  version: VersionSummary;
 }
 
 export interface FormResponse {

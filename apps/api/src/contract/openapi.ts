@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  ActivateVersionBodySchema,
   DraftResponseSchema,
   SaveDraftResponseSchema,
   CreateFormBodySchema,
@@ -12,7 +13,11 @@ import {
   FormListResponseSchema,
   MeResponseSchema,
   ProblemSchema,
+  PublishResponseSchema,
   ReadyResponseSchema,
+  ValidateResponseSchema,
+  VersionListResponseSchema,
+  VersionResponseSchema,
 } from "./schemas.js";
 
 type JsonSchema = Record<string, unknown>;
@@ -60,7 +65,7 @@ export function buildOpenApiDocument(): JsonSchema {
       title: "Workeasy Forms API",
       version: "0.1.0",
       description:
-        "Routes implemented through BLD-01. Organization routes derive the tenant from the authenticated membership; resources outside the caller's organizations return 404. Every response carries an X-Request-Id header, and every error is application/problem+json with the same requestId.",
+        "Routes implemented through PUB-01. Organization routes derive the tenant from the authenticated membership; resources outside the caller's organizations return 404. Every response carries an X-Request-Id header, and every error is application/problem+json with the same requestId.",
     },
     servers: [{ url: "/" }],
     components: {
@@ -221,7 +226,7 @@ export function buildOpenApiDocument(): JsonSchema {
         parameters: [uuidPath("orgId", "Organization (tenant) ID"), uuidPath("formId", "Form ID")],
         post: {
           operationId: "restoreForm",
-          summary: "Restore an archived form to draft (requires forms.publish)",
+          summary: "Restore an archived form: to draft if never published, otherwise to closed (requires forms.publish)",
           security: [{ consoleSession: [] }],
           responses: {
             "200": json("The restored form", FormResponseSchema),
@@ -258,6 +263,90 @@ export function buildOpenApiDocument(): JsonSchema {
             "401": unauthenticated,
             "404": problem("Organization not found or not visible"),
             "422": problem("Invalid query parameters"),
+          },
+        },
+      },
+      "/api/v1/organizations/{orgId}/forms/{formId}/validate": {
+        parameters: [uuidPath("orgId", "Organization (tenant) ID"), uuidPath("formId", "Form ID")],
+        post: {
+          operationId: "validateDraft",
+          summary: "Run the publish checks on the current draft without changing anything (requires forms.edit)",
+          security: [{ consoleSession: [] }],
+          responses: {
+            "200": json("Checklist result for the current draft; the ETag header carries its revision", ValidateResponseSchema),
+            "401": unauthenticated,
+            "403": crossOrigin,
+            "404": problem("Organization or form not found or not visible"),
+          },
+        },
+      },
+      "/api/v1/organizations/{orgId}/forms/{formId}/publish": {
+        parameters: [uuidPath("orgId", "Organization (tenant) ID"), uuidPath("formId", "Form ID")],
+        post: {
+          operationId: "publishForm",
+          summary: "Publish a draft revision as a new immutable version and make it active (requires forms.publish)",
+          description:
+            "The version, the active pointer, the audit entry and the form.published.v1 outbox event commit together. Retrying with the same Idempotency-Key returns the same version with Idempotent-Replayed: true.",
+          security: [{ consoleSession: [] }],
+          parameters: [
+            { name: "If-Match", in: "header", required: true, description: 'Draft ETag of the revision to publish, e.g. "draft-3"', schema: { type: "string" } },
+            { name: "Idempotency-Key", in: "header", required: true, description: "8 to 200 visible ASCII characters, unique per publish attempt", schema: { type: "string" } },
+          ],
+          responses: {
+            "200": json("A replayed request: the version this key already created", PublishResponseSchema),
+            "201": json("Published; Location points at the new version", PublishResponseSchema),
+            "400": problem("If-Match is not a draft ETag, or the Idempotency-Key is missing or malformed"),
+            "401": unauthenticated,
+            "403": crossOrigin,
+            "404": problem("Organization or form not found or not visible"),
+            "409": problem("FORM_ARCHIVED, or IDEMPOTENCY_CONFLICT: the key was used for a different revision"),
+            "412": problem("DRAFT_CONFLICT: the draft changed since that revision; currentRevision is included"),
+            "422": problem("NOT_PUBLISHABLE: the draft fails validation; errors lists each problem"),
+            "428": problem("If-Match header missing"),
+          },
+        },
+      },
+      "/api/v1/organizations/{orgId}/forms/{formId}/versions": {
+        parameters: [uuidPath("orgId", "Organization (tenant) ID"), uuidPath("formId", "Form ID")],
+        get: {
+          operationId: "listFormVersions",
+          summary: "Published versions, newest first (requires forms.read)",
+          security: [{ consoleSession: [] }],
+          responses: {
+            "200": json("Version summaries", VersionListResponseSchema),
+            "401": unauthenticated,
+            "404": problem("Organization or form not found or not visible"),
+          },
+        },
+      },
+      "/api/v1/organizations/{orgId}/forms/{formId}/versions/{versionId}": {
+        parameters: [uuidPath("orgId", "Organization (tenant) ID"), uuidPath("formId", "Form ID"), uuidPath("versionId", "Version ID")],
+        get: {
+          operationId: "getFormVersion",
+          summary: "One published version with its immutable definition (requires forms.read)",
+          security: [{ consoleSession: [] }],
+          responses: {
+            "200": json("The version", VersionResponseSchema),
+            "401": unauthenticated,
+            "404": problem("Organization, form or version not found or not visible"),
+          },
+        },
+      },
+      "/api/v1/organizations/{orgId}/forms/{formId}/activate-version": {
+        parameters: [uuidPath("orgId", "Organization (tenant) ID"), uuidPath("formId", "Form ID")],
+        post: {
+          operationId: "activateFormVersion",
+          summary: "Make an existing version of this form the one new respondents get: rollback or roll forward (requires forms.publish)",
+          description: "Only versions of the same form can be activated. The change is audited; activating the already-active version changes nothing.",
+          security: [{ consoleSession: [] }],
+          requestBody: { required: true, content: { "application/json": { schema: schemaOf(ActivateVersionBodySchema, "input") } } },
+          responses: {
+            "200": json("The form and its now-active version", PublishResponseSchema),
+            "401": unauthenticated,
+            "403": crossOrigin,
+            "404": problem("Organization or form not found or not visible"),
+            "409": problem("FORM_ARCHIVED"),
+            "422": problem("UNKNOWN_VERSION: not a version of this form"),
           },
         },
       },

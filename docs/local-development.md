@@ -89,7 +89,7 @@ Everything lives in the `app` schema. Each process connects as its own role (`pa
 | Role | Env var | Used by | Privileges |
 |---|---|---|---|
 | `workeasy_owner` | `DATABASE_MIGRATION_URL` | Migrations only | Owns every object in `app` |
-| `workeasy_api` | `DATABASE_URL` | API | `SELECT/INSERT/UPDATE` on tenant tables; no `DELETE` |
+| `workeasy_api` | `DATABASE_URL` | API | `SELECT/INSERT/UPDATE` on tenant tables; no `DELETE`. Published versions: `SELECT/INSERT` only. Audit and outbox: `INSERT` only |
 | `workeasy_worker` | `DATABASE_WORKER_URL` | Worker | `SELECT` until job types need more |
 | `workeasy_public` | `DATABASE_PUBLIC_URL` | Public ingestion | Nothing yet (RUN-01 adds the slug locator) |
 
@@ -107,6 +107,8 @@ const forms = await withTenant(db, tenantId, (trx) => trx.selectFrom("forms").se
 `withTenant` / `withContext` open a transaction and set `app.tenant_id` (and optionally `app.user_id`) with transaction-local `set_config`, so the context ends with the transaction and never carries over to the next user of a pooled connection. The ID must come from server-side authentication. A query outside the wrapper sees no tenant rows.
 
 `users` holds global identities: a user context sees only its own row, and a tenant context sees only the tenant's members.
+
+**Immutable records:** `form_versions` and `audit_events` reject `UPDATE` from every role, including the owner, through a trigger. Runtime roles cannot delete them either. Purging them is a governed operation (GOV-01).
 
 **Migrations** are plain SQL files in `packages/database/migrations/` (`NNNN_name.sql`). They are forward-only, each runs in its own transaction, and they are serialized with an advisory lock. Checksums are recorded, so editing an applied migration is refused: add a new migration instead. New tables holding tenant data must enable and force RLS; an integration test checks this for every table with a `tenant_id` column.
 
@@ -175,6 +177,7 @@ The console lists, creates, duplicates, archives and restores forms at `/o/:orgI
 - **Logic:** a question's **Logic** section sets "Show only when"/"Hide when" and "Required only when"/"Optional when" rules. A page's **Skip ahead** section jumps respondents forward after that page. Conditions can only use earlier questions (for a skip, questions on that page or before), with operators and values that suit each question's type. Skips only go forward past the next page, and each page has at most one. An edit that would cause a cycle, a conflict or a backward skip is refused with the reason. If reordering later breaks a rule, the problem shows next to the rule and blocks publishing. Canvas cards are marked "Conditional"/"Required by rule", and pages that skip are marked in the page list.
 - **Design:** "Form details and design" (top of the left panel) sets the accent, background and text colours (hex or colour picker) and corner rounding. Contrast is shown live: text needs 4.5:1 against the background and the accent 3:1. A low-contrast theme still saves but blocks publishing. The canvas shows the theme as you edit.
 - **Preview:** the Preview button swaps the canvas for the form as respondents will see it, rendered by `@workeasy/form-renderer` with the same engine the server uses, at desktop width or a 375 px mobile frame. Rules, skips, required checks, the error summary and the success message all work, and nothing is saved or sent. `/o/:orgId/forms/:formId/preview` shows the last saved draft on its own page. Drafts with rule or page problems list those instead of previewing.
+- **Publish:** "Publish…" opens the checklist (the same `validateDefinition` checks the server runs on publish), lists what changed since the live version, and publishes the saved draft as the next version. The top bar shows whether the form is published and how many changes the draft has that aren't live yet. **Version history** lists every version with who published it and when. Each one can be previewed exactly as respondents saw it, and **Make live** rolls back (or forward) to it. Rollback changes only which version new respondents get; the draft is untouched. Archiving a published form and restoring it returns it as closed, not live.
 - **Keyboard:** every action is a button, so nothing needs dragging. After a question or page moves, focus stays on its move buttons and a status message says where it went (moving past the end of a page opens the next page). Alt+↑/Alt+↓ moves the question whose controls have focus.
 
 `@workeasy/builder` also holds the edit history (`applyStep`/`undo`/`redo`), the autosave controller (`Autosave`) and `diffDefinitions`/`summarizeChanges`, which name changes by stable ID (reused for reviewing AI proposals). `GET …/draft` reports `updatedAt` and `updatedBy` for the conflict message. Pure editing operations live in `@workeasy/builder` (add/update/move/duplicate/remove questions, options and pages). Removing a question also removes the rules that depend on it, and reports them. `updateTheme` changes theme tokens. Rule editing (`setFieldRule`, `setSkipRule`, `removeRule`, `conditionFieldsFor`, `skipTargetsFor`, `ruleProblems`, `guardRuleEdit`) uses the engine's `validateDraft`, so the builder and the engine reject the same rules. New fields and options get random opaque IDs, so labels can change without changing identity.
@@ -209,6 +212,15 @@ The console lists, creates, duplicates, archives and restores forms at `/o/:orgI
 - Markup in labels is shown as text.
 
 `*.browser.test.tsx` files run only in headless Chromium and drive the components with real input events. They also check that every P1 field type has a renderer, codec, validator and export serializer.
+
+## Publishing and versions
+
+The routes are `POST …/validate`, `POST …/publish`, `GET …/versions`, `GET …/versions/:versionId` and `POST …/activate-version` (see `contracts/openapi.json`).
+
+- **Publish** needs `forms.publish`. It also needs `If-Match: "draft-N"` (the revision being published; `412 DRAFT_CONFLICT` if the draft has moved on) and an `Idempotency-Key` (8–200 visible characters). A retry with the same key returns the version already created (`200`, `Idempotent-Replayed: true`). The same key for another revision is `409 IDEMPOTENCY_CONFLICT`. A draft failing validation is `422 NOT_PUBLISHABLE`, with every problem listed. An archived form is `409 FORM_ARCHIVED`.
+- One transaction locks the form row, inserts the version (numbered 1, 2, 3… per form, without gaps under concurrency) and points `forms.active_version_id` at it. In the same transaction it appends a `form.published` audit entry and a `form.published.v1` outbox event (`@workeasy/events`), which carries IDs only. A draft form becomes `published`; a closed form gets the new version but stays closed.
+- Each version stores the definition, a `publicProjection` (only what respondents need, copied key by key), and the SHA-256 of its `canonicalJson`. `validate` uses that hash to warn when the draft is identical to the live version.
+- **Activate** (rollback) accepts only a version of the same form. A composite foreign key `(tenant_id, form_id, active_version_id)` also enforces this in the database. It is audited as `form.version_activated` and emits no event.
 
 ## Errors, logs and health
 
