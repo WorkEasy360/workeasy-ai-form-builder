@@ -10,7 +10,15 @@ interface Share {
   embedHtml: string;
   qrPayload: string;
   live: boolean;
+  accessMode: AccessMode;
 }
+
+type AccessMode = "public" | "organization";
+
+const ACCESS_CHOICES: Array<{ mode: AccessMode; label: string; hint: string }> = [
+  { mode: "public", label: "Anyone with the link", hint: "No sign-in needed." },
+  { mode: "organization", label: "Only members of this organization", hint: "Respondents sign in with their Workeasy account; others are turned away." },
+];
 
 const QR_MARGIN = 4;
 
@@ -97,6 +105,7 @@ export function SharePanel({
   const [status, setStatus] = useState<string | undefined>();
   const [reason, setReason] = useState("");
   const reasonId = useId();
+  const accessName = useId();
   const canPublish = form.permissions.includes("forms.publish") && !readOnly;
 
   useEffect(() => {
@@ -118,6 +127,24 @@ export function SharePanel({
   function copied(message: string) {
     setStatus(message);
     announce(message);
+  }
+
+  async function setAccess(mode: AccessMode) {
+    if (!share || share.accessMode === mode) return;
+    setBusy(true);
+    try {
+      const res = await api<{ mode: AccessMode }>(`${formPath}/access-policy`, { method: "PATCH", body: { mode } });
+      setShare({ ...share, accessMode: res.mode });
+      copied(
+        res.mode === "organization"
+          ? "Only signed-in members of this organization can respond now, including anyone who already has the form open."
+          : "Anyone with the link can respond now.",
+      );
+    } catch (err) {
+      setStatus(errorText(err));
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function change(action: "close" | "reopen") {
@@ -191,6 +218,27 @@ export function SharePanel({
               </button>
             </p>
           </>
+        )}
+
+        {share && (
+          <fieldset className="b-field" style={{ border: 0, padding: 0, margin: "24px 0 0" }}>
+            <legend style={{ fontSize: 18, fontWeight: 600, marginBottom: 8, padding: 0 }}>Who can respond</legend>
+            {ACCESS_CHOICES.map((choice) => (
+              <label key={choice.mode} style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "0 8px", marginBottom: 8 }}>
+                <input
+                  type="radio"
+                  name={accessName}
+                  value={choice.mode}
+                  checked={share.accessMode === choice.mode}
+                  disabled={!canPublish || busy}
+                  onChange={() => void setAccess(choice.mode)}
+                />
+                <span>{choice.label}</span>
+                <span />
+                <span className="b-muted">{choice.hint}</span>
+              </label>
+            ))}
+          </fieldset>
         )}
 
         <h2 style={{ marginTop: 24 }}>Accepting responses</h2>

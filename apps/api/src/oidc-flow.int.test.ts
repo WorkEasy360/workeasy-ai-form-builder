@@ -6,7 +6,7 @@ import request from "supertest";
 import { afterAll, beforeAll, describe, expect, inject, it } from "vitest";
 import { MeResponseSchema } from "./contract/schemas.js";
 import { createOidcIdentityProvider } from "./identity/oidc-provider.js";
-import { buildTestApp, cookieFrom, testSettings } from "./test-support.js";
+import { buildTestApp, cookieFrom, TEST_RESPONDENT_ORIGIN, testSettings } from "./test-support.js";
 
 /**
  * Drives the real local Dex provider end to end: authorization request with
@@ -27,11 +27,15 @@ interface DexRedirect {
   loginCookie: string;
 }
 
-/** Follows the browser's path through Dex until it redirects back to the console callback. */
-async function signInAtDex(email: string, password = LOCAL_DEX_PASSWORD): Promise<DexRedirect> {
-  const start = await request(app).get("/auth/login");
+/** Follows the browser's path through Dex until it redirects back to the callback on `returnOrigin`. */
+async function signInAtDex(
+  email: string,
+  password = LOCAL_DEX_PASSWORD,
+  { loginPath = "/auth/login", loginCookieName = "we_login", returnOrigin = oidc!.consoleOrigin } = {},
+): Promise<DexRedirect> {
+  const start = await request(app).get(loginPath);
   expect(start.status).toBe(302);
-  const loginCookie = cookieFrom(start.headers["set-cookie"], "we_login");
+  const loginCookie = cookieFrom(start.headers["set-cookie"], loginCookieName);
   expect(loginCookie).toBeDefined();
 
   let url = new URL(start.headers.location as string);
@@ -40,7 +44,7 @@ async function signInAtDex(email: string, password = LOCAL_DEX_PASSWORD): Promis
   for (let step = 0; step < 10; step++) {
     if (res.status >= 300 && res.status < 400) {
       const next = new URL(res.headers.get("location")!, url);
-      if (next.origin === oidc!.consoleOrigin) return { callbackUrl: next, loginCookie: loginCookie! };
+      if (next.origin === returnOrigin) return { callbackUrl: next, loginCookie: loginCookie! };
       url = next;
       res = await fetch(url, { redirect: "manual" });
     } else if (res.status === 200) {
@@ -58,7 +62,7 @@ async function signInAtDex(email: string, password = LOCAL_DEX_PASSWORD): Promis
       throw new Error(`Unexpected ${res.status} from ${url.toString()}`);
     }
   }
-  throw new Error("Dex did not redirect back to the console");
+  throw new Error("Dex did not redirect back to the callback");
 }
 
 function callback(redirect: DexRedirect, loginCookie: string | null = redirect.loginCookie) {
@@ -71,16 +75,14 @@ beforeAll(async () => {
   db = createDb({ connectionString: urls.api, maxConnections: 4 });
   for (const tenant of LOCAL_SEED_TENANTS) await seedTenantFixture(db, tenant);
   const settings = { ...testSettings, consoleOrigin: oidc.consoleOrigin };
+  const provider = (redirectUri: string) =>
+    createOidcIdentityProvider({ issuerUrl: oidc.issuerUrl, clientId: oidc.clientId, clientSecret: oidc.clientSecret, redirectUri, allowInsecureRequests: true });
   app = buildTestApp(
     db,
-    createOidcIdentityProvider({
-      issuerUrl: oidc.issuerUrl,
-      clientId: oidc.clientId,
-      clientSecret: oidc.clientSecret,
-      redirectUri: new URL("/auth/callback", oidc.consoleOrigin).toString(),
-      allowInsecureRequests: true,
-    }),
+    provider(new URL("/auth/callback", oidc.consoleOrigin).toString()),
     settings,
+    db,
+    provider(new URL("/public/v1/auth/callback", TEST_RESPONDENT_ORIGIN).toString()),
   );
 });
 
@@ -179,5 +181,33 @@ describe("rejected sign-in callbacks", () => {
     const state = new URL(start.headers.location as string).searchParams.get("state")!;
     const res = await request(app).get(`/auth/callback?error=access_denied&state=${state}`).set("Cookie", loginCookie);
     expectFailedWithoutSession(res);
+  });
+});
+
+describe("respondent sign-in through the local OIDC provider", () => {
+  const respondentLogin = (returnTo: string) => ({
+    loginPath: `/public/v1/auth/login?returnTo=${encodeURIComponent(returnTo)}`,
+    loginCookieName: "we_respondent_login",
+    returnOrigin: TEST_RESPONDENT_ORIGIN,
+  });
+
+  it("signs a respondent in on the respondent origin and returns them to the form", async () => {
+    const redirect = await signInAtDex(LOCAL_DEX_LOGINS.carlosAcmeCreator, undefined, respondentLogin("/f/f-abc123def456"));
+    expect(redirect.callbackUrl.pathname).toBe("/public/v1/auth/callback");
+    const done = await callback(redirect);
+    expect(done.status).toBe(303);
+    expect(done.headers.location).toBe(`${TEST_RESPONDENT_ORIGIN}/f/f-abc123def456`);
+    const setCookies = ([] as string[]).concat(done.headers["set-cookie"] ?? []);
+    // Its own cookie, never the console's.
+    expect(setCookies.find((c) => c.startsWith("we_respondent="))).toMatch(/HttpOnly/);
+    expect(setCookies.some((c) => c.startsWith("we_session="))).toBe(false);
+    expect(setCookies.find((c) => c.startsWith("we_respondent_login="))).toMatch(/Max-Age=0/);
+  });
+
+  it("never returns anywhere but a form page on the respondent origin", async () => {
+    for (const returnTo of ["https://evil.example/f/x", "//evil.example", "/f/../admin", "/console"]) {
+      const done = await callback(await signInAtDex(LOCAL_DEX_LOGINS.carlosAcmeCreator, undefined, respondentLogin(returnTo)));
+      expect(done.headers.location).toBe(`${TEST_RESPONDENT_ORIGIN}/`);
+    }
   });
 });

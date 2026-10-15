@@ -13,6 +13,8 @@ export interface ProblemExtensions {
   checks?: Record<string, string>;
   /** Current draft revision, returned with a 412 draft conflict. */
   currentRevision?: number;
+  /** Where a respondent signs in, returned with SIGN_IN_REQUIRED. */
+  signInUrl?: string;
 }
 
 /**

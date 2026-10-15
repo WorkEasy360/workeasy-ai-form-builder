@@ -3,7 +3,7 @@
   "info": {
     "title": "Workeasy Forms API",
     "version": "0.1.0",
-    "description": "Routes implemented through PUB-02. Organization routes derive the tenant from the authenticated membership; resources outside the caller's organizations return 404. Every response carries an X-Request-Id header, and every error is application/problem+json with the same requestId."
+    "description": "Routes implemented through RUN-01. Organization routes derive the tenant from the authenticated membership; resources outside the caller's organizations return 404. Every response carries an X-Request-Id header, and every error is application/problem+json with the same requestId."
   },
   "servers": [
     {
@@ -12,6 +12,17 @@
   ],
   "components": {
     "securitySchemes": {
+      "respondentSession": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "we_respondent",
+        "description": "Respondent sign-in on the respondent origin, for organization-only forms (`__Host-we_respondent` over HTTPS)."
+      },
+      "sessionCapability": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "The capability returned when a respondent session starts. Kept in memory by the browser."
+      },
       "consoleSession": {
         "type": "apiKey",
         "in": "cookie",
@@ -76,6 +87,10 @@
             "type": "integer",
             "minimum": -9007199254740991,
             "maximum": 9007199254740991
+          },
+          "signInUrl": {
+            "type": "string",
+            "format": "uri"
           }
         },
         "required": [
@@ -3084,6 +3099,13 @@
                     },
                     "live": {
                       "type": "boolean"
+                    },
+                    "accessMode": {
+                      "type": "string",
+                      "enum": [
+                        "public",
+                        "organization"
+                      ]
                     }
                   },
                   "required": [
@@ -3091,7 +3113,8 @@
                     "embedUrl",
                     "embedHtml",
                     "qrPayload",
-                    "live"
+                    "live",
+                    "accessMode"
                   ],
                   "additionalProperties": false
                 }
@@ -3539,8 +3562,14 @@
       ],
       "get": {
         "operationId": "getPublicForm",
-        "summary": "A published form's active version, for respondents (no session)",
-        "description": "Cache-Control: public, max-age=30. Unknown, draft, archived and deleted forms are all 404.",
+        "summary": "A published form's live version, for rendering (respondents answer through a session)",
+        "description": "Anyone-with-the-link forms: Cache-Control public, max-age=30. Organization-only forms need the respondent sign-in and are private, no-store. Unknown, draft, archived and deleted forms are all 404.",
+        "security": [
+          {},
+          {
+            "respondentSession": []
+          }
+        ],
         "responses": {
           "200": {
             "description": "The active version's public projection",
@@ -3551,6 +3580,13 @@
                   "properties": {
                     "slug": {
                       "type": "string"
+                    },
+                    "accessMode": {
+                      "type": "string",
+                      "enum": [
+                        "public",
+                        "organization"
+                      ]
                     },
                     "versionId": {
                       "type": "string",
@@ -3572,11 +3608,32 @@
                   },
                   "required": [
                     "slug",
+                    "accessMode",
                     "versionId",
                     "versionNumber",
                     "definition"
                   ],
                   "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "SIGN_IN_REQUIRED: organization-only form; sign in at signInUrl",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "NOT_A_MEMBER: signed in, but not a member of the form's organization",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -3604,7 +3661,7 @@
         }
       }
     },
-    "/public/v1/forms/{slug}/acceptance": {
+    "/public/v1/forms/{slug}/sessions": {
       "parameters": [
         {
           "name": "slug",
@@ -3614,38 +3671,99 @@
           "schema": {
             "type": "string"
           }
-        },
-        {
-          "name": "versionId",
-          "in": "query",
-          "required": true,
-          "description": "The version the page was loaded with",
-          "schema": {
-            "type": "string",
-            "format": "uuid"
-          }
         }
       ],
-      "get": {
-        "operationId": "getPublicFormAcceptance",
-        "summary": "Whether the form accepts a response for this version right now (never cached)",
+      "post": {
+        "operationId": "startRespondentSession",
+        "summary": "Start a respondent session pinned to the live version (respondent origin only)",
+        "description": "Organization-only forms need a respondent sign-in and an active membership. The capability is returned once; only its hash is stored. Sessions last two hours and keep their version even if a newer one is published.",
+        "security": [
+          {},
+          {
+            "respondentSession": []
+          }
+        ],
         "responses": {
-          "200": {
-            "description": "Accepting",
+          "201": {
+            "description": "Session started",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "accepting": {
-                      "type": "boolean",
-                      "const": true
+                    "slug": {
+                      "type": "string"
+                    },
+                    "accessMode": {
+                      "type": "string",
+                      "enum": [
+                        "public",
+                        "organization"
+                      ]
+                    },
+                    "versionId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "versionNumber": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    "definition": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
+                    },
+                    "sessionId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "capability": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9_-]{43}$"
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
                     }
                   },
                   "required": [
-                    "accepting"
+                    "slug",
+                    "accessMode",
+                    "versionId",
+                    "versionNumber",
+                    "definition",
+                    "sessionId",
+                    "capability",
+                    "expiresAt"
                   ],
                   "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "SIGN_IN_REQUIRED: sign in at signInUrl (organization-only forms)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "NOT_A_MEMBER, or CROSS_ORIGIN_REQUEST when not sent from the respondent origin",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -3660,8 +3778,90 @@
               }
             }
           },
-          "409": {
-            "description": "VERSION_CHANGED: a newer version is live; reload the form",
+          "410": {
+            "description": "FORM_CLOSED",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/public/v1/sessions/{sessionId}/acceptance": {
+      "parameters": [
+        {
+          "name": "sessionId",
+          "in": "path",
+          "required": true,
+          "description": "Respondent session ID",
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "getSessionAcceptance",
+        "summary": "Whether this session may submit right now (never cached)",
+        "description": "Reads the current form state and access policy, so closing a form or revoking a member takes effect immediately.",
+        "security": [
+          {
+            "sessionCapability": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepting, with the session's pinned version",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "accepting": {
+                      "type": "boolean",
+                      "const": true
+                    },
+                    "versionId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    }
+                  },
+                  "required": [
+                    "accepting",
+                    "versionId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "SESSION_INVALID: missing, forged, expired or another session's capability",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "NOT_A_MEMBER: the respondent no longer has access",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The form is no longer available",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -3671,7 +3871,236 @@
             }
           },
           "410": {
-            "description": "FORM_CLOSED: the form was closed",
+            "description": "FORM_CLOSED",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/public/v1/auth/login": {
+      "get": {
+        "operationId": "beginRespondentLogin",
+        "summary": "Start respondent sign-in on the respondent origin",
+        "parameters": [
+          {
+            "name": "returnTo",
+            "in": "query",
+            "required": false,
+            "description": "A form page, /f/<slug> (optionally ?embed=1); anything else is ignored",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "302": {
+            "description": "Redirect to the identity provider"
+          },
+          "503": {
+            "description": "Identity provider unavailable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/public/v1/auth/callback": {
+      "get": {
+        "operationId": "completeRespondentLogin",
+        "summary": "OIDC redirect target for respondents; sets the respondent cookie",
+        "responses": {
+          "303": {
+            "description": "Redirect to the form page, or the respondent home"
+          }
+        }
+      }
+    },
+    "/public/v1/auth/logout": {
+      "post": {
+        "operationId": "respondentLogout",
+        "summary": "Sign the respondent out",
+        "responses": {
+          "303": {
+            "description": "Redirect; clears the respondent cookie"
+          },
+          "403": {
+            "description": "Not sent from the respondent origin",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/organizations/{orgId}/forms/{formId}/access-policy": {
+      "parameters": [
+        {
+          "name": "orgId",
+          "in": "path",
+          "required": true,
+          "description": "Organization (tenant) ID",
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        {
+          "name": "formId",
+          "in": "path",
+          "required": true,
+          "description": "Form ID",
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "getAccessPolicy",
+        "summary": "Who may respond to the form (requires forms.read)",
+        "security": [
+          {
+            "consoleSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The access policy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "type": "string",
+                      "enum": [
+                        "public",
+                        "organization"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "mode"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Organization or form not found or not visible",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "updateAccessPolicy",
+        "summary": "Anyone with the link, or signed-in members of the organization only (requires forms.publish)",
+        "description": "Takes effect immediately, including for respondent sessions already started. Changes are audited.",
+        "security": [
+          {
+            "consoleSession": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "public",
+                      "organization"
+                    ]
+                  }
+                },
+                "required": [
+                  "mode"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The access policy after the change",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "type": "string",
+                      "enum": [
+                        "public",
+                        "organization"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "mode"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden: missing permission, or a cookie-authenticated mutation not sent from the console origin",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Organization or form not found or not visible",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -3681,7 +4110,7 @@
             }
           },
           "422": {
-            "description": "versionId missing or not a UUID",
+            "description": "Unknown mode",
             "content": {
               "application/problem+json": {
                 "schema": {

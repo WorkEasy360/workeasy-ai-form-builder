@@ -12,6 +12,7 @@ const Uuid = z.uuid();
 const Timestamp = z.iso.datetime();
 
 export const FORM_STATES = ["draft", "published", "closed", "archived"] as const;
+export const ACCESS_MODES = ["public", "organization"] as const;
 
 export const ProblemSchema = z.object({
   type: z.string(),
@@ -23,6 +24,8 @@ export const ProblemSchema = z.object({
   errors: z.array(z.object({ field: z.string(), code: z.string(), message: z.string() })).optional(),
   checks: z.record(z.string(), z.string()).optional(),
   currentRevision: z.number().int().optional(),
+  /** Where a respondent signs in, with SIGN_IN_REQUIRED. */
+  signInUrl: z.url().optional(),
 });
 
 const DefinitionIssueSchema = z.object({ path: z.string(), code: z.string(), message: z.string() });
@@ -178,6 +181,10 @@ export const ActivateVersionBodySchema = z.object({ versionId: Uuid });
 /** Client-chosen key that makes a publish request safe to retry. */
 export const IDEMPOTENCY_KEY_PATTERN = /^[!-~]{8,200}$/;
 
+export const AccessPolicyBodySchema = z.object({ mode: z.enum(ACCESS_MODES) });
+export const AccessPolicyResponseSchema = z.object({ mode: z.enum(ACCESS_MODES) });
+export type AccessPolicyResponse = z.infer<typeof AccessPolicyResponseSchema>;
+
 export const CloseFormBodySchema = z.object({
   /** Optional note kept in the audit log; not shown to respondents. */
   reason: z.string().trim().max(500).optional(),
@@ -194,12 +201,16 @@ export const ShareResponseSchema = z.object({
   qrPayload: z.string(),
   /** Whether respondents can open the form right now. */
   live: z.boolean(),
+  /** Who may respond. */
+  accessMode: z.enum(ACCESS_MODES),
 });
 export type ShareResponse = z.infer<typeof ShareResponseSchema>;
 
 export const PublicFormResponseSchema = z.object({
   slug: z.string(),
-  /** Send this back when submitting, so a closed or replaced form is detected. */
+  /** Who may respond: anyone with the link, or signed-in members of the organization. */
+  accessMode: z.enum(ACCESS_MODES),
+  /** The live version; a session pins the version it started with. */
   versionId: Uuid,
   versionNumber: z.number().int().min(1),
   /** The version's public projection: what the renderer needs, nothing internal. */
@@ -207,5 +218,17 @@ export const PublicFormResponseSchema = z.object({
 });
 export type PublicFormResponse = z.infer<typeof PublicFormResponseSchema>;
 
-export const PublicAcceptanceResponseSchema = z.object({ accepting: z.literal(true) });
+export const SessionStartResponseSchema = PublicFormResponseSchema.extend({
+  sessionId: Uuid,
+  /** Bearer token for this session only. Keep it in memory; it is never shown again. */
+  capability: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
+  expiresAt: Timestamp,
+});
+export type SessionStartResponse = z.infer<typeof SessionStartResponseSchema>;
+
+export const PublicAcceptanceResponseSchema = z.object({
+  accepting: z.literal(true),
+  /** The version this session is pinned to. */
+  versionId: Uuid,
+});
 export type PublicAcceptanceResponse = z.infer<typeof PublicAcceptanceResponseSchema>;

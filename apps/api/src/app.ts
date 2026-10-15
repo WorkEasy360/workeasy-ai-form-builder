@@ -29,6 +29,8 @@ export interface AppDependencies {
   /** Connection as the public role, for respondent routes only. */
   publicDb: Db;
   identityProvider: IdentityProvider;
+  /** The same identity provider, redirecting back to the respondent origin. */
+  respondentIdentityProvider: IdentityProvider;
   settings: AppSettings;
   /** Dependencies that must be reachable for /health/ready (e.g. the database). */
   readinessChecks: Record<string, ReadinessCheck>;

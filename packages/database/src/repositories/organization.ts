@@ -1,6 +1,6 @@
 import { randomInt } from "node:crypto";
 import { sql, type Transaction } from "kysely";
-import type { Database, FormState, MembershipRole, MembershipStatus } from "../schema.js";
+import type { AccessMode, Database, FormState, MembershipRole, MembershipStatus } from "../schema.js";
 
 /**
  * Tenant-scoped queries. Every function takes a transaction opened with
@@ -344,5 +344,19 @@ export async function replaceFormGrants(trx: Trx, formId: string, tenantId: stri
         created_by: grantedBy,
       })),
     )
+    .execute();
+}
+
+/** Who may respond to a form; forms without a policy row are open to anyone with the link. */
+export async function getAccessMode(trx: Trx, formId: string): Promise<AccessMode> {
+  const row = await trx.selectFrom("form_access_policies").select("mode").where("form_id", "=", formId).executeTakeFirst();
+  return row?.mode ?? "public";
+}
+
+export async function setAccessMode(trx: Trx, tenantId: string, formId: string, mode: AccessMode, updatedBy: string): Promise<void> {
+  await trx
+    .insertInto("form_access_policies")
+    .values({ tenant_id: tenantId, form_id: formId, mode, updated_by: updatedBy })
+    .onConflict((oc) => oc.columns(["tenant_id", "form_id"]).doUpdateSet({ mode, updated_by: updatedBy }))
     .execute();
 }

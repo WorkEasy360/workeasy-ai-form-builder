@@ -27,12 +27,19 @@ export const unusedIdentityProvider: IdentityProvider = {
  * `publicDb` should be a connection as the public role whenever a test calls
  * /public/v1; it defaults to `db` only for tests that never do.
  */
-export function buildTestApp(db: Db, identityProvider: IdentityProvider = unusedIdentityProvider, settings = testSettings, publicDb: Db = db): Express {
+export function buildTestApp(
+  db: Db,
+  identityProvider: IdentityProvider = unusedIdentityProvider,
+  settings = testSettings,
+  publicDb: Db = db,
+  respondentIdentityProvider: IdentityProvider = identityProvider,
+): Express {
   return createApp({
     logger: createLogger({ service: "api-test", level: "silent" }),
     db,
     publicDb,
     identityProvider,
+    respondentIdentityProvider,
     settings,
     readinessChecks: { database: () => sql`SELECT 1`.execute(db) },
     isDraining: () => false,

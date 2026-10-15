@@ -127,6 +127,30 @@ export interface OutboxEventsTable {
   dispatched_at: Date | null;
 }
 
+export type AccessMode = "public" | "organization";
+
+export interface FormAccessPoliciesTable {
+  tenant_id: string;
+  form_id: string;
+  mode: AccessMode;
+  updated_by: string;
+  created_at: CreatedAt;
+  updated_at: UpdatedAt;
+}
+
+export interface RespondentSessionsTable {
+  id: Generated<string>;
+  tenant_id: string;
+  form_id: string;
+  form_version_id: string;
+  token_hash: Buffer;
+  actor_id: string | null;
+  expires_at: Date;
+  revoked_at: Date | null;
+  accepted_submission_id: string | null;
+  created_at: CreatedAt;
+}
+
 export interface Database {
   tenants: TenantsTable;
   users: UsersTable;
@@ -138,6 +162,8 @@ export interface Database {
   form_versions: FormVersionsTable;
   audit_events: AuditEventsTable;
   outbox_events: OutboxEventsTable;
+  form_access_policies: FormAccessPoliciesTable;
+  respondent_sessions: RespondentSessionsTable;
 }
 
 export type Tenant = Selectable<TenantsTable>;

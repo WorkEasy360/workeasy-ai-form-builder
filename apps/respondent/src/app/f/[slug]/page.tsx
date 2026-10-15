@@ -1,28 +1,46 @@
 import type { FormDefinition } from "@workeasy/form-schema";
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 import { cache } from "react";
 import { PublicForm } from "./public-form";
 
 const apiInternalUrl = process.env.API_INTERNAL_URL ?? "http://127.0.0.1:4000";
+/** The respondent sign-in cookie (docs/06 §1); the console's cookie is never forwarded. */
+const RESPONDENT_COOKIES = ["__Host-we_respondent", "we_respondent"];
 
 type Loaded =
   | { kind: "open"; versionId: string; definition: FormDefinition }
   | { kind: "closed" }
   | { kind: "missing" }
+  | { kind: "sign_in"; signInUrl: string }
+  | { kind: "not_member" }
   | { kind: "unavailable" };
 
 /** One request per page render, shared by the metadata and the page. */
-const loadForm = cache(async (slug: string): Promise<Loaded> => {
+const loadForm = cache(async (slug: string, embed: boolean): Promise<Loaded> => {
+  const jar = await cookies();
+  const cookie = RESPONDENT_COOKIES.flatMap((name) => {
+    const value = jar.get(name)?.value;
+    return value ? [`${name}=${value}`] : [];
+  }).join("; ");
   let res: Response;
   try {
     // Always ask the API: its short Cache-Control is for CDNs, and closing must show on the next load.
-    res = await fetch(`${apiInternalUrl}/public/v1/forms/${encodeURIComponent(slug)}`, { cache: "no-store" });
+    res = await fetch(`${apiInternalUrl}/public/v1/forms/${encodeURIComponent(slug)}${embed ? "?embed=1" : ""}`, {
+      cache: "no-store",
+      headers: cookie ? { cookie } : {},
+    });
   } catch {
     return { kind: "unavailable" };
   }
   if (res.status === 404) return { kind: "missing" };
   if (res.status === 410) return { kind: "closed" };
+  if (res.status === 401) {
+    const problem = (await res.json().catch(() => ({}))) as { signInUrl?: string };
+    return problem.signInUrl ? { kind: "sign_in", signInUrl: problem.signInUrl } : { kind: "unavailable" };
+  }
+  if (res.status === 403) return { kind: "not_member" };
   if (!res.ok) return { kind: "unavailable" };
   const body = (await res.json()) as { versionId: string; definition: FormDefinition };
   return { kind: "open", versionId: body.versionId, definition: body.definition };
@@ -30,8 +48,8 @@ const loadForm = cache(async (slug: string): Promise<Loaded> => {
 
 type Props = { params: Promise<{ slug: string }>; searchParams: Promise<Record<string, string | string[] | undefined>> };
 
-export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const loaded = await loadForm((await params).slug);
+export async function generateMetadata({ params, searchParams }: Props): Promise<Metadata> {
+  const loaded = await loadForm((await params).slug, (await searchParams).embed === "1");
   return {
     title: loaded.kind === "open" ? loaded.definition.title : "Workeasy Forms",
     // Forms are shared by link; they should not appear in search results.
@@ -41,29 +59,58 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 function Notice({ title, children, embed }: { title: string; children: React.ReactNode; embed: boolean }) {
   return (
-    <main className={embed ? "r-embed" : "r-page"}>
-      <h1 style={{ fontSize: 24, margin: "0 0 8px" }}>{title}</h1>
-      <p style={{ margin: 0 }}>{children}</p>
+    <main className={embed ? "r-embed r-notice" : "r-page r-notice"}>
+      <h1>{title}</h1>
+      {children}
     </main>
   );
 }
 
 export default async function FormPage({ params, searchParams }: Props) {
   const { slug } = await params;
-  const embed = (await searchParams).embed === "1";
-  const loaded = await loadForm(slug);
+  const query = await searchParams;
+  const embed = query.embed === "1";
+  const loaded = await loadForm(slug, embed);
   if (loaded.kind === "missing") notFound();
   if (loaded.kind === "closed") {
     return (
       <Notice title="This form is closed" embed={embed}>
-        It isn&apos;t accepting responses any more. If you think this is a mistake, contact whoever shared it with you.
+        <p>It isn&apos;t accepting responses any more. If you think this is a mistake, contact whoever shared it with you.</p>
+      </Notice>
+    );
+  }
+  if (loaded.kind === "sign_in") {
+    return (
+      <Notice title="Sign in to fill in this form" embed={embed}>
+        <p>This form is only for members of the organization that published it.</p>
+        {query.signin === "failed" && <p role="alert">Signing in didn&apos;t work. Please try again.</p>}
+        <p>
+          {embed ? (
+            // Sign-in can't happen inside another site's frame; it opens in a tab, then this frame is reloaded.
+            <a className="r-button" href={loaded.signInUrl} target="_blank" rel="noopener">
+              Sign in (opens a new tab)
+            </a>
+          ) : (
+            <a className="r-button" href={loaded.signInUrl}>
+              Sign in
+            </a>
+          )}
+        </p>
+        {embed && <p>After signing in, reload this page.</p>}
+      </Notice>
+    );
+  }
+  if (loaded.kind === "not_member") {
+    return (
+      <Notice title="You don't have access to this form" embed={embed}>
+        <p>It&apos;s only for members of the organization that published it. If you think you should have access, contact whoever shared it with you.</p>
       </Notice>
     );
   }
   if (loaded.kind === "unavailable") {
     return (
       <Notice title="We couldn't load this form" embed={embed}>
-        Please try again in a moment.
+        <p>Please try again in a moment.</p>
       </Notice>
     );
   }

@@ -29,6 +29,13 @@ const app = createApp({
     // Config validation already requires https outside development.
     allowInsecureRequests: config.NODE_ENV !== "production" && new URL(config.OIDC_ISSUER_URL).protocol === "http:",
   }),
+  respondentIdentityProvider: createOidcIdentityProvider({
+    issuerUrl: config.OIDC_ISSUER_URL,
+    clientId: config.OIDC_CLIENT_ID,
+    clientSecret: config.OIDC_CLIENT_SECRET,
+    redirectUri: new URL("/public/v1/auth/callback", config.RESPONDENT_PUBLIC_URL).toString(),
+    allowInsecureRequests: config.NODE_ENV !== "production" && new URL(config.OIDC_ISSUER_URL).protocol === "http:",
+  }),
   settings: {
     consoleOrigin,
     respondentOrigin: new URL(config.RESPONDENT_PUBLIC_URL).origin,

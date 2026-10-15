@@ -29,6 +29,8 @@ staticClients:
     secretEnv: DEX_CONSOLE_CLIENT_SECRET
     redirectURIs:
       - http://localhost:3000/auth/callback
+      # Respondents signing in for organization-only forms (RUN-01).
+      - http://localhost:3001/public/v1/auth/callback
 
 enablePasswordDB: true
 

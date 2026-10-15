@@ -1,5 +1,7 @@
 import { z } from "zod";
 import {
+  AccessPolicyBodySchema,
+  AccessPolicyResponseSchema,
   ActivateVersionBodySchema,
   CloseFormBodySchema,
   DraftResponseSchema,
@@ -18,6 +20,7 @@ import {
   PublicFormResponseSchema,
   PublishResponseSchema,
   ReadyResponseSchema,
+  SessionStartResponseSchema,
   ShareResponseSchema,
   ValidateResponseSchema,
   VersionListResponseSchema,
@@ -69,11 +72,22 @@ export function buildOpenApiDocument(): JsonSchema {
       title: "Workeasy Forms API",
       version: "0.1.0",
       description:
-        "Routes implemented through PUB-02. Organization routes derive the tenant from the authenticated membership; resources outside the caller's organizations return 404. Every response carries an X-Request-Id header, and every error is application/problem+json with the same requestId.",
+        "Routes implemented through RUN-01. Organization routes derive the tenant from the authenticated membership; resources outside the caller's organizations return 404. Every response carries an X-Request-Id header, and every error is application/problem+json with the same requestId.",
     },
     servers: [{ url: "/" }],
     components: {
       securitySchemes: {
+        respondentSession: {
+          type: "apiKey",
+          in: "cookie",
+          name: "we_respondent",
+          description: "Respondent sign-in on the respondent origin, for organization-only forms (`__Host-we_respondent` over HTTPS).",
+        },
+        sessionCapability: {
+          type: "http",
+          scheme: "bearer",
+          description: "The capability returned when a respondent session starts. Kept in memory by the browser.",
+        },
         consoleSession: {
           type: "apiKey",
           in: "cookie",
@@ -403,29 +417,94 @@ export function buildOpenApiDocument(): JsonSchema {
         parameters: [{ name: "slug", in: "path", required: true, description: "Public form locator; never a credential", schema: { type: "string" } }],
         get: {
           operationId: "getPublicForm",
-          summary: "A published form's active version, for respondents (no session)",
-          description: "Cache-Control: public, max-age=30. Unknown, draft, archived and deleted forms are all 404.",
+          summary: "A published form's live version, for rendering (respondents answer through a session)",
+          description:
+            "Anyone-with-the-link forms: Cache-Control public, max-age=30. Organization-only forms need the respondent sign-in and are private, no-store. Unknown, draft, archived and deleted forms are all 404.",
+          security: [{}, { respondentSession: [] }],
           responses: {
             "200": json("The active version's public projection", PublicFormResponseSchema),
+            "401": problem("SIGN_IN_REQUIRED: organization-only form; sign in at signInUrl"),
+            "403": problem("NOT_A_MEMBER: signed in, but not a member of the form's organization"),
             "404": problem("No published form at this slug"),
             "410": problem("FORM_CLOSED: the form is closed"),
           },
         },
       },
-      "/public/v1/forms/{slug}/acceptance": {
-        parameters: [
-          { name: "slug", in: "path", required: true, description: "Public form locator", schema: { type: "string" } },
-          { name: "versionId", in: "query", required: true, description: "The version the page was loaded with", schema: { type: "string", format: "uuid" } },
-        ],
-        get: {
-          operationId: "getPublicFormAcceptance",
-          summary: "Whether the form accepts a response for this version right now (never cached)",
+      "/public/v1/forms/{slug}/sessions": {
+        parameters: [{ name: "slug", in: "path", required: true, description: "Public form locator", schema: { type: "string" } }],
+        post: {
+          operationId: "startRespondentSession",
+          summary: "Start a respondent session pinned to the live version (respondent origin only)",
+          description:
+            "Organization-only forms need a respondent sign-in and an active membership. The capability is returned once; only its hash is stored. Sessions last two hours and keep their version even if a newer one is published.",
+          security: [{}, { respondentSession: [] }],
           responses: {
-            "200": json("Accepting", PublicAcceptanceResponseSchema),
+            "201": json("Session started", SessionStartResponseSchema),
+            "401": problem("SIGN_IN_REQUIRED: sign in at signInUrl (organization-only forms)"),
+            "403": problem("NOT_A_MEMBER, or CROSS_ORIGIN_REQUEST when not sent from the respondent origin"),
             "404": problem("No published form at this slug"),
-            "409": problem("VERSION_CHANGED: a newer version is live; reload the form"),
-            "410": problem("FORM_CLOSED: the form was closed"),
-            "422": problem("versionId missing or not a UUID"),
+            "410": problem("FORM_CLOSED"),
+          },
+        },
+      },
+      "/public/v1/sessions/{sessionId}/acceptance": {
+        parameters: [uuidPath("sessionId", "Respondent session ID")],
+        get: {
+          operationId: "getSessionAcceptance",
+          summary: "Whether this session may submit right now (never cached)",
+          description: "Reads the current form state and access policy, so closing a form or revoking a member takes effect immediately.",
+          security: [{ sessionCapability: [] }],
+          responses: {
+            "200": json("Accepting, with the session's pinned version", PublicAcceptanceResponseSchema),
+            "401": problem("SESSION_INVALID: missing, forged, expired or another session's capability"),
+            "403": problem("NOT_A_MEMBER: the respondent no longer has access"),
+            "404": problem("The form is no longer available"),
+            "410": problem("FORM_CLOSED"),
+          },
+        },
+      },
+      "/public/v1/auth/login": {
+        get: {
+          operationId: "beginRespondentLogin",
+          summary: "Start respondent sign-in on the respondent origin",
+          parameters: [{ name: "returnTo", in: "query", required: false, description: "A form page, /f/<slug> (optionally ?embed=1); anything else is ignored", schema: { type: "string" } }],
+          responses: { "302": { description: "Redirect to the identity provider" }, "503": problem("Identity provider unavailable") },
+        },
+      },
+      "/public/v1/auth/callback": {
+        get: {
+          operationId: "completeRespondentLogin",
+          summary: "OIDC redirect target for respondents; sets the respondent cookie",
+          responses: { "303": { description: "Redirect to the form page, or the respondent home" } },
+        },
+      },
+      "/public/v1/auth/logout": {
+        post: {
+          operationId: "respondentLogout",
+          summary: "Sign the respondent out",
+          responses: { "303": { description: "Redirect; clears the respondent cookie" }, "403": problem("Not sent from the respondent origin") },
+        },
+      },
+      "/api/v1/organizations/{orgId}/forms/{formId}/access-policy": {
+        parameters: [uuidPath("orgId", "Organization (tenant) ID"), uuidPath("formId", "Form ID")],
+        get: {
+          operationId: "getAccessPolicy",
+          summary: "Who may respond to the form (requires forms.read)",
+          security: [{ consoleSession: [] }],
+          responses: { "200": json("The access policy", AccessPolicyResponseSchema), "401": unauthenticated, "404": problem("Organization or form not found or not visible") },
+        },
+        patch: {
+          operationId: "updateAccessPolicy",
+          summary: "Anyone with the link, or signed-in members of the organization only (requires forms.publish)",
+          description: "Takes effect immediately, including for respondent sessions already started. Changes are audited.",
+          security: [{ consoleSession: [] }],
+          requestBody: { required: true, content: { "application/json": { schema: schemaOf(AccessPolicyBodySchema, "input") } } },
+          responses: {
+            "200": json("The access policy after the change", AccessPolicyResponseSchema),
+            "401": unauthenticated,
+            "403": crossOrigin,
+            "404": problem("Organization or form not found or not visible"),
+            "422": problem("Unknown mode"),
           },
         },
       },

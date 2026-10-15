@@ -35,6 +35,7 @@ import type { DefinitionIssue, FormDefinition } from "@workeasy/form-schema";
 import type { z } from "zod";
 import type { AppDependencies } from "../app.js";
 import {
+  AccessPolicyBodySchema,
   ActivateVersionBodySchema,
   CloseFormBodySchema,
   CreateFormBodySchema,
@@ -44,6 +45,7 @@ import {
   FormListQuerySchema,
   type FormGrantsResponse,
   type FormListResponse,
+  type AccessPolicyResponse,
   type DraftResponse,
   type FormResponse,
   type FormSummaryBody,
@@ -734,7 +736,7 @@ export function apiV1Router({ db, settings }: AppDependencies): Router {
     const { orgId, formId } = req.params;
     respond(
       res,
-      await onForm(res, orgId, formId, "forms.read", async (_trx, { form }): Promise<Outcome<ShareResponse>> => {
+      await onForm(res, orgId, formId, "forms.read", async (trx, { form }): Promise<Outcome<ShareResponse>> => {
         const url = new URL(`/f/${form.slug}`, settings.respondentOrigin).toString();
         const embedUrl = `${url}?embed=1`;
         return {
@@ -745,8 +747,54 @@ export function apiV1Router({ db, settings }: AppDependencies): Router {
             embedHtml: embedSnippet(embedUrl, settings.respondentOrigin, form.slug, form.name),
             qrPayload: url,
             live: form.state === "published",
+            accessMode: await orgRepo.getAccessMode(trx, formId),
           },
         };
+      }),
+    );
+  });
+
+  router.get("/organizations/:orgId/forms/:formId/access-policy", async (req, res) => {
+    const { orgId, formId } = req.params;
+    respond(
+      res,
+      await onForm(res, orgId, formId, "forms.read", async (trx): Promise<Outcome<AccessPolicyResponse>> => ({
+        kind: "ok",
+        body: { mode: await orgRepo.getAccessMode(trx, formId) },
+      })),
+    );
+  });
+
+  /**
+   * Who may respond: anyone with the link, or only signed-in active members of
+   * this organization. Takes effect immediately, including for sessions
+   * already started (their acceptance check reads the current policy).
+   */
+  router.patch("/organizations/:orgId/forms/:formId/access-policy", async (req, res) => {
+    const body = AccessPolicyBodySchema.safeParse(req.body);
+    if (!body.success) {
+      problems.validation(res, issuesToErrors(body.error));
+      return;
+    }
+    const { orgId, formId } = req.params;
+    const userId = sessionOf(res).userId;
+    respond(
+      res,
+      await onForm(res, orgId, formId, "forms.publish", async (trx): Promise<Outcome<AccessPolicyResponse>> => {
+        const previous = await orgRepo.getAccessMode(trx, formId);
+        if (previous !== body.data.mode) {
+          await orgRepo.setAccessMode(trx, orgId, formId, body.data.mode, userId);
+          await publishRepo.appendAudit(trx, {
+            tenantId: orgId,
+            actor: { type: "user", id: userId },
+            action: "form.access_policy_changed",
+            resourceType: "form",
+            resourceId: formId,
+            requestId: requestIdOf(res),
+            metadata: { mode: body.data.mode, previousMode: previous },
+          });
+        }
+        return { kind: "ok", body: { mode: body.data.mode } };
       }),
     );
   });

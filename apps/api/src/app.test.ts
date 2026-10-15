@@ -39,6 +39,7 @@ function build(overrides: Partial<AppDependencies> = {}) {
     db: unused as Db,
     publicDb: unused as Db,
     identityProvider: unused as IdentityProvider,
+    respondentIdentityProvider: unused as IdentityProvider,
     settings,
     readinessChecks: { database: () => Promise.resolve() },
     isDraining: () => false,

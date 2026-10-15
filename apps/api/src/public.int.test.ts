@@ -11,6 +11,7 @@ import {
   ProblemSchema,
   PublicFormResponseSchema,
   PublishResponseSchema,
+  SessionStartResponseSchema,
   ShareResponseSchema,
 } from "./contract/schemas.js";
 import { buildTestApp, TEST_CONSOLE_ORIGIN, TEST_RESPONDENT_ORIGIN, testSettings, unusedIdentityProvider } from "./test-support.js";
@@ -58,7 +59,13 @@ async function publishedForm(who = "ownerA", tenant = a): Promise<Published> {
 }
 
 const publicGet = (slug: string) => request(app).get(`/public/v1/forms/${slug}`);
-const acceptance = (slug: string, versionId: string) => request(app).get(`/public/v1/forms/${slug}/acceptance`).query({ versionId });
+async function startSession(slug: string) {
+  const res = await request(app).post(`/public/v1/forms/${slug}/sessions`).set("Origin", TEST_RESPONDENT_ORIGIN);
+  expect(res.status, JSON.stringify(res.body)).toBe(201);
+  return SessionStartResponseSchema.parse(res.body);
+}
+const acceptance = (session: { sessionId: string; capability: string }) =>
+  request(app).get(`/public/v1/sessions/${session.sessionId}/acceptance`).set("Authorization", `Bearer ${session.capability}`);
 
 beforeAll(async () => {
   db = createDb({ connectionString: urls.api, maxConnections: 4 });
@@ -110,9 +117,9 @@ describe("public form", () => {
 describe("close and reopen", () => {
   it("rejects a page opened before the form closed, at once, and accepts it again after reopening", async () => {
     const f = await publishedForm();
-    // A respondent loads the form while it is open...
-    const loaded = PublicFormResponseSchema.parse((await publicGet(f.slug)).body);
-    expect((await acceptance(f.slug, loaded.versionId)).body).toEqual({ accepting: true });
+    // A respondent opens the form while it is open...
+    const session = await startSession(f.slug);
+    expect((await acceptance(session)).body).toEqual({ accepting: true, versionId: f.versionId });
 
     // ...the creator closes it...
     const closedRes = await post(`${f.path}/close`, "ownerA", { reason: "Event is full" });
@@ -120,22 +127,24 @@ describe("close and reopen", () => {
     expect(FormResponseSchema.parse(closedRes.body).form.state).toBe("closed");
 
     // ...and the stale page's acceptance check fails immediately, uncached.
-    const stale = await acceptance(f.slug, loaded.versionId);
+    const stale = await acceptance(session);
     expectProblem(stale, 410, "FORM_CLOSED");
     expect(stale.headers["cache-control"]).toBe("no-store");
     // A fresh load shows the closed state.
     expectProblem(await publicGet(f.slug), 410, "FORM_CLOSED");
     // The authoritative check RUN-02's intake will call says the same.
-    const located = (await publicFormsRepo.resolveSlug(publicDb, f.slug))!;
-    expect(await withTenant(publicDb, a.id, (trx) => publicFormsRepo.checkAcceptance(trx, located.formId, loaded.versionId))).toEqual({
+    const resolved = (await publicFormsRepo.resolveCapability(publicDb, session.capability))!;
+    expect(await withTenant(publicDb, a.id, (trx) => publicFormsRepo.checkSessionAcceptance(trx, resolved))).toEqual({
       accepting: false,
       reason: "closed",
     });
+    // New sessions cannot start on a closed form.
+    expectProblem(await request(app).post(`/public/v1/forms/${f.slug}/sessions`).set("Origin", TEST_RESPONDENT_ORIGIN), 410, "FORM_CLOSED");
 
     expectProblem(await post(`${f.path}/close`, "ownerA"), 409, "FORM_STATE_CONFLICT");
     const reopened = await post(`${f.path}/reopen`, "ownerA");
     expect(FormResponseSchema.parse(reopened.body).form.state).toBe("published");
-    expect((await acceptance(f.slug, loaded.versionId)).body).toEqual({ accepting: true });
+    expect((await acceptance(session)).body).toEqual({ accepting: true, versionId: f.versionId });
     expectProblem(await post(`${f.path}/reopen`, "ownerA"), 409, "FORM_STATE_CONFLICT");
 
     const audit = await withTenant(owner, a.id, (trx) =>
@@ -145,8 +154,9 @@ describe("close and reopen", () => {
     expect(audit[1]!.metadata).toEqual({ activeVersionId: f.versionId, reason: "Event is full" });
   });
 
-  it("tells a page loaded with a replaced version to reload", async () => {
+  it("lets a session finish the version it started with after a newer one is published", async () => {
     const f = await publishedForm();
+    const session = await startSession(f.slug);
     const draft = (await get(`${f.path}/draft`, "ownerA")).body as { revision: number; definition: object };
     const saved = await request(app)
       .put(`${f.path}/draft`)
@@ -161,9 +171,11 @@ describe("close and reopen", () => {
       .set("If-Match", `"draft-${saved.body.revision}"`)
       .set("Idempotency-Key", `key-${randomUUID()}`)
       .expect(201);
-    expectProblem(await acceptance(f.slug, f.versionId), 409, "VERSION_CHANGED");
-    expectProblem(await acceptance(f.slug, "not-a-uuid"), 422, "VALIDATION_FAILED");
-    expectProblem(await acceptance(f.slug, randomUUID()), 409, "VERSION_CHANGED");
+    expect((await acceptance(session)).body).toEqual({ accepting: true, versionId: f.versionId });
+    // New sessions get the new version.
+    const next = await startSession(f.slug);
+    expect(next.versionId).not.toBe(f.versionId);
+    expect(next.versionNumber).toBe(2);
   });
 
   it("only lets publishers close or reopen, inside their organization", async () => {
