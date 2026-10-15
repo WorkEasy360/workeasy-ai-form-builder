@@ -28,6 +28,7 @@ export const BUILDER_CSS = `
 .b-field [aria-invalid="true"] { border-color: var(--we-color-danger); }
 .b-inline-error { color: var(--we-color-danger); margin: 0; font-size: 14px; }
 .b-muted { color: var(--we-color-textMuted); font-size: 14px; }
+.b-badge { color: var(--we-color-textMuted); font-size: 13px; font-style: italic; margin: 0 0 4px; }
 .b-issues { margin: 0; padding-left: 20px; font-size: 14px; }
 .b-banner { padding: 8px 16px; border-bottom: 1px solid var(--we-color-border); }
 .b-banner[data-kind="error"] { background: color-mix(in srgb, var(--we-color-danger) 12%, transparent); }

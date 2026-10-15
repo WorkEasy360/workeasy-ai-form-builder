@@ -23,6 +23,26 @@ export {
   type HistoryStep,
 } from "./history";
 export {
+  conditionFieldsFor,
+  defaultLeaf,
+  defaultLiteral,
+  fieldRuleOf,
+  fromSimpleCondition,
+  guardRuleEdit,
+  needsValue,
+  operatorsFor,
+  removeRule,
+  ruleProblems,
+  setFieldRule,
+  setSkipRule,
+  skipRuleOf,
+  skipTargetsFor,
+  toSimpleCondition,
+  type FieldRuleProperty,
+  type SimpleCondition,
+  type SimpleLeaf,
+} from "./rules";
+export {
   defaultSettings,
   FIELD_TYPE_INFO,
   newField,

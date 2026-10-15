@@ -6,11 +6,13 @@ import {
   BuilderError,
   duplicateField,
   FIELD_TYPE_INFO,
+  fieldRuleOf,
   moveField,
   movePage,
   PALETTE_GROUPS,
   removeField,
   removePage,
+  skipRuleOf,
   type AutosaveState,
 } from "@workeasy/builder";
 import { validateDraft } from "@workeasy/form-engine";
@@ -35,6 +37,30 @@ type Selection = { kind: "form" } | { kind: "page"; id: string } | { kind: "fiel
 
 function errorText(err: unknown): string {
   return err instanceof ApiError ? err.problem.title : "Something went wrong.";
+}
+
+/** Marks questions whose visibility or requirement a rule decides. */
+function RuleBadges({ definition, fieldId }: { definition: FormDefinition; fieldId: string }) {
+  const badges = [
+    fieldRuleOf(definition, fieldId, "visibility") && "Conditional",
+    fieldRuleOf(definition, fieldId, "required") && "Required by rule",
+  ].filter(Boolean);
+  if (badges.length === 0) return null;
+  return <p className="b-badge">{badges.join(" · ")}</p>;
+}
+
+/** Tells the author where a page's skip rule leads. */
+function SkipNote({ definition, pageId }: { definition: FormDefinition; pageId: string }) {
+  const rule = skipRuleOf(definition, pageId);
+  if (rule?.action.type !== "skipToPage") return null;
+  const { targetPageId } = rule.action;
+  const index = definition.pages.findIndex((p) => p.id === targetPageId);
+  const target = definition.pages[index];
+  return (
+    <p className="b-badge">
+      After this page, respondents may skip to {target?.title || `page ${index + 1}`}. Edit the page to change when.
+    </p>
+  );
 }
 
 function statusText(state: AutosaveState): string {
@@ -267,6 +293,7 @@ function Editor({
               <li key={p.id} className="b-row">
                 <button type="button" className="b-btn b-grow" aria-current={p.id === page.id ? "true" : undefined} onClick={() => selectPage(p.id)}>
                   {p.title || `Page ${i + 1}`}
+                  {skipRuleOf(definition, p.id) && <span className="b-badge"> · skips ahead</span>}
                 </button>
                 <button type="button" className="b-btn" disabled={readOnly || i === 0} aria-label={`Move ${p.title || `page ${i + 1}`} up`} onClick={() => run(() => movePage(definition, p.id, -1))}>
                   ↑
@@ -350,6 +377,7 @@ function Editor({
           <h2 style={{ marginTop: 0 }}>{definition.title}</h2>
           {page.title && <h3>{page.title}</h3>}
           {page.fieldIds.length === 0 && <p className="b-muted">This page has no questions yet. Add one from the list on the left.</p>}
+          <SkipNote definition={definition} pageId={page.id} />
           {page.fieldIds.map((fieldId, i) => {
             const field = definition.fields.find((f) => f.id === fieldId);
             if (!field) return null;
@@ -402,6 +430,7 @@ function Editor({
                     Delete
                   </button>
                 </div>
+                <RuleBadges definition={definition} fieldId={field.id} />
                 <FormField field={field} value={undefined} required={field.required} disabled onChange={() => undefined} idPrefix="canvas" />
               </div>
             );

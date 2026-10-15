@@ -36,7 +36,7 @@ const ID_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789";
  * Opaque random identifier with a readable prefix, e.g. "f_k3j9x2m1q0zt".
  * IDs are never derived from labels, so renaming never changes identity.
  */
-export function newId(prefix: "f" | "opt" | "page", taken: ReadonlySet<string> = new Set()): string {
+export function newId(prefix: "f" | "opt" | "page" | "rule", taken: ReadonlySet<string> = new Set()): string {
   for (;;) {
     const bytes = new Uint8Array(12);
     globalThis.crypto.getRandomValues(bytes);

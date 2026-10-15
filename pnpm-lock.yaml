@@ -322,13 +322,12 @@ importers:
 
   packages/builder:
     dependencies:
-      '@workeasy/form-schema':
-        specifier: workspace:*
-        version: link:../form-schema
-    devDependencies:
       '@workeasy/form-engine':
         specifier: workspace:*
         version: link:../form-engine
+      '@workeasy/form-schema':
+        specifier: workspace:*
+        version: link:../form-schema
 
   packages/database:
     dependencies:

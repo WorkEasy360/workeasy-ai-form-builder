@@ -3,6 +3,7 @@
 import {
   addOption,
   FIELD_TYPE_INFO,
+  fieldRuleOf,
   moveFieldToPage,
   moveOption,
   removeOption,
@@ -15,65 +16,10 @@ import {
 } from "@workeasy/builder";
 import { FIELD_REGISTRY } from "@workeasy/form-engine";
 import type { DefinitionIssue, Field, FieldSettings, FormDefinition } from "@workeasy/form-schema";
-import { useId, useState } from "react";
+import { CommitInput, type TryApply } from "./controls";
+import { FieldLogic, PageLogic } from "./logic-editor";
 
-/** Applies a candidate definition; returns an error message if it would make the draft unsaveable. */
-export type TryApply = (next: FormDefinition) => string | undefined;
-
-interface CommitInputProps {
-  label: string;
-  value: string;
-  /** Returns an error message to keep the typed text and show the problem, or undefined when applied. */
-  onCommit: (text: string) => string | undefined;
-  multiline?: boolean;
-  type?: "text" | "number" | "date" | "time";
-  hint?: string | undefined;
-  min?: number | undefined;
-  max?: number | undefined;
-}
-
-/**
- * An input that keeps what the user typed even when it cannot be applied yet
- * (e.g. an empty label), showing why, instead of snapping back.
- */
-export function CommitInput({ label, value, onCommit, multiline, type = "text", hint, min, max }: CommitInputProps) {
-  const id = useId();
-  const [text, setText] = useState(value);
-  const [seen, setSeen] = useState(value);
-  const [error, setError] = useState<string | undefined>();
-  // Follow outside changes (another control, reload) unless the user is mid-fix.
-  if (value !== seen) {
-    setSeen(value);
-    if (!error) setText(value);
-  }
-  const describedBy = [hint ? `${id}-hint` : "", error ? `${id}-error` : ""].filter(Boolean).join(" ") || undefined;
-  const common = {
-    id,
-    value: text,
-    "aria-invalid": error ? true : undefined,
-    "aria-describedby": describedBy,
-    onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-      setText(e.target.value);
-      setError(onCommit(e.target.value));
-    },
-  };
-  return (
-    <div className="b-field">
-      <label htmlFor={id}>{label}</label>
-      {multiline ? <textarea {...common} rows={3} /> : <input {...common} type={type} min={min} max={max} />}
-      {hint && (
-        <p id={`${id}-hint`} className="b-muted" style={{ margin: 0 }}>
-          {hint}
-        </p>
-      )}
-      {error && (
-        <p id={`${id}-error`} className="b-inline-error">
-          {error}
-        </p>
-      )}
-    </div>
-  );
-}
+export { CommitInput, type TryApply } from "./controls";
 
 function IssueList({ issues }: { issues: DefinitionIssue[] }) {
   if (issues.length === 0) return null;
@@ -135,6 +81,7 @@ export function PageInspector({ definition, pageId, tryApply }: { definition: Fo
       <p className="b-muted">
         {page.fieldIds.length === 1 ? "1 question" : `${page.fieldIds.length} questions`} on this page.
       </p>
+      <PageLogic definition={definition} pageId={page.id} tryApply={tryApply} />
     </section>
   );
 }
@@ -174,6 +121,7 @@ export function FieldInspector({
   if (!field) return null;
   const settings = field.settings;
   const page = definition.pages.find((p) => p.fieldIds.includes(field.id));
+  const requiredByRule = fieldRuleOf(definition, field.id, "required") !== undefined;
   const fieldIssues = issues.filter((i) => i.path === `/fields/${index}` || i.path.startsWith(`/fields/${index}/`));
 
   const setSettings = (patch: SettingsInput) => tryApply(updateFieldSettings(definition, field.id, { ...settings, ...patch }));
@@ -238,10 +186,17 @@ export function FieldInspector({
           <input
             type="checkbox"
             checked={field.required}
+            disabled={requiredByRule}
+            aria-describedby={requiredByRule ? `${field.id}-required-rule` : undefined}
             onChange={(e) => tryApply(updateField(definition, field.id, { required: e.target.checked }))}
           />
           {field.type === "consent" ? "Respondents must agree to submit" : "Required"}
         </label>
+        {requiredByRule && (
+          <p id={`${field.id}-required-rule`} className="b-muted" style={{ margin: 0 }}>
+            Decided by the rule under Logic.
+          </p>
+        )}
       </div>
 
       {definition.pages.length > 1 && page && (
@@ -364,6 +319,8 @@ export function FieldInspector({
           onCommit={(t) => (t.trim() === "" ? "Give this wording a version." : setSettings({ consentTextVersion: t.trim() }))}
         />
       )}
+
+      <FieldLogic definition={definition} field={field} tryApply={tryApply} />
 
       <IssueList issues={fieldIssues} />
     </section>
