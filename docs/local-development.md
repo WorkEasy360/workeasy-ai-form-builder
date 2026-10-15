@@ -78,7 +78,7 @@ Workspace packages export their TypeScript source directly (`"exports": "./src/i
 
 Packages used by the Next.js apps (`form-schema`, `form-engine`, `form-renderer`, `builder`, `ui`) import TypeScript files **without** an extension (`from "./fields"`, not `"./fields.js"`): Next's Turbopack cannot resolve a `.js` specifier to a `.ts` file. Imports of real `.js` files, such as the generated validator, keep their extension. `pnpm build` fails if this is broken.
 
-Both Next.js apps set `logging.browserToTerminal: false`. With it on, every page load writes to `.next/dev/logs`, the repo-wide watcher sees that write, and the page reloads in an endless loop.
+Both Next.js apps set `experimental.mcpServer: false`. Next 16's development MCP server writes every log line to `.next/dev/logs`; in this monorepo the repo-wide watcher picks up those writes and reloads the page, which logs again, causing an endless reload loop.
 
 Packages without an implementation yet (`events`, `integrations`, …) are boundaries only: each `src/index.ts` names the backlog item that delivers it and exports nothing.
 
@@ -166,10 +166,15 @@ The console lists, creates, duplicates, archives and restores forms at `/o/:orgI
 - **Centre:** the current page rendered by the shared `@workeasy/form-renderer`, with move, duplicate and delete per question.
 - **Right:** the inspector, for form details, page title, or the selected question's label, help text, required state and type-specific settings (lengths, number/date/time bounds, options, selection limits, file types and sizes, consent version).
 - **Validation:** issues are recomputed in the browser with the same `validateDraft` the server uses. An edit that would make the draft unsaveable, such as an empty label, isn't applied; it shows an inline error and keeps what you typed.
-- **Saving:** the Save button or Ctrl/Cmd+S. You're warned before leaving with unsaved changes. If someone else saved first, the builder says so and offers to load their version.
+- **Undo/redo:** every edit is a labelled step ("Undo Add Rating"), using the Undo/Redo buttons or Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z (or Ctrl+Y). Inside a text field the browser's own text undo applies. Typing in one field within 1.5 s counts as one step. History holds up to 100 steps for the session; reloading starts fresh.
+- **Autosave:** changes save 800 ms after the last edit, one save at a time. Edits made during a save follow in the next save. Network or server failures retry after 1, 3, 10 and then every 30 seconds. Undoing back to the saved state counts as saved. "Save now" or Ctrl/Cmd+S saves immediately, and you're warned before leaving while anything is unsaved.
+- **Conflicts:** if someone else saved first, autosave pauses and your version stays in the tab. The builder shows who saved and when, and lists **your unsaved changes** and **their changes** separately, each compared with the last version this tab saved. You can then:
+  - **Keep my version:** an explicit overwrite.
+  - **Use their version:** loaded as an undoable step, so Undo brings yours back.
+  - **Download my version:** a JSON copy.
 - **Keyboard:** every action is a button, so nothing needs dragging.
 
-Pure editing operations live in `@workeasy/builder` (add/update/move/duplicate/remove questions, options and pages). Removing a question also removes the rules that depend on it, and reports them. New fields and options get random opaque IDs, so labels can change without changing identity.
+`@workeasy/builder` also holds the edit history (`applyStep`/`undo`/`redo`), the autosave controller (`Autosave`) and `diffDefinitions`/`summarizeChanges`, which name changes by stable ID (reused for reviewing AI proposals). `GET …/draft` reports `updatedAt` and `updatedBy` for the conflict message. Pure editing operations live in `@workeasy/builder` (add/update/move/duplicate/remove questions, options and pages). Removing a question also removes the rules that depend on it, and reports them. New fields and options get random opaque IDs, so labels can change without changing identity.
 
 ## Form definitions and the engine
 

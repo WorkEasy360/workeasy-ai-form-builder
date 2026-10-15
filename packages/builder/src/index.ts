@@ -1,4 +1,28 @@
 export {
+  Autosave,
+  AUTOSAVE_DELAY_MS,
+  RETRY_DELAYS_MS,
+  type AutosaveOptions,
+  type AutosaveState,
+  type SaveOutcome,
+} from "./autosave";
+export { diffDefinitions, summarizeChanges, type DefinitionChange } from "./diff";
+export {
+  applyStep,
+  canRedo,
+  canUndo,
+  COALESCE_WINDOW_MS,
+  createHistory,
+  MAX_HISTORY_STEPS,
+  redo,
+  redoLabel,
+  undo,
+  undoLabel,
+  type ApplyOptions,
+  type EditorHistory,
+  type HistoryStep,
+} from "./history";
+export {
   defaultSettings,
   FIELD_TYPE_INFO,
   newField,

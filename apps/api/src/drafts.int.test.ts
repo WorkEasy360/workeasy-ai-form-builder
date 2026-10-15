@@ -19,6 +19,7 @@ let app: Express;
 let a: TenantFixture;
 let b: TenantFixture;
 const tokens: Record<string, string> = {};
+let creatorId = "";
 
 const roleUser = (t: TenantFixture, role: string) => t.members.find((m) => m.role === role)!.user.id;
 const auth = (req: request.Test, who: string) => req.set("Cookie", `we_session=${tokens[who]}`).set("Origin", TEST_CONSOLE_ORIGIN);
@@ -61,6 +62,7 @@ beforeAll(async () => {
   await sign("ownerB", roleUser(b, "owner"));
   const creator = await identityRepo.findOrCreateUser(db, { issuer: FIXTURE_ISSUER, subject: `drafts-${randomUUID()}` });
   await withTenant(db, a.id, (trx) => trx.insertInto("memberships").values({ tenant_id: a.id, user_id: creator, role: "creator" }).execute());
+  creatorId = creator;
   await sign("creatorA", creator);
 });
 
@@ -124,6 +126,9 @@ describe("saving a draft", () => {
     expect(stale.currentRevision).toBe(2);
     const current = DraftResponseSchema.parse((await getDraft(a.id, id, "creatorA")).body);
     expect(current.definition).toMatchObject({ title: "Saved first" });
+    // The conflict screen can say who saved the version that won.
+    expect(current.updatedBy.id).toBe(creatorId);
+    expect(Date.parse(current.updatedAt)).toBeLessThanOrEqual(Date.now() + 5_000);
   });
 
   it("lets exactly one of two concurrent saves of the same revision win", async () => {

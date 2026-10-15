@@ -395,7 +395,13 @@ export function apiV1Router({ db, settings }: AppDependencies): Router {
         const checked = validateDraft(draft.definition);
         return {
           kind: "ok",
-          body: { revision: draft.revision, definition: draft.definition, issues: checked.issues },
+          body: {
+            revision: draft.revision,
+            definition: draft.definition,
+            issues: checked.issues,
+            updatedAt: draft.updatedAt.toISOString(),
+            updatedBy: draft.updatedBy,
+          },
           headers: { ETag: draftEtag(draft.revision) },
         };
       }),

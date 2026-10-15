@@ -155,10 +155,26 @@ export async function getFormSummary(trx: Trx, formId: string): Promise<FormSumm
 export interface FormDraft {
   revision: number;
   definition: Record<string, unknown>;
+  updatedAt: Date;
+  updatedBy: { id: string; displayName: string | null };
 }
 
 export async function getDraft(trx: Trx, formId: string): Promise<FormDraft | undefined> {
-  return trx.selectFrom("form_drafts").select(["revision", "definition"]).where("form_id", "=", formId).executeTakeFirst();
+  const row = await trx
+    .selectFrom("form_drafts as d")
+    // Users are visible to their own tenants' contexts, so the last editor's name resolves here.
+    .leftJoin("users as u", "u.id", "d.updated_by")
+    .select(["d.revision", "d.definition", "d.updated_at", "d.updated_by", "u.display_name"])
+    .where("d.form_id", "=", formId)
+    .executeTakeFirst();
+  return row
+    ? {
+        revision: row.revision,
+        definition: row.definition,
+        updatedAt: row.updated_at,
+        updatedBy: { id: row.updated_by, displayName: row.display_name ?? null },
+      }
+    : undefined;
 }
 
 /**

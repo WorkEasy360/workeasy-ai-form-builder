@@ -33,6 +33,9 @@ export const DraftResponseSchema = z.object({
   definition: z.record(z.string(), z.unknown()),
   /** Problems to fix before publishing; a draft may still be saved with them. */
   issues: z.array(DefinitionIssueSchema),
+  /** When and by whom this revision was saved (shown when resolving a conflict). */
+  updatedAt: Timestamp,
+  updatedBy: z.object({ id: Uuid, displayName: z.string().nullable() }),
 });
 export type DraftResponse = z.infer<typeof DraftResponseSchema>;
 
