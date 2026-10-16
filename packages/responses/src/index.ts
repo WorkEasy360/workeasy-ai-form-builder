@@ -4,6 +4,7 @@
  * Server only.
  */
 export { csvCell, csvRow, neutralizeFormula, UTF8_BOM } from "./csv.js";
+export { applyRetention, purgeDeletedResponses, purgeOne, type PurgeDeps } from "./purge.js";
 export { EXPORT_LEASE_SECONDS, expireOldExports, processExports, runExportJob, type ExportDeps } from "./export-job.js";
 export {
   canRead,

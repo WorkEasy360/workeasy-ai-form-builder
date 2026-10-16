@@ -170,6 +170,8 @@ export async function getClaimedUpload(trx: Trx, formId: string, submissionId: s
     .where("form_id", "=", formId)
     .where("claimed_submission_id", "=", submissionId)
     .where("state", "=", "clean")
+    // A deleted response's files are gone for readers at once, before the purge removes them.
+    .where((eb) => eb.exists(eb.selectFrom("submissions as s").select("s.id").whereRef("s.id", "=", "file_uploads.claimed_submission_id").where("s.deleted_at", "is", null)))
     .executeTakeFirst();
   return row ? toUpload(row) : undefined;
 }

@@ -5,7 +5,7 @@ import { api, ApiError } from "../../../../../../lib/api";
 
 interface ExportItem {
   id: string;
-  state: "queued" | "running" | "succeeded" | "failed" | "expired";
+  state: "queued" | "running" | "succeeded" | "failed" | "expired" | "purged";
   failureCode: "access_revoked" | "form_unavailable" | "error" | null;
   raw: boolean;
   cutoff: string;
@@ -23,6 +23,7 @@ const STATE_TEXT: Record<ExportItem["state"], string> = {
   succeeded: "Ready",
   failed: "Failed",
   expired: "Expired",
+  purged: "Removed because a response in it was deleted",
 };
 
 const FAILURE_TEXT: Record<NonNullable<ExportItem["failureCode"]>, string> = {

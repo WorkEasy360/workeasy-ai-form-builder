@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { api, ApiError } from "../../../../../../../lib/api";
 
 type Masked = { masked: true } | { masked: false; value: unknown; display: string };
@@ -34,6 +34,33 @@ export function ResponseDetail({ orgId, formId, submissionId }: { orgId: string;
   const [detail, setDetail] = useState<Detail | undefined>();
   const [error, setError] = useState<string | undefined>();
   const [downloadError, setDownloadError] = useState<string | undefined>();
+  const [canDelete, setCanDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [reason, setReason] = useState("");
+  const [deleteError, setDeleteError] = useState<string | undefined>();
+  const reasonId = useId();
+
+  useEffect(() => {
+    let cancelled = false;
+    api<{ form: { permissions: string[] } }>(`/api/v1/organizations/${orgId}/forms/${formId}`)
+      .then((f) => {
+        if (!cancelled) setCanDelete(f.form.permissions.includes("responses.delete"));
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [orgId, formId]);
+
+  async function remove() {
+    setDeleteError(undefined);
+    try {
+      await api(base, { method: "DELETE", body: { reason: reason.trim() } });
+      window.location.assign(`/o/${orgId}/forms/${formId}/responses`);
+    } catch (err) {
+      setDeleteError(errorText(err));
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -110,6 +137,40 @@ export function ResponseDetail({ orgId, formId, submissionId }: { orgId: string;
               </div>
             ))}
           </dl>
+          {canDelete && (
+            <section aria-labelledby={`${reasonId}-heading`} style={{ marginTop: 24 }}>
+              <h2 id={`${reasonId}-heading`} style={{ fontSize: 18 }}>
+                Delete this response
+              </h2>
+              {!deleting ? (
+                <button type="button" onClick={() => setDeleting(true)}>
+                  Delete response…
+                </button>
+              ) : (
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    void remove();
+                  }}
+                >
+                  <p>It disappears at once; its answers and files are erased shortly afterwards, along with any exports that include it. This can&apos;t be undone.</p>
+                  <label htmlFor={reasonId} style={{ display: "block", fontWeight: 600 }}>
+                    Reason (kept with the deletion record)
+                  </label>
+                  <textarea id={reasonId} value={reason} onChange={(e) => setReason(e.target.value)} rows={2} maxLength={500} required minLength={3} style={{ width: "100%" }} />
+                  <p>
+                    <button type="submit" disabled={reason.trim().length < 3}>
+                      Delete permanently
+                    </button>{" "}
+                    <button type="button" onClick={() => setDeleting(false)}>
+                      Cancel
+                    </button>
+                  </p>
+                  {deleteError && <p role="alert">{deleteError}</p>}
+                </form>
+              )}
+            </section>
+          )}
         </>
       )}
     </div>

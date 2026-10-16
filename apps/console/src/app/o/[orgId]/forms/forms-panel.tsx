@@ -14,7 +14,7 @@ type Load =
   | { kind: "signed-out" }
   | { kind: "not-found" }
   | { kind: "error"; message: string }
-  | { kind: "ready"; orgName: string; canCreate: boolean };
+  | { kind: "ready"; orgName: string; canCreate: boolean; canReadAudit: boolean };
 
 /** Below 640px the table becomes stacked rows, each cell labelled from data-label. */
 const RESPONSIVE_TABLE_CSS = `
@@ -90,7 +90,12 @@ export function FormsPanel({ orgId }: { orgId: string }) {
           return;
         }
         setTemplates(t.templates);
-        setLoad({ kind: "ready", orgName: org.name, canCreate: org.permissions.includes("forms.create") });
+        setLoad({
+          kind: "ready",
+          orgName: org.name,
+          canCreate: org.permissions.includes("forms.create"),
+          canReadAudit: org.permissions.includes("organization.audit.read"),
+        });
       })
       .catch((err: unknown) => {
         if (cancelled) return;
@@ -165,6 +170,25 @@ export function FormsPanel({ orgId }: { orgId: string }) {
     }
   }
 
+  /** Deletes a form and every response on it, after asking why (the reason is kept with the deletion). */
+  async function remove(formItem: FormSummary) {
+    const reason = window.prompt(
+      `Delete "${formItem.name}" and all its responses?\n\nThis can't be undone: responses and their files are erased shortly afterwards. Type the reason to continue.`,
+    );
+    if (!reason || reason.trim().length < 3) return;
+    setBusy(`delete:${formItem.id}`);
+    setStatus("");
+    try {
+      const res = await api<{ responses: number }>(`/api/v1/organizations/${orgId}/forms/${formItem.id}`, { method: "DELETE", body: { reason: reason.trim() } });
+      setStatus(`Deleted "${formItem.name}" and ${res.responses === 1 ? "1 response" : `${res.responses} responses`}.`);
+      await loadForms();
+    } catch (err) {
+      setStatus(`Couldn't delete "${formItem.name}": ${message(err)}`);
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function act(formItem: FormSummary, action: "duplicate" | "archive" | "restore") {
     setBusy(`${action}:${formItem.id}`);
     setStatus("");
@@ -212,7 +236,15 @@ export function FormsPanel({ orgId }: { orgId: string }) {
         <a href="/">← Your organizations</a>
       </p>
       <h1 style={{ fontSize: 28, marginBottom: 0 }}>Forms</h1>
-      <p style={{ marginTop: 4, color: "var(--we-color-textMuted)" }}>{load.orgName}</p>
+      <p style={{ marginTop: 4, color: "var(--we-color-textMuted)" }}>
+        {load.orgName}
+        {load.canReadAudit && (
+          <>
+            {" · "}
+            <a href={`/o/${orgId}/audit`}>Audit log</a>
+          </>
+        )}
+      </p>
 
       {load.canCreate && (
         <form
@@ -348,6 +380,11 @@ export function FormsPanel({ orgId }: { orgId: string }) {
                     {canArchive && f.state !== "archived" && (
                       <button type="button" style={button} disabled={busy !== null} onClick={() => void act(f, "archive")} aria-label={`Archive ${f.name}`}>
                         Archive
+                      </button>
+                    )}
+                    {f.permissions.includes("forms.delete") && (
+                      <button type="button" style={button} disabled={busy !== null} onClick={() => void remove(f)} aria-label={`Delete ${f.name}`}>
+                        Delete
                       </button>
                     )}
                     {canArchive && f.state === "archived" && (

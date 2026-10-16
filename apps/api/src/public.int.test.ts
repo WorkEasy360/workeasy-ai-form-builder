@@ -150,8 +150,8 @@ describe("close and reopen", () => {
     const audit = await withTenant(owner, a.id, (trx) =>
       trx.selectFrom("audit_events").select(["action", "metadata"]).where("resource_id", "=", f.id).orderBy("occurred_at").orderBy("id").execute(),
     );
-    expect(audit.map((e) => e.action)).toEqual(["form.published", "form.closed", "form.reopened"]);
-    expect(audit[1]!.metadata).toEqual({ activeVersionId: f.versionId, reason: "Event is full" });
+    expect(audit.map((e) => e.action)).toEqual(["form.created", "form.published", "form.closed", "form.reopened"]);
+    expect(audit[2]!.metadata).toEqual({ activeVersionId: f.versionId, reason: "Event is full" });
   });
 
   it("lets a session finish the version it started with after a newer one is published", async () => {

@@ -289,7 +289,7 @@ export const UploadCreateBodySchema = z.object({
   bytes: z.number().int().min(1).max(MAX_UPLOAD_BYTES),
 });
 
-export const UPLOAD_STATES = ["awaiting_upload", "pending_scan", "scanning", "clean", "infected", "rejected", "expired"] as const;
+export const UPLOAD_STATES = ["awaiting_upload", "pending_scan", "scanning", "clean", "infected", "rejected", "expired", "purged"] as const;
 
 export const UploadCreateResponseSchema = z.object({
   uploadId: Uuid,
@@ -428,7 +428,8 @@ export const ExportCreateBodySchema = z
 export const ExportSchema = z.object({
   id: Uuid,
   formId: Uuid,
-  state: z.enum(["queued", "running", "succeeded", "failed", "expired"]),
+  /** purged: deleted because a response in it was deleted (GOV-01). */
+  state: z.enum(["queued", "running", "succeeded", "failed", "expired", "purged"]),
   /** Why it failed: the requester lost access, the form went away, or an error. */
   failureCode: z.enum(["access_revoked", "form_unavailable", "error"]).nullable(),
   raw: z.boolean(),
@@ -452,3 +453,47 @@ export const ExportDownloadResponseSchema = z.object({
   fileName: z.string(),
 });
 export type ExportDownloadResponse = z.infer<typeof ExportDownloadResponseSchema>;
+
+// Governance (GOV-01) -------------------------------------------------------
+
+export const DeletionBodySchema = z.object({
+  /** Why it is being deleted; kept with the deletion record, never shown to respondents. */
+  reason: z.string().trim().min(3).max(500),
+});
+
+export const RetentionBodySchema = z
+  .object({
+    /** Responses older than this are deleted and purged automatically. */
+    retentionDays: z.number().int().min(1).max(3650).optional(),
+    /** While on hold nothing on the form is deleted or purged (owners and admins only). */
+    legalHold: z.boolean().optional(),
+  })
+  .refine((b) => b.retentionDays !== undefined || b.legalHold !== undefined, { message: "Send at least one setting to change" });
+
+export const RetentionResponseSchema = z.object({ retentionDays: z.number().int(), legalHold: z.boolean() });
+export type RetentionResponse = z.infer<typeof RetentionResponseSchema>;
+
+export const AuditQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  cursor: z.string().min(1).max(500).optional(),
+  action: z.string().regex(/^[a-z][a-z_]*(\.[a-z][a-z_]*)+$/).optional(),
+  resourceId: Uuid.optional(),
+});
+
+export const AuditListResponseSchema = z.object({
+  items: z.array(
+    z.object({
+      id: Uuid,
+      occurredAt: Timestamp,
+      actor: z.object({ type: z.enum(["user", "system"]), id: Uuid.nullable(), displayName: z.string().nullable() }),
+      action: z.string(),
+      resourceType: z.string(),
+      resourceId: Uuid,
+      requestId: z.string().nullable(),
+      /** Identifiers and counts only; never answers. */
+      metadata: z.record(z.string(), z.unknown()),
+    }),
+  ),
+  nextCursor: z.string().optional(),
+});
+export type AuditListResponse = z.infer<typeof AuditListResponseSchema>;

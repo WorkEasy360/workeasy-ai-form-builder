@@ -133,15 +133,15 @@ describe("publish", () => {
     expect(res.headers.location).toBe(`${f.path}/versions/${body.version.id}`);
 
     const audit = await auditFor(f.id);
-    expect(audit).toHaveLength(1);
-    expect(audit[0]).toMatchObject({
+    expect(audit.map((e) => e.action)).toEqual(["form.created", "form.published"]);
+    expect(audit[1]).toMatchObject({
       actor_type: "user",
       actor_id: users.creatorA,
       action: "form.published",
       resource_type: "form",
       metadata: { versionId: body.version.id, versionNumber: 1, draftRevision: 1, previousVersionId: null },
     });
-    expect(audit[0]!.request_id).toBe(res.headers["x-request-id"]);
+    expect(audit[1]!.request_id).toBe(res.headers["x-request-id"]);
 
     const outbox = await outboxFor(f.id);
     expect(outbox).toHaveLength(1);
@@ -307,8 +307,8 @@ describe("activate-version (rollback)", () => {
     // Activating the active version again changes nothing and is not audited twice.
     expect((await post(`${f.path}/activate-version`, "creatorA", { versionId: v1.id })).status).toBe(200);
     const audit = await auditFor(f.id);
-    expect(audit.map((e) => e.action)).toEqual(["form.published", "form.published", "form.version_activated"]);
-    expect(audit[2]!.metadata).toEqual({ versionId: v1.id, versionNumber: 1, previousVersionId: v2.id });
+    expect(audit.map((e) => e.action)).toEqual(["form.created", "form.published", "form.published", "form.version_activated"]);
+    expect(audit[3]!.metadata).toEqual({ versionId: v1.id, versionNumber: 1, previousVersionId: v2.id });
     // Only publications emit events.
     expect(await outboxFor(f.id)).toHaveLength(2);
   });

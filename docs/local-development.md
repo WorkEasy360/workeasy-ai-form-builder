@@ -268,6 +268,23 @@ The CSV is RFC 4180 with CRLF line endings and a UTF-8 byte-order mark for Excel
 
 The response presentation and CSV code live in `@workeasy/responses`, shared by the API and the worker.
 
+## Deletion, retention and the audit log (GOV-01)
+
+- **Deleting a response** (`DELETE …/submissions/:id`, needs `responses.delete`, with a reason) hides it from every reader at once: lists, detail, exports and file downloads. The worker's `purge-deleted` task then purges it:
+  1. It deletes the response's files and every finished export that could contain it (cutoff on or after the response) from storage.
+  2. Only then does `app.complete_purge` clear the answers and consents, remove the idempotency receipts, and mark the uploads and exports `purged`.
+
+  The row stays as a tombstone with identifiers, times and the deletion reason, so a restored backup can replay deletions before serving traffic. **Deleting a form** (`DELETE …/forms/:id`, `forms.delete`) hides it, including its public link, and deletes every response on it the same way.
+- **Retention:** each form keeps responses for `retention_days` (1–3650, default 365), set in the Share panel's **Data retention** (needs `forms.publish`). The worker's `apply-retention` task deletes older responses as the system, and the purge follows.
+- **Legal hold** (owners and admins only) stops all of this for a form: deletion requests get `409 LEGAL_HOLD`, retention skips it, and responses already deleted wait unpurged until the hold is lifted.
+- **Audit log:** owners and admins see it at **Audit log** on the forms page (`GET /api/v1/organizations/:orgId/audit`, `organization.audit.read`), newest first, filterable by action. Recorded actions include:
+  - creating, duplicating, publishing, closing, archiving, restoring and deleting forms;
+  - access-policy, grant and retention changes;
+  - response deletions, purges and retention runs;
+  - export requests and downloads.
+
+  Entries hold identifiers and counts, never answers. Deletion reasons stay on the deletion record and are not copied into the audit log. Purge and retention entries use the `system` actor.
+
 ## Uploads and scanning (FIL-01)
 
 File questions accept uploads in three steps:
@@ -323,5 +340,5 @@ Later backlog items add these:
 
 - Distributed tracing (OpenTelemetry), metrics and alerting
 - Secret scanning and container image scanning in CI
-- Audit events for grant changes and sign-ins (GOV-01)
+- Audit entries for sign-ins: sign-ins belong to no organization, so they are recorded in the structured logs only
 - Rate limiting on sign-in, and invalidating sessions after high-risk account changes

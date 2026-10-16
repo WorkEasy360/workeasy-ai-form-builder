@@ -47,6 +47,7 @@ export interface FormsTable {
   state: Generated<FormState>;
   active_version_id: Generated<string | null>;
   retention_days: Generated<number>;
+  legal_hold: Generated<boolean>;
   deleted_at: Date | null;
   created_at: CreatedAt;
   updated_at: UpdatedAt;
@@ -166,7 +167,11 @@ export interface SubmissionsTable {
   intake_state: Generated<"accepted">;
   receipt_id: string;
   received_at: ColumnType<Date, Date | undefined, never>;
-  deleted_at: Date | null;
+  deleted_at: Generated<Date | null>;
+  deleted_by: Generated<string | null>;
+  deletion_reason: Generated<string | null>;
+  purged_at: Generated<Date | null>;
+  purge_lease_until: Generated<Date | null>;
 }
 
 export interface SubmissionRequestsTable {
@@ -197,7 +202,7 @@ export interface UsageBucketsTable {
   updated_at: UpdatedAt;
 }
 
-export type UploadState = "awaiting_upload" | "pending_scan" | "scanning" | "clean" | "infected" | "rejected" | "expired";
+export type UploadState = "awaiting_upload" | "pending_scan" | "scanning" | "clean" | "infected" | "rejected" | "expired" | "purged";
 
 export interface FileUploadsTable {
   id: string;
@@ -222,7 +227,7 @@ export interface FileUploadsTable {
   expires_at: Generated<Date>;
 }
 
-export type ExportState = "queued" | "running" | "succeeded" | "failed" | "expired";
+export type ExportState = "queued" | "running" | "succeeded" | "failed" | "expired" | "purged";
 
 export interface ExportsTable {
   id: string;

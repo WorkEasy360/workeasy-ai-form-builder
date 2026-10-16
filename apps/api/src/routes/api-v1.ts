@@ -13,6 +13,7 @@ import {
   identityRepo,
   orgRepo,
   exportsRepo,
+  governanceRepo,
   publishRepo,
   responsesRepo,
   uploadsRepo,
@@ -44,8 +45,11 @@ import type { AppDependencies } from "../app.js";
 import {
   AccessPolicyBodySchema,
   ActivateVersionBodySchema,
+  AuditQuerySchema,
   CloseFormBodySchema,
+  DeletionBodySchema,
   ExportCreateBodySchema,
+  RetentionBodySchema,
   ResponseListQuerySchema,
   CreateFormBodySchema,
   IDEMPOTENCY_KEY_PATTERN,
@@ -55,6 +59,8 @@ import {
   type FormGrantsResponse,
   type FormListResponse,
   type AccessPolicyResponse,
+  type AuditListResponse,
+  type RetentionResponse,
   type DraftResponse,
   type ExportBody,
   type ExportDownloadResponse,
@@ -403,6 +409,7 @@ export function apiV1Router({ db, settings, objectStore }: AppDependencies): Rou
           definition: definition as unknown as Record<string, unknown>,
           ownerGrants: CREATOR_GRANTS,
         });
+        await audit(trx, res, orgId, "form.created", "form", result.form.id, { template: template ?? null });
         return created(orgId, {
           form: summaryBody(result.form, formPermissions(membership, CREATOR_GRANTS)),
           draft: { revision: result.draftRevision },
@@ -449,6 +456,7 @@ export function apiV1Router({ db, settings, objectStore }: AppDependencies): Rou
           definition: { ...structuredClone(source.definition), title: body.data.name },
           ownerGrants: CREATOR_GRANTS,
         });
+        await audit(trx, res, orgId, "form.duplicated", "form", result.form.id, { sourceFormId: formId });
         return created(orgId, {
           form: summaryBody(result.form, formPermissions(membership, CREATOR_GRANTS)),
           draft: { revision: result.draftRevision },
@@ -465,6 +473,7 @@ export function apiV1Router({ db, settings, objectStore }: AppDependencies): Rou
       await onForm(res, orgId, formId, "forms.publish", async (trx, { permissions }): Promise<Outcome<FormResponse>> => {
         const form = await orgRepo.transitionFormState(trx, formId, ["draft", "published", "closed"], "archived");
         if (!form) return { kind: "conflict", code: "FORM_STATE_CONFLICT", title: "The form is already archived" };
+        await audit(trx, res, orgId, "form.archived", "form", formId, {});
         return { kind: "ok", body: await formResponse(trx, form, permissions) };
       }),
     );
@@ -479,6 +488,7 @@ export function apiV1Router({ db, settings, objectStore }: AppDependencies): Rou
       await onForm(res, orgId, formId, "forms.publish", async (trx, { form: current, permissions }): Promise<Outcome<FormResponse>> => {
         const form = await orgRepo.transitionFormState(trx, formId, ["archived"], current.activeVersionId ? "closed" : "draft");
         if (!form) return { kind: "conflict", code: "FORM_STATE_CONFLICT", title: "The form is not archived" };
+        await audit(trx, res, orgId, "form.restored", "form", formId, { state: form.state });
         return { kind: "ok", body: await formResponse(trx, form, permissions) };
       }),
     );
@@ -1028,6 +1038,163 @@ export function apiV1Router({ db, settings, objectStore }: AppDependencies): Rou
     );
   });
 
+  /** Appends an audit entry for the signed-in user. Metadata holds identifiers and counts, never answers. */
+  function audit(trx: Trx, res: Response, tenantId: string, action: string, resourceType: string, resourceId: string, metadata: Record<string, unknown>) {
+    return publishRepo.appendAudit(trx, {
+      tenantId,
+      actor: { type: "user", id: sessionOf(res).userId },
+      action,
+      resourceType,
+      resourceId,
+      requestId: requestIdOf(res),
+      metadata,
+    });
+  }
+
+  // Governance (GOV-01, docs/04 §7) -----------------------------------------
+
+  const LEGAL_HOLD = { kind: "conflict", code: "LEGAL_HOLD", title: "This form is on legal hold; nothing on it can be deleted" } as const;
+
+  /** Deletes one response: hidden at once, then purged (content, files and exports) by the worker. */
+  router.delete("/organizations/:orgId/forms/:formId/submissions/:submissionId", async (req, res) => {
+    const body = DeletionBodySchema.safeParse(req.body ?? {});
+    if (!body.success) {
+      problems.validation(res, issuesToErrors(body.error));
+      return;
+    }
+    const { orgId, formId, submissionId } = req.params;
+    if (!UUID_PATTERN.test(submissionId)) {
+      problems.notFound(res);
+      return;
+    }
+    const userId = sessionOf(res).userId;
+    respond(
+      res,
+      await onForm(res, orgId, formId, "responses.delete", async (trx): Promise<Outcome<{ deleted: true }>> => {
+        const retention = await governanceRepo.getRetention(trx, formId);
+        if (retention?.legalHold) return LEGAL_HOLD;
+        if (!(await governanceRepo.deleteResponse(trx, formId, submissionId, userId, body.data.reason))) return { kind: "not_found" };
+        // The reason stays with the deletion record; the audit entry only says one was given.
+        await audit(trx, res, orgId, "response.deleted", "submission", submissionId, { formId });
+        return { kind: "ok", status: 202, body: { deleted: true } };
+      }),
+    );
+  });
+
+  /** Deletes a form and every response on it; the worker purges their content. */
+  router.delete("/organizations/:orgId/forms/:formId", async (req, res) => {
+    const body = DeletionBodySchema.safeParse(req.body ?? {});
+    if (!body.success) {
+      problems.validation(res, issuesToErrors(body.error));
+      return;
+    }
+    const { orgId, formId } = req.params;
+    const userId = sessionOf(res).userId;
+    respond(
+      res,
+      await onForm(res, orgId, formId, "forms.delete", async (trx): Promise<Outcome<{ deleted: true; responses: number }>> => {
+        const retention = await governanceRepo.getRetention(trx, formId);
+        if (retention?.legalHold) return LEGAL_HOLD;
+        const responses = await governanceRepo.deleteForm(trx, formId, userId, body.data.reason);
+        await audit(trx, res, orgId, "form.deleted", "form", formId, { responses });
+        return { kind: "ok", status: 202, body: { deleted: true, responses } };
+      }),
+    );
+  });
+
+  router.get("/organizations/:orgId/forms/:formId/retention", async (req, res) => {
+    const { orgId, formId } = req.params;
+    respond(
+      res,
+      await onForm(res, orgId, formId, "forms.read", async (trx): Promise<Outcome<RetentionResponse>> => ({
+        kind: "ok",
+        body: (await governanceRepo.getRetention(trx, formId))!,
+      })),
+    );
+  });
+
+  /**
+   * How long responses are kept (needs forms.publish), and the legal hold,
+   * which stops all deletion on the form (owners and admins only).
+   */
+  router.patch("/organizations/:orgId/forms/:formId/retention", async (req, res) => {
+    const body = RetentionBodySchema.safeParse(req.body);
+    if (!body.success) {
+      problems.validation(res, issuesToErrors(body.error));
+      return;
+    }
+    const { orgId, formId } = req.params;
+    respond(
+      res,
+      await onForm(res, orgId, formId, "forms.publish", async (trx, { membership }): Promise<Outcome<RetentionResponse>> => {
+        const current = (await governanceRepo.getRetention(trx, formId))!;
+        if (body.data.legalHold !== undefined && body.data.legalHold !== current.legalHold && membership.role !== "owner" && membership.role !== "admin") {
+          return { kind: "forbidden" };
+        }
+        // Shortening retention would delete responses: not while they are on hold.
+        const next = { retentionDays: body.data.retentionDays ?? current.retentionDays, legalHold: body.data.legalHold ?? current.legalHold };
+        if (next.retentionDays !== current.retentionDays || next.legalHold !== current.legalHold) {
+          await governanceRepo.setRetention(trx, formId, next);
+          await audit(trx, res, orgId, "form.retention_changed", "form", formId, { ...next, previous: current });
+        }
+        return { kind: "ok", body: next };
+      }),
+    );
+  });
+
+  function encodeAuditCursor(occurredAt: string, id: string): string {
+    return Buffer.from(JSON.stringify([occurredAt, id]), "utf8").toString("base64url");
+  }
+
+  function decodeAuditCursor(value: string): { occurredAt: string; id: string } | undefined {
+    try {
+      const parsed: unknown = JSON.parse(Buffer.from(value, "base64url").toString("utf8"));
+      if (!Array.isArray(parsed) || parsed.length !== 2) return undefined;
+      const [occurredAt, id] = parsed as unknown[];
+      if (typeof occurredAt !== "string" || occurredAt.length > 64 || Number.isNaN(Date.parse(occurredAt))) return undefined;
+      if (typeof id !== "string" || !UUID_PATTERN.test(id)) return undefined;
+      return { occurredAt, id };
+    } catch {
+      return undefined;
+    }
+  }
+
+  /** The organization's audit log, newest first (owners and admins: organization.audit.read). */
+  router.get("/organizations/:orgId/audit", async (req, res) => {
+    const query = AuditQuerySchema.safeParse(req.query);
+    if (!query.success) {
+      problems.validation(res, issuesToErrors(query.error));
+      return;
+    }
+    const cursor = query.data.cursor === undefined ? undefined : decodeAuditCursor(query.data.cursor);
+    if (query.data.cursor !== undefined && !cursor) {
+      problems.validation(res, [{ field: "cursor", code: "INVALID_CURSOR", message: "Cursor is not valid" }]);
+      return;
+    }
+    const outcome = await inOrganization(req.params.orgId, sessionOf(res).userId, async (trx, membership): Promise<Outcome<AuditListResponse>> => {
+      if (!orgPermissions(membership).has("organization.audit.read")) return { kind: "forbidden" };
+      const page = await governanceRepo.listAudit(trx, { limit: query.data.limit, after: cursor, action: query.data.action, resourceId: query.data.resourceId });
+      const last = page.entries.at(-1);
+      return {
+        kind: "ok",
+        body: {
+          items: page.entries.map((e) => ({
+            id: e.id,
+            occurredAt: e.occurredAt.toISOString(),
+            actor: e.actor,
+            action: e.action,
+            resourceType: e.resourceType,
+            resourceId: e.resourceId,
+            requestId: e.requestId,
+            metadata: e.metadata,
+          })),
+          ...(page.more && last ? { nextCursor: encodeAuditCursor(last.occurredAtKey, last.id) } : {}),
+        },
+      };
+    });
+    respond(res, outcome);
+  });
+
   // Exports (RES-02, docs/04 §7) -------------------------------------------
 
   /** How long an export download link works (docs/04 §7). */
@@ -1272,7 +1439,14 @@ export function apiV1Router({ db, settings, objectStore }: AppDependencies): Rou
           }
         });
         if (errors.length > 0) return { kind: "invalid", errors };
+        const before = await currentGrants(trx, formId);
         await orgRepo.replaceFormGrants(trx, formId, orgId, unique, sessionOf(res).userId);
+        const key = (g: { principalId: string; permission: string }) => `${g.principalId}:${g.permission}`;
+        const beforeKeys = new Set(before.map(key));
+        const afterKeys = new Set(unique.map(key));
+        const added = unique.filter((g) => !beforeKeys.has(key(g))).map((g) => ({ principalId: g.principalId, permission: g.permission }));
+        const removed = before.filter((g) => !afterKeys.has(key(g))).map((g) => ({ principalId: g.principalId, permission: g.permission }));
+        if (added.length > 0 || removed.length > 0) await audit(trx, res, orgId, "form.grants_changed", "form", formId, { added, removed });
         return { kind: "ok", body: { grants: await currentGrants(trx, formId) } };
       }),
     );

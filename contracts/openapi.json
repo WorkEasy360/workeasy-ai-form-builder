@@ -3,7 +3,7 @@
   "info": {
     "title": "Workeasy Forms API",
     "version": "0.1.0",
-    "description": "Routes implemented through RES-02. Organization routes derive the tenant from the authenticated membership; resources outside the caller's organizations return 404. Every response carries an X-Request-Id header, and every error is application/problem+json with the same requestId."
+    "description": "Routes implemented through GOV-01. Organization routes derive the tenant from the authenticated membership; resources outside the caller's organizations return 404. Every response carries an X-Request-Id header, and every error is application/problem+json with the same requestId."
   },
   "servers": [
     {
@@ -553,6 +553,90 @@
           },
           "404": {
             "description": "Organization or form not found or not visible",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteForm",
+        "summary": "Delete a form and every response on it (requires forms.delete); the worker purges their content",
+        "security": [
+          {
+            "consoleSession": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 500
+                  }
+                },
+                "required": [
+                  "reason"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Deleted, with the number of responses deleted; the purge follows"
+          },
+          "401": {
+            "description": "No valid session",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden: missing permission, or a cookie-authenticated mutation not sent from the console origin",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Organization or form not found or not visible",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "LEGAL_HOLD",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Reason missing or too long",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4496,7 +4580,8 @@
                         "clean",
                         "infected",
                         "rejected",
-                        "expired"
+                        "expired",
+                        "purged"
                       ]
                     },
                     "rejectionReason": {
@@ -4568,7 +4653,8 @@
                         "clean",
                         "infected",
                         "rejected",
-                        "expired"
+                        "expired",
+                        "purged"
                       ]
                     },
                     "rejectionReason": {
@@ -4715,7 +4801,8 @@
                         "clean",
                         "infected",
                         "rejected",
-                        "expired"
+                        "expired",
+                        "purged"
                       ]
                     },
                     "rejectionReason": {
@@ -5387,6 +5474,482 @@
             }
           }
         }
+      },
+      "delete": {
+        "operationId": "deleteResponse",
+        "summary": "Delete a response (requires responses.delete); the worker then purges its content, files and export copies",
+        "description": "Hidden from every reader at once. The reason is kept with the deletion record and never shown to respondents.",
+        "security": [
+          {
+            "consoleSession": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 500
+                  }
+                },
+                "required": [
+                  "reason"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Deleted; the purge follows"
+          },
+          "401": {
+            "description": "No valid session",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden: missing permission, or a cookie-authenticated mutation not sent from the console origin",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such response, already deleted, or not visible",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "LEGAL_HOLD",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Reason missing or too long",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/organizations/{orgId}/forms/{formId}/retention": {
+      "parameters": [
+        {
+          "name": "orgId",
+          "in": "path",
+          "required": true,
+          "description": "Organization (tenant) ID",
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        {
+          "name": "formId",
+          "in": "path",
+          "required": true,
+          "description": "Form ID",
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "getRetention",
+        "summary": "How long responses are kept, and whether the form is on legal hold (requires forms.read)",
+        "security": [
+          {
+            "consoleSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Retention settings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "retentionDays": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "legalHold": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "retentionDays",
+                    "legalHold"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Organization or form not found or not visible",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "updateRetention",
+        "summary": "Change the retention period (requires forms.publish) or the legal hold (owners and admins)",
+        "description": "Responses older than the retention period are deleted and purged by the worker. While on legal hold, nothing on the form is deleted or purged. Changes are audited.",
+        "security": [
+          {
+            "consoleSession": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "retentionDays": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 3650
+                  },
+                  "legalHold": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Retention settings after the change",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "retentionDays": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "legalHold": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "retentionDays",
+                    "legalHold"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No forms.publish, or not an owner or admin for a legal hold change",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Organization or form not found or not visible",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Retention outside 1 to 3650 days",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/organizations/{orgId}/audit": {
+      "parameters": [
+        {
+          "name": "orgId",
+          "in": "path",
+          "required": true,
+          "description": "Organization (tenant) ID",
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        {
+          "name": "limit",
+          "in": "query",
+          "required": false,
+          "schema": {
+            "default": 50,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        {
+          "name": "cursor",
+          "in": "query",
+          "required": false,
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          }
+        },
+        {
+          "name": "action",
+          "in": "query",
+          "required": false,
+          "schema": {
+            "type": "string",
+            "pattern": "^[a-z][a-z_]*(\\.[a-z][a-z_]*)+$"
+          }
+        },
+        {
+          "name": "resourceId",
+          "in": "query",
+          "required": false,
+          "schema": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "listAudit",
+        "summary": "The organization's audit log, newest first (requires organization.audit.read)",
+        "description": "Keyset pagination on (occurredAt, id). Entries hold identifiers and counts, never answers.",
+        "security": [
+          {
+            "consoleSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of audit entries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          "occurredAt": {
+                            "type": "string",
+                            "format": "date-time",
+                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                          },
+                          "actor": {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "type": "string",
+                                "enum": [
+                                  "user",
+                                  "system"
+                                ]
+                              },
+                              "id": {
+                                "anyOf": [
+                                  {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "displayName": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "type",
+                              "id",
+                              "displayName"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "action": {
+                            "type": "string"
+                          },
+                          "resourceType": {
+                            "type": "string"
+                          },
+                          "resourceId": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          "requestId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "metadata": {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string"
+                            },
+                            "additionalProperties": {}
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "occurredAt",
+                          "actor",
+                          "action",
+                          "resourceType",
+                          "resourceId",
+                          "requestId",
+                          "metadata"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "nextCursor": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No organization.audit.read",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Organization not found or not visible",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid query or cursor",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/organizations/{orgId}/forms/{formId}/exports": {
@@ -5494,7 +6057,8 @@
                         "running",
                         "succeeded",
                         "failed",
-                        "expired"
+                        "expired",
+                        "purged"
                       ]
                     },
                     "failureCode": {
@@ -5672,7 +6236,8 @@
                               "running",
                               "succeeded",
                               "failed",
-                              "expired"
+                              "expired",
+                              "purged"
                             ]
                           },
                           "failureCode": {
@@ -5856,7 +6421,8 @@
                         "running",
                         "succeeded",
                         "failed",
-                        "expired"
+                        "expired",
+                        "purged"
                       ]
                     },
                     "failureCode": {

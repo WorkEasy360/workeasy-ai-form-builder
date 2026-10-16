@@ -113,8 +113,19 @@ async function storageKey(uploadId: string, tenant = a) {
 }
 
 /** Scans everything waiting, as the worker would. */
-async function runScans() {
-  while ((await scanPendingUploads(scan, 20)) > 0);
+/**
+ * Scans until this upload is settled. Other test files scan concurrently and
+ * may hold the claim on it for a moment, so an empty queue is not enough.
+ */
+async function runScans(session: Session, uploadId: string) {
+  const deadline = Date.now() + 15_000;
+  for (;;) {
+    while ((await scanPendingUploads(scan, 20)) > 0);
+    const { state } = await uploadState(session, uploadId);
+    if (state !== "pending_scan" && state !== "scanning") return;
+    if (Date.now() > deadline) throw new Error(`upload ${uploadId} is still ${state}`);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
 }
 
 beforeAll(async () => {
@@ -155,7 +166,7 @@ describe("clean files", () => {
     expectProblem(early, 422, "VALIDATION_FAILED");
     expect(ProblemSchema.parse(early.body).errors?.[0]).toMatchObject({ field: "answers.f_receipt", code: "FILE_PENDING" });
 
-    await runScans();
+    await runScans(session, uploadId);
     expect((await uploadState(session, uploadId)).state).toBe("clean");
     expect(await store.head(store.quarantineBucket, key)).toBeUndefined();
     expect(await store.head(store.cleanBucket, key)).toMatchObject({ bytes: 16 });
@@ -199,7 +210,7 @@ describe("refused files", () => {
     const session = await startSession(f.slug);
     const uploadId = await upload(session, EICAR);
     const key = await storageKey(uploadId);
-    await runScans();
+    await runScans(session, uploadId);
     expect(await uploadState(session, uploadId)).toMatchObject({ state: "infected", rejectionReason: "malware" });
     expect(await store.head(store.quarantineBucket, key)).toBeUndefined();
     expect(await store.head(store.cleanBucket, key)).toBeUndefined();
@@ -212,7 +223,7 @@ describe("refused files", () => {
     const f = await publishedForm();
     const session = await startSession(f.slug);
     const uploadId = await upload(session, "just some text, not a PDF", "application/pdf", "statement.pdf");
-    await runScans();
+    await runScans(session, uploadId);
     expect(await uploadState(session, uploadId)).toMatchObject({ state: "rejected", rejectionReason: "type_mismatch" });
     expect(ProblemSchema.parse((await submit(session, [uploadId])).body).errors?.[0]?.code).toBe("FILE_REJECTED");
   });
@@ -222,7 +233,7 @@ describe("refused files", () => {
     const owner1 = await startSession(f.slug);
     const other = await startSession(f.slug);
     const uploadId = await upload(owner1, "mine");
-    await runScans();
+    await runScans(owner1, uploadId);
     expectProblem(await request(app).get(`/public/v1/sessions/${other.sessionId}/uploads/${uploadId}`).set(bearer(other)), 404, "NOT_FOUND");
     const res = await submit(other, [uploadId]);
     expectProblem(res, 422, "VALIDATION_FAILED");
@@ -261,7 +272,7 @@ describe("worker behaviour", () => {
     const outcome = await processScanJob({ ...scan, scanner: { host: "127.0.0.1", port: 1, timeoutMs: 2000 } }, jobs[0]!);
     expect(outcome).toEqual({ outcome: "retry" });
     expect((await uploadState(session, uploadId)).state).toBe("pending_scan");
-    await runScans();
+    await runScans(session, uploadId);
     expect((await uploadState(session, uploadId)).state).toBe("clean");
   });
 
@@ -269,7 +280,7 @@ describe("worker behaviour", () => {
     const f = await publishedForm();
     const session = await startSession(f.slug);
     const uploadId = await upload(session, "forgotten");
-    await runScans();
+    await runScans(session, uploadId);
     const key = await storageKey(uploadId);
     await withTenant(owner, a.id, (trx) => sql`UPDATE app.file_uploads SET expires_at = now() - interval '1 minute' WHERE id = ${uploadId}`.execute(trx));
     expect(await expireStaleUploads(scan)).toBeGreaterThanOrEqual(1);

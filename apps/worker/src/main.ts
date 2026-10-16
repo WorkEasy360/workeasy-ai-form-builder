@@ -1,7 +1,7 @@
 import { createDb } from "@workeasy/database";
 import { createObjectStore, expireStaleUploads, scanPendingUploads, type ScanDeps } from "@workeasy/files";
 import { createLogger } from "@workeasy/observability";
-import { expireOldExports, processExports } from "@workeasy/responses";
+import { applyRetention, expireOldExports, processExports, purgeDeletedResponses } from "@workeasy/responses";
 import { loadConfig } from "./config.js";
 import { createHealthServer } from "./health.js";
 import { startRunner, type PollingTask } from "./runner.js";
@@ -45,6 +45,19 @@ const tasks: PollingTask[] = [
     name: "expire-exports",
     async run() {
       await expireOldExports(scanDeps, 100);
+    },
+  },
+  {
+    // Retention first, so responses it deletes are purged in the same iteration.
+    name: "apply-retention",
+    async run() {
+      await applyRetention(scanDeps, 500);
+    },
+  },
+  {
+    name: "purge-deleted",
+    async run() {
+      await purgeDeletedResponses(scanDeps, 50);
     },
   },
   {
