@@ -22,6 +22,10 @@ import {
   ReadyResponseSchema,
   ReceiptSchema,
   SessionStartResponseSchema,
+  ExportCreateBodySchema,
+  ExportDownloadResponseSchema,
+  ExportListResponseSchema,
+  ExportSchema,
   FileDownloadResponseSchema,
   ResponseDetailResponseSchema,
   ResponseListQuerySchema,
@@ -81,7 +85,7 @@ export function buildOpenApiDocument(): JsonSchema {
       title: "Workeasy Forms API",
       version: "0.1.0",
       description:
-        "Routes implemented through RES-01. Organization routes derive the tenant from the authenticated membership; resources outside the caller's organizations return 404. Every response carries an X-Request-Id header, and every error is application/problem+json with the same requestId.",
+        "Routes implemented through RES-02. Organization routes derive the tenant from the authenticated membership; resources outside the caller's organizations return 404. Every response carries an X-Request-Id header, and every error is application/problem+json with the same requestId.",
     },
     servers: [{ url: "/" }],
     components: {
@@ -577,6 +581,54 @@ export function buildOpenApiDocument(): JsonSchema {
             "401": unauthenticated,
             "403": problem("No responses.read on this form"),
             "404": problem("No such response on this form, or not visible"),
+          },
+        },
+      },
+      "/api/v1/organizations/{orgId}/forms/{formId}/exports": {
+        parameters: [uuidPath("orgId", "Organization (tenant) ID"), uuidPath("formId", "Form ID")],
+        post: {
+          operationId: "requestExport",
+          summary: "Request a CSV export of the responses matching the filters (requires responses.export and responses.read)",
+          description:
+            "Records the filters, a cutoff (now) and the field classes the caller can read; the worker builds the file after checking access again. Readable exports neutralize spreadsheet formulas; raw exports keep canonical values for machines.",
+          security: [{ consoleSession: [] }],
+          requestBody: { required: false, content: { "application/json": { schema: schemaOf(ExportCreateBodySchema, "input") } } },
+          responses: {
+            "202": json("The queued export; Location points at its status", ExportSchema),
+            "401": unauthenticated,
+            "403": crossOrigin,
+            "404": problem("Organization or form not found or not visible"),
+            "422": problem("Invalid filters, including FIELD_MASKED"),
+          },
+        },
+        get: {
+          operationId: "listOwnExports",
+          summary: "The caller's own recent exports of this form (requires responses.export)",
+          security: [{ consoleSession: [] }],
+          responses: { "200": json("Exports, newest first", ExportListResponseSchema), "401": unauthenticated, "404": problem("Organization or form not found or not visible") },
+        },
+      },
+      "/api/v1/organizations/{orgId}/exports/{exportId}": {
+        parameters: [uuidPath("orgId", "Organization (tenant) ID"), uuidPath("exportId", "Export ID")],
+        get: {
+          operationId: "getExport",
+          summary: "An export's state (its requester only, while they keep access)",
+          security: [{ consoleSession: [] }],
+          responses: { "200": json("The export", ExportSchema), "401": unauthenticated, "403": problem("Access to the responses was lost"), "404": problem("No such export for this caller") },
+        },
+      },
+      "/api/v1/organizations/{orgId}/exports/{exportId}/download": {
+        parameters: [uuidPath("orgId", "Organization (tenant) ID"), uuidPath("exportId", "Export ID")],
+        get: {
+          operationId: "downloadExport",
+          summary: "A 15-minute link to a finished export, after checking the requester's access again",
+          security: [{ consoleSession: [] }],
+          responses: {
+            "200": json("The download link", ExportDownloadResponseSchema),
+            "401": unauthenticated,
+            "403": problem("EXPORT_ACCESS_REVOKED: export permission, response access or a field class in the file was withdrawn"),
+            "404": problem("No such export for this caller"),
+            "409": problem("EXPORT_NOT_READY: still being prepared, failed or expired"),
           },
         },
       },

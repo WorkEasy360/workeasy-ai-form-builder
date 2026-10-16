@@ -33,6 +33,7 @@ export function testObjectStore(): ObjectStore {
     secretAccessKey: env.OBJECT_STORAGE_SECRET_KEY ?? "local-dev-secret-key",
     quarantineBucket: env.OBJECT_STORAGE_BUCKET_QUARANTINE ?? "workeasy-quarantine",
     cleanBucket: env.OBJECT_STORAGE_BUCKET_CLEAN ?? "workeasy-clean",
+    exportsBucket: env.OBJECT_STORAGE_BUCKET_EXPORTS ?? "workeasy-exports",
   });
 }
 

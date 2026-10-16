@@ -256,6 +256,18 @@ The respondent app serves published forms at `http://localhost:3001/f/<slug>`. T
 - **Labels by version:** each response shows the labels of the version it was given in. The list's columns use the live version's labels, followed by questions that only older versions had.
 - **Field masks:** every question is classified as ordinary, personal or sensitive. The default comes from its type (files are personal), and the builder's **Data classification** setting can change it. Reading responses needs `responses.read`, which shows ordinary answers. Personal answers also need `responses.read_personal`, and sensitive ones `responses.read_sensitive`. Owners and admins hold all three, and others get them as form grants. Hidden answers are never sent (`{ masked: true }`). Hidden questions can't be filtered on (`FIELD_MASKED`), so their answers can't be guessed one query at a time. Their files can't be downloaded, and a member respondent's identity counts as personal data.
 
+## Exports (RES-02)
+
+People with `responses.export` and `responses.read` on a form can use **Export CSV** on the Responses page.
+
+1. `POST …/forms/:formId/exports` records the export: the page's current filters, a cutoff (now) and the field classes the requester can read. Hidden questions are left out of the file, and filtering on them is refused.
+2. The worker's `build-exports` task leases queued exports (`app.claim_export_jobs`) and checks the requester's access again before reading anything. An export whose requester lost response or export access, or any field class it would include, fails with `access_revoked`, and no file is made. Rows up to the cutoff are read in batches of 500 and written to the **exports** bucket.
+3. The download checks access a third time, then returns a 15-minute link (`GET …/exports/:id/download`). Losing access at any point gives `403 EXPORT_ACCESS_REVOKED`. Files are deleted 24 hours after they're ready (`expire-exports`). Requests and downloads are audited, and only the requester can see their exports.
+
+The CSV is RFC 4180 with CRLF line endings and a UTF-8 byte-order mark for Excel. It uses the live version's labels, option labels rather than IDs, and UTC times. Cells starting with `=`, `+`, `-`, `@`, tab or carriage return get a leading apostrophe, so spreadsheets show them as text rather than running them. The **raw** option is for machines: field IDs as headers, canonical values, and no spreadsheet protection. Never open a raw export in a spreadsheet.
+
+The response presentation and CSV code live in `@workeasy/responses`, shared by the API and the worker.
+
 ## Uploads and scanning (FIL-01)
 
 File questions accept uploads in three steps:

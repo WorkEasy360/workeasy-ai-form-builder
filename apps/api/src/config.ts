@@ -23,6 +23,7 @@ const ConfigSchema = z
     OBJECT_STORAGE_SECRET_KEY: z.string().min(1),
     OBJECT_STORAGE_BUCKET_QUARANTINE: z.string().min(3),
     OBJECT_STORAGE_BUCKET_CLEAN: z.string().min(3),
+    OBJECT_STORAGE_BUCKET_EXPORTS: z.string().min(3),
     SESSION_SECRET: z.string().min(32, "SESSION_SECRET must be at least 32 characters"),
     SESSION_TTL_HOURS: z.coerce.number().int().min(1).max(168).default(12),
     SESSION_COOKIE_SECURE: z.stringbool().default(true),

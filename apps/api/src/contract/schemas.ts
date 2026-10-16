@@ -404,3 +404,51 @@ export const ResponseDetailResponseSchema = z.object({
   ),
 });
 export type ResponseDetailResponse = z.infer<typeof ResponseDetailResponseSchema>;
+
+// Exports (RES-02) ----------------------------------------------------------
+
+export const ExportCreateBodySchema = z
+  .object({
+    /** The same filters as the response list. */
+    version: Uuid.optional(),
+    from: Timestamp.optional(),
+    to: Timestamp.optional(),
+    field: z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{1,79}$/).optional(),
+    op: z.enum(ANSWER_FILTER_OPS).optional(),
+    value: z.string().max(200).optional(),
+    /**
+     * Canonical values for machines (option IDs, ISO dates) without spreadsheet
+     * protection. Never open a raw export in a spreadsheet.
+     */
+    raw: z.boolean().default(false),
+  })
+  .refine((q) => (q.field === undefined) === (q.op === undefined), { message: "field and op go together", path: ["op"] })
+  .refine((q) => !(q.op === "eq" || q.op === "contains") || (q.value !== undefined && q.value !== ""), { message: "This filter needs a value", path: ["value"] });
+
+export const ExportSchema = z.object({
+  id: Uuid,
+  formId: Uuid,
+  state: z.enum(["queued", "running", "succeeded", "failed", "expired"]),
+  /** Why it failed: the requester lost access, the form went away, or an error. */
+  failureCode: z.enum(["access_revoked", "form_unavailable", "error"]).nullable(),
+  raw: z.boolean(),
+  /** Responses received up to this instant are included. */
+  cutoff: Timestamp,
+  rowCount: z.number().int().nullable(),
+  bytes: z.number().int().nullable(),
+  createdAt: Timestamp,
+  completedAt: Timestamp.nullable(),
+  /** The file is deleted after this. */
+  expiresAt: Timestamp.nullable(),
+});
+export type ExportBody = z.infer<typeof ExportSchema>;
+
+export const ExportListResponseSchema = z.object({ items: z.array(ExportSchema) });
+
+export const ExportDownloadResponseSchema = z.object({
+  /** Downloads the CSV as an attachment; valid for 15 minutes. */
+  url: z.url(),
+  expiresAt: Timestamp,
+  fileName: z.string(),
+});
+export type ExportDownloadResponse = z.infer<typeof ExportDownloadResponseSchema>;

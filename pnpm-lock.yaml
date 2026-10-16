@@ -205,6 +205,9 @@ importers:
       '@workeasy/observability':
         specifier: workspace:*
         version: link:../../packages/observability
+      '@workeasy/responses':
+        specifier: workspace:*
+        version: link:../../packages/responses
       express:
         specifier: 5.3.0
         version: 5.3.0
@@ -328,6 +331,9 @@ importers:
       '@workeasy/observability':
         specifier: workspace:*
         version: link:../../packages/observability
+      '@workeasy/responses':
+        specifier: workspace:*
+        version: link:../../packages/responses
       pino:
         specifier: 10.4.0
         version: 10.4.0
@@ -443,6 +449,28 @@ importers:
       pino:
         specifier: 10.4.0
         version: 10.4.0
+
+  packages/responses:
+    dependencies:
+      '@workeasy/auth':
+        specifier: workspace:*
+        version: link:../auth
+      '@workeasy/database':
+        specifier: workspace:*
+        version: link:../database
+      '@workeasy/files':
+        specifier: workspace:*
+        version: link:../files
+      '@workeasy/form-engine':
+        specifier: workspace:*
+        version: link:../form-engine
+      kysely:
+        specifier: 0.29.6
+        version: 0.29.6
+    devDependencies:
+      '@workeasy/form-schema':
+        specifier: workspace:*
+        version: link:../form-schema
 
   packages/test-fixtures: {}
 

@@ -18,6 +18,7 @@
     "@workeasy/files": "workspace:*",
     "@workeasy/form-engine": "workspace:*",
     "@workeasy/observability": "workspace:*",
+    "@workeasy/responses": "workspace:*",
     "express": "5.3.0",
     "kysely": "0.29.6",
     "openid-client": "6.8.8",

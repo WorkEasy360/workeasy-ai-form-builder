@@ -26,6 +26,8 @@ export interface ObjectStoreConfig {
   secretAccessKey: string;
   quarantineBucket: string;
   cleanBucket: string;
+  /** Generated response exports (RES-02). */
+  exportsBucket: string;
 }
 
 export interface ObjectInfo {
@@ -36,10 +38,13 @@ export interface ObjectInfo {
 export interface ObjectStore {
   readonly quarantineBucket: string;
   readonly cleanBucket: string;
+  readonly exportsBucket: string;
   /** A URL the browser can PUT exactly this object to, with this type and size, until it expires. */
   presignUpload(key: string, contentType: string, bytes: number, expiresInSeconds: number): Promise<string>;
-  /** A URL that downloads a clean object as an attachment with a safe name, until it expires. */
-  presignDownload(key: string, fileName: string, contentType: string, expiresInSeconds: number): Promise<string>;
+  /** A URL that downloads an object (from the clean bucket unless given) as an attachment with a safe name, until it expires. */
+  presignDownload(key: string, fileName: string, contentType: string, expiresInSeconds: number, bucket?: string): Promise<string>;
+  /** Stores a server-generated object (exports). */
+  put(bucket: string, key: string, body: Buffer, contentType: string): Promise<void>;
   head(bucket: string, key: string): Promise<ObjectInfo | undefined>;
   read(bucket: string, key: string): Promise<Readable>;
   /** Moves a scanned object from quarantine to the clean bucket. */
@@ -71,6 +76,7 @@ export function createObjectStore(config: ObjectStoreConfig): ObjectStore {
   return {
     quarantineBucket: config.quarantineBucket,
     cleanBucket: config.cleanBucket,
+    exportsBucket: config.exportsBucket,
 
     presignUpload(key, contentType, bytes, expiresInSeconds) {
       // Type and length are signed, so the browser cannot store anything else under this key.
@@ -80,11 +86,11 @@ export function createObjectStore(config: ObjectStoreConfig): ObjectStore {
       });
     },
 
-    presignDownload(key, fileName, contentType, expiresInSeconds) {
+    presignDownload(key, fileName, contentType, expiresInSeconds, bucket = config.cleanBucket) {
       return getSignedUrl(
         browser,
         new GetObjectCommand({
-          Bucket: config.cleanBucket,
+          Bucket: bucket,
           Key: key,
           ResponseContentDisposition: attachmentDisposition(fileName),
           ResponseContentType: contentType,
@@ -111,6 +117,10 @@ export function createObjectStore(config: ObjectStoreConfig): ObjectStore {
     async promote(key) {
       await internal.send(new CopyObjectCommand({ Bucket: config.cleanBucket, Key: key, CopySource: `${config.quarantineBucket}/${encodeURIComponent(key)}` }));
       await internal.send(new DeleteObjectCommand({ Bucket: config.quarantineBucket, Key: key }));
+    },
+
+    async put(bucket, key, body, contentType) {
+      await internal.send(new PutObjectCommand({ Bucket: bucket, Key: key, Body: body, ContentType: contentType, ContentLength: body.length }));
     },
 
     async remove(bucket, key) {

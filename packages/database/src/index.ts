@@ -9,6 +9,8 @@ export * as publicFormsRepo from "./repositories/public-forms.js";
 export * as intakeRepo from "./repositories/intake.js";
 export * as uploadsRepo from "./repositories/uploads.js";
 export * as responsesRepo from "./repositories/responses.js";
+export * as exportsRepo from "./repositories/exports.js";
+export type { ExportFilters, ExportJob, ExportOutcome, ExportRecord, NewExport, ReadableClass } from "./repositories/exports.js";
 export type { AnswerFilterOp, AttachedFile, ListResponsesOptions, ResponseRow, VersionDefinition } from "./repositories/responses.js";
 export type { NewUpload, ScanJob, ScanOutcome, Upload } from "./repositories/uploads.js";
 export type { LockedSession, NewSubmission, RecordedRequest } from "./repositories/intake.js";

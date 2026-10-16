@@ -12,13 +12,16 @@ import {
 import {
   identityRepo,
   orgRepo,
+  exportsRepo,
   publishRepo,
   responsesRepo,
   uploadsRepo,
   withContext,
   type Database,
   type AccessPolicy,
+  type ExportRecord,
   type FormListCursor,
+  type ReadableClass,
   type FormSummary,
   type MembershipRecord,
   type ResolvedSession,
@@ -42,6 +45,7 @@ import {
   AccessPolicyBodySchema,
   ActivateVersionBodySchema,
   CloseFormBodySchema,
+  ExportCreateBodySchema,
   ResponseListQuerySchema,
   CreateFormBodySchema,
   IDEMPOTENCY_KEY_PATTERN,
@@ -52,6 +56,8 @@ import {
   type FormListResponse,
   type AccessPolicyResponse,
   type DraftResponse,
+  type ExportBody,
+  type ExportDownloadResponse,
   type FileDownloadResponse,
   type ResponseDetailResponse,
   type ResponseListResponse,
@@ -69,7 +75,7 @@ import {
 import { parseCookies } from "../http/cookies.js";
 import { problems, sendProblem, type FieldError, type ProblemExtensions } from "../http/problem.js";
 import { requestIdOf } from "../http/request-context.js";
-import { canRead, indexVersions, presentAnswer, readableClasses, shortReceipt } from "../responses.js";
+import { canRead, indexVersions, presentAnswer, readableClasses, shortReceipt } from "@workeasy/responses";
 import { requireSameOrigin } from "../http/same-origin.js";
 import { sessionCookieName } from "./auth.js";
 
@@ -1016,6 +1022,168 @@ export function apiV1Router({ db, settings, objectStore }: AppDependencies): Rou
                 ...(visible && field.type === "file" ? { files: fieldFiles } : {}),
               };
             }),
+          },
+        };
+      }),
+    );
+  });
+
+  // Exports (RES-02, docs/04 §7) -------------------------------------------
+
+  /** How long an export download link works (docs/04 §7). */
+  const EXPORT_LINK_SECONDS = 15 * 60;
+
+  function exportBody(record: ExportRecord): ExportBody {
+    return {
+      id: record.id,
+      formId: record.formId,
+      state: record.state,
+      failureCode: record.failureCode as ExportBody["failureCode"],
+      raw: record.raw,
+      cutoff: record.cutoff.toISOString(),
+      rowCount: record.rowCount,
+      bytes: record.bytes,
+      createdAt: record.createdAt.toISOString(),
+      completedAt: record.completedAt?.toISOString() ?? null,
+      expiresAt: record.expiresAt?.toISOString() ?? null,
+    };
+  }
+
+  /** May this caller still have this export? Export permission, response access and every class it holds. */
+  function mayHaveExport(record: ExportRecord, permissions: Set<FormPermission>): boolean {
+    const readable = readableClasses(permissions);
+    return permissions.has("responses.export") && permissions.has("responses.read") && record.readableClasses.every((c) => readable.has(c));
+  }
+
+  /**
+   * Requests a CSV of the responses matching the filters, received up to now,
+   * with only the field classes the caller can read. The worker builds it.
+   */
+  router.post("/organizations/:orgId/forms/:formId/exports", async (req, res) => {
+    const body = ExportCreateBodySchema.safeParse(req.body ?? {});
+    if (!body.success) {
+      problems.validation(res, issuesToErrors(body.error));
+      return;
+    }
+    const q = body.data;
+    const { orgId, formId } = req.params;
+    const userId = sessionOf(res).userId;
+    respond(
+      res,
+      await onForm(res, orgId, formId, "responses.export", async (trx, { permissions }): Promise<Outcome<ExportBody>> => {
+        if (!permissions.has("responses.read")) return { kind: "forbidden" };
+        const readable = readableClasses(permissions);
+        const versions = indexVersions(await responsesRepo.formVersions(trx, formId));
+        if (q.version && !versions.byId.has(q.version)) {
+          return { kind: "invalid", errors: [{ field: "version", code: "UNKNOWN_VERSION", message: "This form has no such version" }] };
+        }
+        if (q.field) {
+          const field = versions.latestField.get(q.field);
+          if (!field) return { kind: "invalid", errors: [{ field: "field", code: "UNKNOWN_FIELD", message: "This form has no such question" }] };
+          if (!canRead(field, readable)) return { kind: "invalid", errors: [{ field: "field", code: "FIELD_MASKED", message: "You can't filter on a question you can't see" }] };
+        }
+        const requested = await exportsRepo.createExport(trx, {
+          id: randomUUID(),
+          tenantId: orgId,
+          formId,
+          requestedBy: userId,
+          filters: {
+            versionId: q.version,
+            receivedFrom: q.from,
+            receivedTo: q.to,
+            answer: q.field && q.op ? { fieldId: q.field, op: q.op, value: q.value } : undefined,
+          },
+          cutoff: await responsesRepo.currentCutoff(trx),
+          readableClasses: [...readable] as ReadableClass[],
+          raw: q.raw,
+        });
+        await publishRepo.appendAudit(trx, {
+          tenantId: orgId,
+          actor: { type: "user", id: userId },
+          action: "responses.export_requested",
+          resourceType: "form",
+          resourceId: formId,
+          requestId: requestIdOf(res),
+          metadata: { exportId: requested.id, raw: q.raw, classes: [...readable].toSorted() },
+        });
+        return { kind: "ok", status: 202, body: exportBody(requested), headers: { Location: `/api/v1/organizations/${orgId}/exports/${requested.id}` } };
+      }),
+    );
+  });
+
+  /** The caller's own recent exports of this form. */
+  router.get("/organizations/:orgId/forms/:formId/exports", async (req, res) => {
+    const { orgId, formId } = req.params;
+    const userId = sessionOf(res).userId;
+    respond(
+      res,
+      await onForm(res, orgId, formId, "responses.export", async (trx): Promise<Outcome<{ items: ExportBody[] }>> => ({
+        kind: "ok",
+        body: { items: (await exportsRepo.listOwnExports(trx, formId, userId, 20)).map(exportBody) },
+      })),
+    );
+  });
+
+  /** Loads the caller's own export and their current permissions on its form, rechecked every time. */
+  function onOwnExport<T>(res: Response, orgId: string, exportId: string, action: (trx: Trx, record: ExportRecord, permissions: Set<FormPermission>) => Promise<Outcome<T>>) {
+    const userId = sessionOf(res).userId;
+    if (!UUID_PATTERN.test(exportId)) return Promise.resolve(NOT_VISIBLE);
+    return inOrganization(orgId, userId, async (trx, membership): Promise<Outcome<T>> => {
+      const record = await exportsRepo.getExport(trx, exportId);
+      // Exports are personal to their requester: anyone else sees nothing.
+      if (!record || record.requestedBy !== userId) return { kind: "not_found" };
+      const form = await orgRepo.getFormSummary(trx, record.formId);
+      if (!form) return { kind: "not_found" };
+      const grants = (await orgRepo.listUserFormGrants(trx, record.formId, userId)).filter(isFormPermission);
+      return action(trx, record, formPermissions(membership, grants));
+    });
+  }
+
+  router.get("/organizations/:orgId/exports/:exportId", async (req, res) => {
+    const { orgId, exportId } = req.params;
+    respond(
+      res,
+      await onOwnExport(res, orgId, exportId, async (_trx, record, permissions): Promise<Outcome<ExportBody>> =>
+        mayHaveExport(record, permissions) ? { kind: "ok", body: exportBody(record) } : { kind: "forbidden" },
+      ),
+    );
+  });
+
+  /**
+   * A 15-minute link to a finished export. Access is checked now, so losing
+   * response access, export permission or any field class in the file
+   * blocks the download at once (docs/06 §2).
+   */
+  router.get("/organizations/:orgId/exports/:exportId/download", async (req, res) => {
+    const { orgId, exportId } = req.params;
+    const userId = sessionOf(res).userId;
+    respond(
+      res,
+      await onOwnExport(res, orgId, exportId, async (trx, record, permissions): Promise<Outcome<ExportDownloadResponse>> => {
+        if (!mayHaveExport(record, permissions)) {
+          return { kind: "problem", status: 403, code: "EXPORT_ACCESS_REVOKED", title: "You no longer have access to the responses in this export" };
+        }
+        if (record.state !== "succeeded" || !record.expiresAt || record.expiresAt <= new Date()) {
+          return { kind: "conflict", code: "EXPORT_NOT_READY", title: record.state === "expired" ? "This export has expired" : "This export isn't ready" };
+        }
+        const form = (await orgRepo.getFormSummary(trx, record.formId))!;
+        const stem = form.name.normalize("NFKD").replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "").toLowerCase().slice(0, 60) || "form";
+        const fileName = `${stem}-responses-${record.cutoff.toISOString().slice(0, 10)}${record.raw ? "-raw" : ""}.csv`;
+        await publishRepo.appendAudit(trx, {
+          tenantId: orgId,
+          actor: { type: "user", id: userId },
+          action: "responses.export_downloaded",
+          resourceType: "form",
+          resourceId: record.formId,
+          requestId: requestIdOf(res),
+          metadata: { exportId: record.id },
+        });
+        return {
+          kind: "ok",
+          body: {
+            url: await objectStore.presignDownload(record.id, fileName, "text/csv; charset=utf-8", EXPORT_LINK_SECONDS, objectStore.exportsBucket),
+            expiresAt: new Date(Date.now() + EXPORT_LINK_SECONDS * 1000).toISOString(),
+            fileName,
           },
         };
       }),

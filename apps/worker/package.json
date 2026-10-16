@@ -14,6 +14,7 @@
     "@workeasy/database": "workspace:*",
     "@workeasy/files": "workspace:*",
     "@workeasy/observability": "workspace:*",
+    "@workeasy/responses": "workspace:*",
     "pino": "10.4.0",
     "zod": "4.6.7"
   },

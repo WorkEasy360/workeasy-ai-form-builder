@@ -1,6 +1,7 @@
 import { createDb } from "@workeasy/database";
 import { createObjectStore, expireStaleUploads, scanPendingUploads, type ScanDeps } from "@workeasy/files";
 import { createLogger } from "@workeasy/observability";
+import { expireOldExports, processExports } from "@workeasy/responses";
 import { loadConfig } from "./config.js";
 import { createHealthServer } from "./health.js";
 import { startRunner, type PollingTask } from "./runner.js";
@@ -19,6 +20,7 @@ const scanDeps: ScanDeps = {
     secretAccessKey: config.OBJECT_STORAGE_SECRET_KEY,
     quarantineBucket: config.OBJECT_STORAGE_BUCKET_QUARANTINE,
     cleanBucket: config.OBJECT_STORAGE_BUCKET_CLEAN,
+    exportsBucket: config.OBJECT_STORAGE_BUCKET_EXPORTS,
   }),
   scanner: { host: config.SCANNER_HOST, port: config.SCANNER_PORT },
   log: (level, message, fields) => logger[level](fields, message),
@@ -31,6 +33,18 @@ const tasks: PollingTask[] = [
     async run() {
       // One batch per iteration: if the scanner is down, retries wait for the next interval.
       await scanPendingUploads(scanDeps, 10);
+    },
+  },
+  {
+    name: "build-exports",
+    async run() {
+      await processExports(scanDeps, 2);
+    },
+  },
+  {
+    name: "expire-exports",
+    async run() {
+      await expireOldExports(scanDeps, 100);
     },
   },
   {

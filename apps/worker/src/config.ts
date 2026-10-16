@@ -16,6 +16,7 @@ const ConfigSchema = z.object({
   OBJECT_STORAGE_SECRET_KEY: z.string().min(1),
   OBJECT_STORAGE_BUCKET_QUARANTINE: z.string().min(3),
   OBJECT_STORAGE_BUCKET_CLEAN: z.string().min(3),
+  OBJECT_STORAGE_BUCKET_EXPORTS: z.string().min(3),
   /** clamd for upload scanning (FIL-01). */
   SCANNER_HOST: z.string().min(1).default("127.0.0.1"),
   SCANNER_PORT: z.coerce.number().int().min(1).max(65535).default(3310),

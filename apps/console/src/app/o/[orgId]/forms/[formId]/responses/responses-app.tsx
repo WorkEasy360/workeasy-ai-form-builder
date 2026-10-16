@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useId, useState } from "react";
 import { api, ApiError, type FormResponse, type VersionSummary } from "../../../../../../lib/api";
+import { ExportsPanel, type ExportFilters } from "./exports-panel";
 
 type Masked = { masked: true } | { masked: false; value: unknown; display: string };
 
@@ -124,6 +125,12 @@ export function ResponsesApp({ orgId, formId }: { orgId: string; formId: string 
   }
 
   const readable = page?.columns.filter((c) => !c.masked) ?? [];
+  const exportFilters: ExportFilters = {
+    version: applied.version,
+    from: dayStart(applied.from),
+    to: dayEnd(applied.to),
+    ...(applied.field ? { field: applied.field, op: applied.op, ...(OPS.find((o) => o.op === applied.op)?.needsValue ? { value: applied.value } : {}) } : {}),
+  };
   const needsValue = OPS.find((o) => o.op === draft.op)?.needsValue ?? false;
   const filtered = JSON.stringify(applied) !== JSON.stringify(NO_FILTERS);
 
@@ -291,6 +298,8 @@ export function ResponsesApp({ orgId, formId }: { orgId: string; formId: string 
               </button>
             </p>
           )}
+
+          {form?.permissions.includes("responses.export") && <ExportsPanel orgId={orgId} formId={formId} filters={exportFilters} />}
         </>
       )}
     </div>

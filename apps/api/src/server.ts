@@ -30,6 +30,7 @@ const app = createApp({
     secretAccessKey: config.OBJECT_STORAGE_SECRET_KEY,
     quarantineBucket: config.OBJECT_STORAGE_BUCKET_QUARANTINE,
     cleanBucket: config.OBJECT_STORAGE_BUCKET_CLEAN,
+    exportsBucket: config.OBJECT_STORAGE_BUCKET_EXPORTS,
   }),
   identityProvider: createOidcIdentityProvider({
     issuerUrl: config.OIDC_ISSUER_URL,

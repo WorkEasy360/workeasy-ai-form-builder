@@ -222,6 +222,29 @@ export interface FileUploadsTable {
   expires_at: Generated<Date>;
 }
 
+export type ExportState = "queued" | "running" | "succeeded" | "failed" | "expired";
+
+export interface ExportsTable {
+  id: string;
+  tenant_id: string;
+  form_id: string;
+  requested_by: string;
+  filter_snapshot: Generated<Record<string, unknown>>;
+  cutoff: Date;
+  readable_classes: string[];
+  raw: Generated<boolean>;
+  state: Generated<ExportState>;
+  failure_code: Generated<string | null>;
+  row_count: Generated<number | null>;
+  bytes: Generated<number | null>;
+  attempts: Generated<number>;
+  lease_until: Generated<Date | null>;
+  created_at: CreatedAt;
+  updated_at: UpdatedAt;
+  completed_at: Generated<Date | null>;
+  expires_at: Generated<Date | null>;
+}
+
 export interface Database {
   tenants: TenantsTable;
   users: UsersTable;
@@ -240,6 +263,7 @@ export interface Database {
   form_response_counters: FormResponseCountersTable;
   usage_buckets: UsageBucketsTable;
   file_uploads: FileUploadsTable;
+  exports: ExportsTable;
 }
 
 export type Tenant = Selectable<TenantsTable>;

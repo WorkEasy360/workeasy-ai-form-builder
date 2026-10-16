@@ -1,0 +1,23 @@
+{
+  "name": "@workeasy/responses",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Presenting stored responses with field masks, and building CSV exports (server only).",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@workeasy/auth": "workspace:*",
+    "@workeasy/database": "workspace:*",
+    "@workeasy/files": "workspace:*",
+    "@workeasy/form-engine": "workspace:*",
+    "kysely": "0.29.6"
+  },
+  "devDependencies": {
+    "@workeasy/form-schema": "workspace:*"
+  }
+}
