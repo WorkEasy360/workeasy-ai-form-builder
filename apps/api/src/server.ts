@@ -53,6 +53,7 @@ const app = createApp({
     sessionSecret: config.SESSION_SECRET,
     sessionTtlMs: config.SESSION_TTL_HOURS * 60 * 60 * 1000,
     secureCookies: config.SESSION_COOKIE_SECURE,
+    aiEnabled: config.AI_PROVIDER !== "disabled",
   },
 });
 

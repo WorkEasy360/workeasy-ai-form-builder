@@ -290,7 +290,7 @@ The response presentation and CSV code live in `@workeasy/responses`, shared by 
 - **Dispatch:** the worker's `dispatch-outbox` task turns committed outbox events into jobs. In one transaction, `app.dispatch_outbox` claims events (`FOR UPDATE SKIP LOCKED`), inserts one job per job type subscribed to the event and marks the event dispatched.
   - A job's `(tenant, type, dedupe key)` is unique, and an event's jobs use the event ID as the key. Concurrent dispatchers, or an event dispatched again, never make a second job.
   - If the API commits and the process dies before anything is delivered, the event waits in the outbox until a worker is back.
-- **Job types** live in `apps/worker/src/jobs.ts`. Each one has a handler and, optionally, the events it subscribes to. The registry is empty until email and webhooks (AUT-01) and AI generation (AI-01) add their types; until then, events are marked dispatched with no jobs. The API can also enqueue a job directly (`jobsRepo.enqueueJob`); the same dedupe key returns the existing job.
+- **Job types** live in `apps/worker/src/jobs.ts`. Each one has a handler and, optionally, the events it subscribes to. `ai.generate` (AI-01) is enqueued directly by the API; email and webhooks (AUT-01) will subscribe to events. Events no type subscribes to are marked dispatched with no jobs. The API can also enqueue a job directly (`jobsRepo.enqueueJob`); the same dedupe key returns the existing job.
 - **Running:** the `run-jobs` task claims due jobs under a lease (60 seconds by default, per type) with a fresh lease token, counts the attempt, and runs the handler outside any transaction, under the job's recorded tenant.
   - Completion is compare-and-set on the token. A worker whose lease ran out, and whose job was reclaimed, cannot overwrite the newer attempt.
   - The handler's `AbortSignal` fires shortly before the lease ends.
@@ -300,6 +300,32 @@ The response presentation and CSV code live in `@workeasy/responses`, shared by 
   - Only a sanitized error code is stored, never the error message.
 - **At least once:** a handler can run again after a crash, so it must pass `ctx.dedupeKey` to the destination as its idempotency key.
 - **Operators:** owners and admins see jobs at **Background jobs** on the forms page (`GET /api/v1/organizations/:orgId/jobs`, `organization.audit.read`): state, attempts and error code, never payloads. **Retry** on a dead job (`POST …/jobs/:id/replay`, `integrations.manage`) gives it three more attempts with the same dedupe key, and is audited as `job.replayed`.
+
+## AI generation (AI-01)
+
+- **Providers** (`@workeasy/ai`, server only). The worker reads `AI_PROVIDER`:
+  - `disabled` (the default) hides AI.
+  - `stub` is a deterministic local provider that needs no account. It's the default in `.env.example`, and it's refused in production.
+  - `openai` (Chat Completions in JSON mode) and `gemini` (`generateContent` with a JSON response type) need `AI_MODEL` and `OPENAI_API_KEY` or `GEMINI_API_KEY`. Both are called with plain `fetch`.
+
+  The API only needs `AI_PROVIDER`, to know whether to offer AI. Keys stay with the worker; the Gemini key goes in a header, never the URL. When AI is off, requests get `503 AI_UNAVAILABLE` and the builder works as before.
+- **Flow:** **Ask AI…** in the builder (or `POST …/forms/:id/ai-jobs` with `prompt`, `operation` `create`|`edit`, and `baseRevision`, needing `forms.edit`) saves pending edits.
+  - It records an `ai_generations` row with a snapshot of the draft, and enqueues an `ai.generate` job in the same transaction. The job's dedupe key is the generation ID.
+  - The console then polls `GET /api/v1/organizations/:orgId/ai-jobs/:id`. The requester, or an owner or admin, can cancel with `POST …/cancel`.
+- **Validation:** the worker sends the prompt as data inside `<request>` tags. It then:
+  1. parses the JSON reply;
+  2. assigns server IDs, keeping existing IDs when editing, and rewrites every reference;
+  3. rejects markup and anything over 50 fields, 10 pages or 50 rules;
+  4. runs the same `validateDefinition` as publishing.
+
+  An invalid reply gets **one repair attempt** with the problems listed. If that's invalid too, the generation fails with `invalid_output` and the issue paths and codes. **The draft is never changed:** a success stores a validated proposal for review, and applying it is AI-02.
+- **Limits:**
+  - The prompt is at most 8000 characters.
+  - Each person can have one active generation (`409 AI_GENERATION_IN_PROGRESS`), and each organization five (`429 AI_BUSY`).
+  - Each provider call has 45 s.
+  - The whole generation must finish within 120 s. A generation past that fails as `deadline_exceeded`, even if its worker died.
+  - Transient provider failures (rate limits, 5xx, timeouts, network errors) are retried at most twice. Authentication, refusals and truncated replies fail at once with their code.
+- **Privacy:** the prompt is kept only while the generation runs, plus its SHA-256 digest. It's never returned, logged or audited. Logs and summaries hold IDs, counts and codes, never model text. Token usage is recorded per generation; budgets and tenant opt-in arrive with AI-03. Audited actions are `ai.generation_requested` and `ai.generation_cancelled`.
 
 ## Uploads and scanning (FIL-01)
 

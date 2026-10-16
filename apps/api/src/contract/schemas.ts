@@ -531,3 +531,41 @@ export type JobListResponse = z.infer<typeof JobListResponseSchema>;
 
 export const JobResponseSchema = z.object({ job: JobSchema });
 export type JobResponse = z.infer<typeof JobResponseSchema>;
+
+// AI generation (AI-01) ---------------------------------------------------------
+
+export const AI_OPERATIONS = ["create", "edit"] as const;
+export const AI_GENERATION_STATUSES = ["queued", "running", "succeeded", "failed", "cancelled"] as const;
+
+export const AiJobCreateBodySchema = z.object({
+  prompt: z.string().trim().min(3).max(8000),
+  /** "create" replaces the draft's content; "edit" changes it, keeping existing IDs. */
+  operation: z.enum(AI_OPERATIONS),
+  /** The draft revision the author is looking at; a newer draft is a conflict. */
+  baseRevision: z.number().int().min(1),
+});
+
+/** A generation as its requester and editors see it. The prompt is never returned. */
+export const AiGenerationSchema = z.object({
+  id: Uuid,
+  formId: Uuid,
+  operation: z.enum(AI_OPERATIONS),
+  status: z.enum(AI_GENERATION_STATUSES),
+  baseRevision: z.number().int(),
+  requestedBy: Uuid,
+  provider: z.string().nullable(),
+  model: z.string().nullable(),
+  /** A validated form definition, once succeeded. Applying it is a separate step. */
+  proposal: z.record(z.string(), z.unknown()).nullable(),
+  /** Counts, IDs and warning codes; on invalid output, issue paths and codes. */
+  summary: z.record(z.string(), z.unknown()).nullable(),
+  failureCode: z.string().nullable(),
+  usage: z.object({ inputTokens: z.number().int(), outputTokens: z.number().int() }),
+  createdAt: Timestamp,
+  deadlineAt: Timestamp,
+  finishedAt: Timestamp.nullable(),
+});
+export type AiGenerationBody = z.infer<typeof AiGenerationSchema>;
+
+export const AiJobResponseSchema = z.object({ job: AiGenerationSchema });
+export type AiJobResponse = z.infer<typeof AiJobResponseSchema>;

@@ -21,6 +21,7 @@ import { FormField, RENDERER_CSS, themeStyle } from "@workeasy/form-renderer";
 import type { FieldType, FormDefinition } from "@workeasy/form-schema";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError, type FormResponse, type FormSummary } from "../../../../../../lib/api";
+import { AiPanel } from "./ai-panel";
 import { ConflictPanel } from "./conflict-panel";
 import { DesignInspector } from "./design";
 import { FieldInspector, FormInspector, PageInspector } from "./inspector";
@@ -180,7 +181,7 @@ function Editor({
   const [selected, setSelected] = useState<Selection>({ kind: "form" });
   const [currentPageId, setCurrentPageId] = useState<string | undefined>();
   const [notice, setNotice] = useState("");
-  const [mode, setMode] = useState<"edit" | "preview" | "publish" | "share">("edit");
+  const [mode, setMode] = useState<"edit" | "preview" | "publish" | "share" | "ai">("edit");
   const [live, setLive] = useState<{ id: string; definition: FormDefinition } | undefined>();
   // After a move, focus returns to the moved item's controls (docs/01 §3: keyboard reordering).
   const pendingFocus = useRef<{ kind: "field" | "page"; id: string; direction: -1 | 1 } | undefined>(undefined);
@@ -349,6 +350,9 @@ function Editor({
           </span>
           <span className="b-muted">{publicationText(form, unpublishedChanges)}</span>
           <span className="b-muted">{issues.length === 0 ? "Ready to publish" : `${issues.length} to fix before publishing`}</span>
+          <button type="button" className="b-btn" aria-pressed={mode === "ai"} onClick={() => setMode(mode === "ai" ? "edit" : "ai")}>
+            Ask AI…
+          </button>
           <button type="button" className="b-btn" aria-pressed={mode === "preview"} onClick={() => setMode(mode === "preview" ? "edit" : "preview")}>
             Preview
           </button>
@@ -391,6 +395,8 @@ function Editor({
 
       {mode === "preview" ? (
         <PreviewPane definition={definition} openHref={previewHref} />
+      ) : mode === "ai" ? (
+        <AiPanel formPath={formPath} hasFields={definition.fields.length > 0} readOnly={readOnly} saveForPublish={editor.saveForPublish} />
       ) : mode === "share" ? (
         <SharePanel formPath={formPath} form={form} readOnly={readOnly} onFormChange={setForm} announce={setNotice} />
       ) : mode === "publish" ? (

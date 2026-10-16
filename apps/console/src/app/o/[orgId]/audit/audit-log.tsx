@@ -33,6 +33,8 @@ const ACTIONS: Record<string, string> = {
   "responses.export_requested": "Requested an export",
   "responses.export_downloaded": "Downloaded an export",
   "job.replayed": "Retried a failed background job",
+  "ai.generation_requested": "Asked AI for a form suggestion",
+  "ai.generation_cancelled": "Cancelled an AI request",
 };
 
 function details(metadata: Record<string, unknown>): string {

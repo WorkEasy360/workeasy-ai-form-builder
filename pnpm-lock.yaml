@@ -187,6 +187,9 @@ importers:
 
   apps/api:
     dependencies:
+      '@workeasy/ai':
+        specifier: workspace:*
+        version: link:../../packages/ai
       '@workeasy/auth':
         specifier: workspace:*
         version: link:../../packages/auth
@@ -325,6 +328,9 @@ importers:
 
   apps/worker:
     dependencies:
+      '@workeasy/ai':
+        specifier: workspace:*
+        version: link:../../packages/ai
       '@workeasy/database':
         specifier: workspace:*
         version: link:../../packages/database
@@ -353,6 +359,24 @@ importers:
       tsx:
         specifier: 4.23.15
         version: 4.23.15
+
+  packages/ai:
+    dependencies:
+      '@workeasy/database':
+        specifier: workspace:*
+        version: link:../database
+      '@workeasy/form-engine':
+        specifier: workspace:*
+        version: link:../form-engine
+      '@workeasy/form-schema':
+        specifier: workspace:*
+        version: link:../form-schema
+      '@workeasy/jobs':
+        specifier: workspace:*
+        version: link:../jobs
+      kysely:
+        specifier: 0.29.6
+        version: 0.29.6
 
   packages/auth: {}
 

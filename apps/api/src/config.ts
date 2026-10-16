@@ -1,3 +1,4 @@
+import { AI_PROVIDERS } from "@workeasy/ai";
 import { z } from "zod";
 
 const ConfigSchema = z
@@ -27,10 +28,15 @@ const ConfigSchema = z
     SESSION_SECRET: z.string().min(32, "SESSION_SECRET must be at least 32 characters"),
     SESSION_TTL_HOURS: z.coerce.number().int().min(1).max(168).default(12),
     SESSION_COOKIE_SECURE: z.stringbool().default(true),
+    /** AI authoring (AI-01); the worker holds the provider keys. "disabled" hides it. */
+    AI_PROVIDER: z.enum(AI_PROVIDERS).default("disabled"),
   })
   .superRefine((config, ctx) => {
     if (config.NODE_ENV !== "production") return;
     // Local-only conveniences must be impossible to enable in production (docs/06 §1).
+    if (config.AI_PROVIDER === "stub") {
+      ctx.addIssue({ code: "custom", path: ["AI_PROVIDER"], message: "stub is for local development and tests only" });
+    }
     if (!config.SESSION_COOKIE_SECURE) {
       ctx.addIssue({ code: "custom", path: ["SESSION_COOKIE_SECURE"], message: "must be true in production" });
     }

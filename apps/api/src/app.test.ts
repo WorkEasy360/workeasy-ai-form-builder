@@ -25,6 +25,7 @@ const settings = {
   sessionSecret: "unit-test-secret-unit-test-secret-0000",
   sessionTtlMs: 60_000,
   secureCookies: false,
+  aiEnabled: false,
 };
 
 function build(overrides: Partial<AppDependencies> = {}) {

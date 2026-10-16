@@ -16,6 +16,7 @@ export const testSettings: AppSettings = {
   sessionSecret: "integration-test-secret-integration-test-0000",
   sessionTtlMs: 60 * 60 * 1000,
   secureCookies: false,
+  aiEnabled: true,
 };
 
 /**

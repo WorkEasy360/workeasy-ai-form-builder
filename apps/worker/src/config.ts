@@ -1,4 +1,8 @@
+import { AI_PROVIDERS } from "@workeasy/ai";
 import { z } from "zod";
+
+/** An optional setting where an empty value (`KEY=` in .env) means unset. */
+const optionalText = (max: number) => z.preprocess((v) => (v === "" ? undefined : v), z.string().min(1).max(max).optional());
 
 const ConfigSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -20,6 +24,12 @@ const ConfigSchema = z.object({
   /** clamd for upload scanning (FIL-01). */
   SCANNER_HOST: z.string().min(1).default("127.0.0.1"),
   SCANNER_PORT: z.coerce.number().int().min(1).max(65535).default(3310),
+  /** AI authoring (AI-01): "disabled", "stub" (local, no account), "openai" or "gemini". */
+  AI_PROVIDER: z.enum(AI_PROVIDERS).default("disabled"),
+  /** The provider's model ID; required for openai and gemini. */
+  AI_MODEL: optionalText(100),
+  OPENAI_API_KEY: optionalText(500),
+  GEMINI_API_KEY: optionalText(500),
 });
 
 export type WorkerConfig = z.infer<typeof ConfigSchema>;
@@ -28,6 +38,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): WorkerConfig {
   const result = ConfigSchema.safeParse(env);
   if (!result.success) {
     throw new Error(`Invalid worker configuration:\n${z.prettifyError(result.error)}`);
+  }
+  if (result.data.NODE_ENV === "production" && result.data.AI_PROVIDER === "stub") {
+    throw new Error("Invalid worker configuration: AI_PROVIDER=stub is for local development and tests only");
   }
   return result.data;
 }

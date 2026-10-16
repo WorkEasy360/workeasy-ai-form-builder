@@ -22,6 +22,8 @@ export interface AppSettings {
   sessionSecret: string;
   sessionTtlMs: number;
   secureCookies: boolean;
+  /** Whether AI generation is offered (a worker with a provider runs it). Manual editing never depends on it. */
+  aiEnabled: boolean;
 }
 
 export interface AppDependencies {

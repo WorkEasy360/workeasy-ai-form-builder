@@ -13,6 +13,7 @@ import {
   identityRepo,
   orgRepo,
   exportsRepo,
+  aiRepo,
   governanceRepo,
   jobsRepo,
   publishRepo,
@@ -21,6 +22,7 @@ import {
   withContext,
   type Database,
   type AccessPolicy,
+  type AiGeneration,
   type ExportRecord,
   type Job,
   type FormListCursor,
@@ -30,6 +32,7 @@ import {
   type ResolvedSession,
   type VersionSummary,
 } from "@workeasy/database";
+import { AI_DEADLINE_SECONDS, AI_GENERATE_JOB, AI_GENERATE_MAX_ATTEMPTS, TEMPLATE_VERSION } from "@workeasy/ai";
 import { FORM_PUBLISHED_V1, formPublishedV1 } from "@workeasy/events";
 import {
   blankDefinition,
@@ -47,6 +50,7 @@ import type { AppDependencies } from "../app.js";
 import {
   AccessPolicyBodySchema,
   ActivateVersionBodySchema,
+  AiJobCreateBodySchema,
   AuditQuerySchema,
   CloseFormBodySchema,
   JobQuerySchema,
@@ -62,6 +66,8 @@ import {
   type FormGrantsResponse,
   type FormListResponse,
   type AccessPolicyResponse,
+  type AiGenerationBody,
+  type AiJobResponse,
   type AuditListResponse,
   type JobBody,
   type JobListResponse,
@@ -1199,6 +1205,147 @@ export function apiV1Router({ db, settings, objectStore }: AppDependencies): Rou
       };
     });
     respond(res, outcome);
+  });
+
+  // AI generation (AI-01, docs/03 §4) ---------------------------------------
+
+  /** One active generation per user and five per organization (docs/03 §4). */
+  const AI_ACTIVE_PER_USER = 1;
+  const AI_ACTIVE_PER_TENANT = 5;
+  const AI_UNAVAILABLE = {
+    kind: "problem",
+    status: 503,
+    code: "AI_UNAVAILABLE",
+    title: "AI generation isn't available right now; you can keep editing the form yourself",
+  } as const;
+
+  function aiBody(g: AiGeneration): AiGenerationBody {
+    return {
+      id: g.id,
+      formId: g.formId,
+      operation: g.operation,
+      status: g.status,
+      baseRevision: g.baseRevision,
+      requestedBy: g.requestedBy,
+      provider: g.provider,
+      model: g.model,
+      proposal: g.proposal,
+      summary: g.summary,
+      failureCode: g.failureCode,
+      usage: g.usage,
+      createdAt: g.createdAt.toISOString(),
+      deadlineAt: g.deadlineAt.toISOString(),
+      finishedAt: g.finishedAt?.toISOString() ?? null,
+    };
+  }
+
+  /**
+   * Asks the worker for a proposal for this draft. Nothing changes the draft:
+   * the result is a validated proposal to review (AI-02 applies it). The
+   * generation and its job commit together, so a crash cannot lose one.
+   */
+  router.post("/organizations/:orgId/forms/:formId/ai-jobs", async (req, res) => {
+    const body = AiJobCreateBodySchema.safeParse(req.body ?? {});
+    if (!body.success) {
+      problems.validation(res, issuesToErrors(body.error));
+      return;
+    }
+    const { orgId, formId } = req.params;
+    const userId = sessionOf(res).userId;
+    respond(
+      res,
+      await onForm(res, orgId, formId, "forms.edit", async (trx, { form }): Promise<Outcome<AiJobResponse>> => {
+        if (!settings.aiEnabled) return AI_UNAVAILABLE;
+        if (form.state === "archived") return { kind: "conflict", code: "FORM_ARCHIVED", title: "Restore the form before editing it" };
+        const draft = await orgRepo.getDraft(trx, formId);
+        if (!draft) return { kind: "not_found" };
+        if (draft.revision !== body.data.baseRevision) {
+          return { kind: "problem", status: 412, code: "DRAFT_CONFLICT", title: "This draft was changed by someone else", extra: { currentRevision: draft.revision } };
+        }
+        await aiRepo.lockTenantGenerations(trx, orgId);
+        await aiRepo.expireOverdue(trx);
+        const active = await aiRepo.countActive(trx, userId);
+        if (active.user >= AI_ACTIVE_PER_USER) {
+          return { kind: "conflict", code: "AI_GENERATION_IN_PROGRESS", title: "Wait for your current AI request to finish, or cancel it" };
+        }
+        if (active.tenant >= AI_ACTIVE_PER_TENANT) {
+          return { kind: "problem", status: 429, code: "AI_BUSY", title: "Your organization has too many AI requests running; try again shortly" };
+        }
+        const generation = await aiRepo.createGeneration(trx, {
+          tenantId: orgId,
+          formId,
+          requestedBy: userId,
+          operation: body.data.operation,
+          baseRevision: draft.revision,
+          baseDefinition: draft.definition,
+          prompt: body.data.prompt,
+          promptDigest: createHash("sha256").update(body.data.prompt, "utf8").digest("hex"),
+          templateVersion: TEMPLATE_VERSION,
+          deadlineSeconds: AI_DEADLINE_SECONDS,
+        });
+        await jobsRepo.enqueueJob(trx, {
+          tenantId: orgId,
+          type: AI_GENERATE_JOB,
+          dedupeKey: generation.id,
+          payload: { generationId: generation.id },
+          traceId: requestIdOf(res),
+          maxAttempts: AI_GENERATE_MAX_ATTEMPTS,
+        });
+        // The prompt stays out of the audit log; its digest is on the generation.
+        await audit(trx, res, orgId, "ai.generation_requested", "form", formId, { generationId: generation.id, operation: generation.operation });
+        return { kind: "ok", status: 202, body: { job: aiBody(generation) }, headers: { Location: `/api/v1/organizations/${orgId}/ai-jobs/${generation.id}` } };
+      }),
+    );
+  });
+
+  /** Loads a generation for someone who can read its form; `action` decides the rest. */
+  function onGeneration<T>(
+    res: Response,
+    orgId: string,
+    jobId: string,
+    action: (trx: Trx, generation: AiGeneration, permissions: Set<FormPermission>, membership: MembershipRecord) => Promise<Outcome<T>>,
+  ) {
+    const userId = sessionOf(res).userId;
+    if (!UUID_PATTERN.test(jobId)) return Promise.resolve(NOT_VISIBLE);
+    return inOrganization(orgId, userId, async (trx, membership): Promise<Outcome<T>> => {
+      await aiRepo.expireOverdue(trx, jobId);
+      const generation = await aiRepo.getGeneration(trx, jobId);
+      if (!generation || !(await orgRepo.getFormSummary(trx, generation.formId))) return { kind: "not_found" };
+      const grants = (await orgRepo.listUserFormGrants(trx, generation.formId, userId)).filter(isFormPermission);
+      const permissions = formPermissions(membership, grants);
+      if (!permissions.has("forms.read")) return { kind: "not_found" };
+      return action(trx, generation, permissions, membership);
+    });
+  }
+
+  /** A generation's state, and its proposal once ready (forms.edit on its form). */
+  router.get("/organizations/:orgId/ai-jobs/:jobId", async (req, res) => {
+    const { orgId, jobId } = req.params;
+    respond(
+      res,
+      await onGeneration(res, orgId, jobId, async (_trx, generation, permissions): Promise<Outcome<AiJobResponse>> =>
+        permissions.has("forms.edit") ? { kind: "ok", body: { job: aiBody(generation) } } : { kind: "forbidden" },
+      ),
+    );
+  });
+
+  /**
+   * Cancels a generation (its requester, or an owner or admin). Best effort
+   * for a provider call already running, but its result is then discarded.
+   */
+  router.post("/organizations/:orgId/ai-jobs/:jobId/cancel", async (req, res) => {
+    const { orgId, jobId } = req.params;
+    const userId = sessionOf(res).userId;
+    respond(
+      res,
+      await onGeneration(res, orgId, jobId, async (trx, generation, _permissions, membership): Promise<Outcome<AiJobResponse>> => {
+        if (generation.requestedBy !== userId && membership.role !== "owner" && membership.role !== "admin") return { kind: "forbidden" };
+        const cancelled = await aiRepo.cancelGeneration(trx, jobId);
+        if (!cancelled) return { kind: "ok", body: { job: aiBody(generation) } };
+        await audit(trx, res, orgId, "ai.generation_cancelled", "form", generation.formId, { generationId: jobId });
+        return { kind: "ok", body: { job: aiBody(cancelled) } };
+      }),
+    );
   });
 
   // Durable jobs (JOB-01, docs/04 §6) ---------------------------------------

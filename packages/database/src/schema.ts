@@ -272,6 +272,34 @@ export interface JobsTable {
   finished_at: Date | null;
 }
 
+export type AiGenerationStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
+export type AiOperation = "create" | "edit";
+
+export interface AiGenerationsTable {
+  id: Generated<string>;
+  tenant_id: string;
+  form_id: string;
+  requested_by: string;
+  operation: AiOperation;
+  base_revision: number;
+  base_definition: Record<string, unknown>;
+  prompt: string | null;
+  prompt_digest: string;
+  template_version: string;
+  provider: string | null;
+  model: string | null;
+  status: Generated<AiGenerationStatus>;
+  proposal: Record<string, unknown> | null;
+  summary: Record<string, unknown> | null;
+  failure_code: string | null;
+  input_tokens: Generated<number>;
+  output_tokens: Generated<number>;
+  created_at: ColumnType<Date, never, never>;
+  updated_at: Generated<Date>;
+  deadline_at: Date;
+  finished_at: Date | null;
+}
+
 export interface Database {
   tenants: TenantsTable;
   users: UsersTable;
@@ -284,6 +312,7 @@ export interface Database {
   audit_events: AuditEventsTable;
   outbox_events: OutboxEventsTable;
   jobs: JobsTable;
+  ai_generations: AiGenerationsTable;
   form_access_policies: FormAccessPoliciesTable;
   respondent_sessions: RespondentSessionsTable;
   submissions: SubmissionsTable;

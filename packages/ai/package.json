@@ -1,0 +1,20 @@
+{
+  "name": "@workeasy/ai",
+  "version": "0.0.0",
+  "private": true,
+  "description": "AI provider adapters and bounded form-generation jobs (server only).",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@workeasy/database": "workspace:*",
+    "@workeasy/form-engine": "workspace:*",
+    "@workeasy/form-schema": "workspace:*",
+    "@workeasy/jobs": "workspace:*",
+    "kysely": "0.29.6"
+  }
+}

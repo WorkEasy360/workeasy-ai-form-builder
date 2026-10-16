@@ -1,11 +1,12 @@
 import { createDb } from "@workeasy/database";
+import { providerFromSettings } from "@workeasy/ai";
 import { dispatchOutbox, runJobs, type JobDeps } from "@workeasy/jobs";
 import { createObjectStore, expireStaleUploads, scanPendingUploads, type ScanDeps } from "@workeasy/files";
 import { createLogger } from "@workeasy/observability";
 import { applyRetention, expireOldExports, processExports, purgeDeletedResponses } from "@workeasy/responses";
 import { loadConfig } from "./config.js";
 import { createHealthServer } from "./health.js";
-import { registry } from "./jobs.js";
+import { createRegistry } from "./jobs.js";
 import { startRunner, type PollingTask } from "./runner.js";
 
 const config = loadConfig();
@@ -29,6 +30,8 @@ const scanDeps: ScanDeps = {
 };
 
 const jobDeps: JobDeps = { workerDb, log: (level, message, fields) => logger[level](fields, message) };
+const aiProvider = providerFromSettings(config);
+const registry = createRegistry({ workerDb, provider: aiProvider, log: jobDeps.log! });
 
 const tasks: PollingTask[] = [
   {
@@ -85,7 +88,7 @@ const tasks: PollingTask[] = [
 ];
 
 const runner = startRunner({ tasks, intervalMs: config.WORKER_POLL_INTERVAL_MS, logger });
-logger.info({ tasks: tasks.map((t) => t.name), intervalMs: config.WORKER_POLL_INTERVAL_MS }, "worker started");
+logger.info({ tasks: tasks.map((t) => t.name), intervalMs: config.WORKER_POLL_INTERVAL_MS, aiProvider: aiProvider ? `${aiProvider.name}/${aiProvider.model}` : "disabled" }, "worker started");
 
 const health = createHealthServer({
   lastIterationAt: runner.lastIterationAt,

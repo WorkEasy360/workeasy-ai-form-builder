@@ -12,6 +12,7 @@
     "openapi:write": "tsx scripts/write-openapi.ts"
   },
   "dependencies": {
+    "@workeasy/ai": "workspace:*",
     "@workeasy/auth": "workspace:*",
     "@workeasy/database": "workspace:*",
     "@workeasy/events": "workspace:*",
