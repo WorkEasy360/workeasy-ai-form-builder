@@ -25,6 +25,8 @@ import {
   AiApplyBodySchema,
   AiApplyResponseSchema,
   AiJobCreateBodySchema,
+  AnalyticsQuerySchema,
+  AnalyticsResponseSchema,
   AiSettingsBodySchema,
   AiSettingsResponseSchema,
   AiJobResponseSchema,
@@ -500,6 +502,19 @@ export function buildOpenApiDocument(): JsonSchema {
           },
         },
       },
+      "/public/v1/sessions/{sessionId}/started": {
+        parameters: [uuidPath("sessionId", "Respondent session ID")],
+        post: {
+          operationId: "markSessionStarted",
+          summary: "Record that the respondent changed an answer for the first time (analytics start)",
+          description: "Carries no body and no answers; recorded once per session.",
+          security: [{ sessionCapability: [] }],
+          responses: {
+            "204": { description: "Recorded (or already recorded)" },
+            "401": problem("SESSION_INVALID"),
+          },
+        },
+      },
       "/public/v1/sessions/{sessionId}/acceptance": {
         parameters: [uuidPath("sessionId", "Respondent session ID")],
         get: {
@@ -786,6 +801,23 @@ export function buildOpenApiDocument(): JsonSchema {
             "401": unauthenticated,
             "403": problem("Not the requester, an owner or an admin"),
             "404": problem("Generation not found or not visible"),
+          },
+        },
+      },
+      "/api/v1/organizations/{orgId}/forms/{formId}/analytics": {
+        parameters: [uuidPath("orgId", "Organization (tenant) ID"), uuidPath("formId", "Form ID"), ...queryParameters(AnalyticsQuerySchema)],
+        get: {
+          operationId: "getFormAnalytics",
+          summary: "Views, starts and accepts per UTC day (requires analytics.read)",
+          description:
+            "Aggregated from respondent sessions only; no answers are read and nothing identifies a respondent. view: a session was opened; start: its respondent first changed an answer; accept: its response was accepted (later deletion does not change the count). Each is counted once per session, on the UTC day the session was opened. Up to 366 days; the definitions are returned with the data.",
+          security: [{ consoleSession: [] }],
+          responses: {
+            "200": json("Daily counts, totals and definitions", AnalyticsResponseSchema),
+            "401": unauthenticated,
+            "403": problem("No analytics.read"),
+            "404": problem("Form not found or not visible"),
+            "422": problem("Invalid dates or a range over 366 days"),
           },
         },
       },

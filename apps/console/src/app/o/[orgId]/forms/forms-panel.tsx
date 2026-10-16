@@ -387,6 +387,11 @@ export function FormsPanel({ orgId }: { orgId: string }) {
                         Archive
                       </button>
                     )}
+                    {f.permissions.includes("analytics.read") && (
+                      <a href={`/o/${orgId}/forms/${f.id}/analytics`} aria-label={`Analytics for ${f.name}`}>
+                        Analytics
+                      </a>
+                    )}
                     {load.canManageIntegrations && (
                       <a href={`/o/${orgId}/forms/${f.id}/integrations`} aria-label={`Notifications and webhooks for ${f.name}`}>
                         Integrations

@@ -337,6 +337,19 @@ The response presentation and CSV code live in `@workeasy/responses`, shared by 
   - Actual use is charged as the provider reports it, including retries and cancelled work. The reservation is released once, when the generation ends: by the worker, or by the API for a queued cancellation or an expired generation.
   - The worker logs a warning (counts only) when a day's use reaches 80% of the limit.
 
+## Analytics (ANA-01)
+
+People with `analytics.read` on a form open **Analytics** next to it in the forms list (`GET …/forms/:id/analytics?from=&to=`, up to 366 UTC days, the last 30 by default). The counts come from respondent sessions only, with nothing collected on top of them, and no answers are ever read:
+
+| Measure | Definition |
+|---|---|
+| **View** | A respondent session was opened: the form page loaded while the form was accepting responses. A reload opens a new session, so it counts again; a closed, full or not-yet-open form opens no session and is not counted. |
+| **Start** | In that session, the respondent changed an answer for the first time, or submitted. The respondent app reports the first `input` or `change` event once (`POST /public/v1/sessions/:id/started`, with the session's capability and no body); only the time is stored, in `respondent_sessions.started_at`. |
+| **Accept** | That session's response was accepted. Deleting the response later does not change the count. |
+
+- **Counting:** each measure counts at most once per session, on the UTC day the session was opened, so start and completion rates (`starts / views`, `accepts / starts`) always compare the same sessions. Days without sessions come back as zeros, and the response carries these definitions.
+- **What's stored:** nothing new about respondents: no IP addresses, user agents, cookies or answers.
+
 ## Email notifications and webhooks (AUT-01)
 
 - **Setup:** people with `integrations.manage` (owners and admins) open **Integrations** next to a form in the forms list (`…/forms/:id/integrations`). Each form can have email notifications and webhooks; adding, changing, pausing, removing them and rotating secrets is audited, without URLs or addresses.

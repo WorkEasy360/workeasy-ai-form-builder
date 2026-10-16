@@ -694,3 +694,39 @@ export const DeliveryDetailResponseSchema = z.object({
   ),
 });
 export type DeliveryDetailResponse = z.infer<typeof DeliveryDetailResponseSchema>;
+
+// Analytics (ANA-01) ------------------------------------------------------------
+
+const IsoDate = z.iso.date();
+
+export const AnalyticsQuerySchema = z.object({
+  /** First UTC day, inclusive; defaults to 29 days before `to`. */
+  from: IsoDate.optional(),
+  /** Last UTC day, inclusive; defaults to today. */
+  to: IsoDate.optional(),
+});
+
+export const ANALYTICS_DEFINITIONS = {
+  view: "A respondent session was opened: the form page loaded while the form was accepting responses. Reloading the page opens a new session.",
+  start: "In a viewed session, the respondent changed an answer for the first time (or submitted).",
+  accept: "In a viewed session, a response was accepted. Responses deleted later still count.",
+  day: "Counts are grouped by the UTC day the session was opened, so a response accepted after midnight counts on the day it was started.",
+} as const;
+
+export const AnalyticsResponseSchema = z.object({
+  from: IsoDate,
+  to: IsoDate,
+  /** Every day in the range, including days with no sessions. */
+  days: z.array(z.object({ day: IsoDate, views: z.number().int(), starts: z.number().int(), accepts: z.number().int() })),
+  totals: z.object({
+    views: z.number().int(),
+    starts: z.number().int(),
+    accepts: z.number().int(),
+    /** starts / views; null without views. */
+    startRate: z.number().nullable(),
+    /** accepts / starts; null without starts. */
+    completionRate: z.number().nullable(),
+  }),
+  definitions: z.object({ view: z.string(), start: z.string(), accept: z.string(), day: z.string() }),
+});
+export type AnalyticsResponse = z.infer<typeof AnalyticsResponseSchema>;

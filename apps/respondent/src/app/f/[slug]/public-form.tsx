@@ -149,6 +149,20 @@ export function PublicForm({ slug, versionId, definition, embed }: { slug: strin
     return () => observer.disconnect();
   }, [embed]);
 
+  // Analytics "start" (ANA-01): the first change in this session is reported once, with no answers.
+  const startReported = useRef(false);
+  function reportStart() {
+    if (startReported.current || state.kind !== "ready") return;
+    startReported.current = true;
+    const { sessionId, capability } = state.session;
+    void fetch(`/public/v1/sessions/${encodeURIComponent(sessionId)}/started`, {
+      method: "POST",
+      cache: "no-store",
+      keepalive: true,
+      headers: { authorization: `Bearer ${capability}` },
+    }).catch(() => undefined);
+  }
+
   async function submit(answers: Record<string, AnswerValue>): Promise<string | undefined> {
     if (state.kind !== "ready") return state.kind === "failed" ? state.message : "The form is still getting ready. Try again in a moment.";
     const { sessionId, capability, versionId: sessionVersion } = state.session;
@@ -175,7 +189,7 @@ export function PublicForm({ slug, versionId, definition, embed }: { slug: strin
   // The session decides the version; it matches the page unless a new version went live in between.
   const shown = state.kind === "ready" && state.session.versionId !== versionId ? state.session.definition : definition;
   return (
-    <main ref={main} className={embed ? "r-embed" : "r-page"}>
+    <main ref={main} className={embed ? "r-embed" : "r-page"} onInputCapture={reportStart} onChangeCapture={reportStart}>
       <style>{RENDERER_CSS}</style>
       {state.kind === "failed" && (
         <p role="alert" className="r-alert">

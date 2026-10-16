@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from "express";
 import { randomUUID } from "node:crypto";
-import { identityRepo, intakeRepo, publicFormsRepo, uploadsRepo, withTenant, type PublicForm, type RespondentSession, type Unavailable, type Upload } from "@workeasy/database";
+import { analyticsRepo, identityRepo, intakeRepo, publicFormsRepo, uploadsRepo, withTenant, type PublicForm, type RespondentSession, type Unavailable, type Upload } from "@workeasy/database";
 import { safeFileName } from "@workeasy/files";
 import type { Field, FormDefinition } from "@workeasy/form-schema";
 import type { AppDependencies } from "../app.js";
@@ -198,6 +198,18 @@ export function publicV1Router(deps: AppDependencies): Router {
   function sessionInvalid(res: Response) {
     sendProblem(res, 401, "SESSION_INVALID", "This form session has expired. Reload the page to start again.");
   }
+
+  /**
+   * The respondent changed an answer for the first time (ANA-01 "start").
+   * Carries nothing but the session; recorded once, later calls are no-ops.
+   */
+  router.post("/sessions/:sessionId/started", async (req, res) => {
+    res.set("Cache-Control", "no-store");
+    const session = await sessionOf(req, res);
+    if (!session) return;
+    await withTenant(publicDb, session.tenantId, (trx) => analyticsRepo.markStarted(trx, session.id));
+    res.status(204).end();
+  });
 
   router.get("/sessions/:sessionId/acceptance", async (req, res) => {
     res.set("Cache-Control", "no-store");

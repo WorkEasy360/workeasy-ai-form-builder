@@ -153,6 +153,8 @@ export interface RespondentSessionsTable {
   revoked_at: Date | null;
   accepted_submission_id: string | null;
   created_at: CreatedAt;
+  /** When the respondent first changed an answer (ANA-01). */
+  started_at: Generated<Date | null>;
 }
 
 export interface SubmissionsTable {

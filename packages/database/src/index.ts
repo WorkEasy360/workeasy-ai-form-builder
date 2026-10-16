@@ -13,6 +13,8 @@ export * as exportsRepo from "./repositories/exports.js";
 export * as governanceRepo from "./repositories/governance.js";
 export * as jobsRepo from "./repositories/jobs.js";
 export * as aiRepo from "./repositories/ai.js";
+export * as analyticsRepo from "./repositories/analytics.js";
+export type { AnalyticsDay } from "./repositories/analytics.js";
 export * as integrationsRepo from "./repositories/integrations.js";
 export type { AttemptRecord, Delivery, DeliveryAttempt, DeliveryContext, Integration, IntegrationPatch, IntegrationWithSecrets, NewIntegration } from "./repositories/integrations.js";
 export type { AiGeneration, AiSettings, GenerationOutcome, NewGeneration } from "./repositories/ai.js";

@@ -14,6 +14,7 @@ import {
   orgRepo,
   exportsRepo,
   aiRepo,
+  analyticsRepo,
   governanceRepo,
   integrationsRepo,
   jobsRepo,
@@ -55,6 +56,8 @@ import {
   AccessPolicyBodySchema,
   ActivateVersionBodySchema,
   AiApplyBodySchema,
+  ANALYTICS_DEFINITIONS,
+  AnalyticsQuerySchema,
   AiSettingsBodySchema,
   DeliveryQuerySchema,
   IntegrationCreateBodySchema,
@@ -76,6 +79,7 @@ import {
   type FormListResponse,
   type AccessPolicyResponse,
   type AiApplyResponse,
+  type AnalyticsResponse,
   type AiSettingsResponse,
   type DeliveryBody,
   type DeliveryDetailResponse,
@@ -1508,6 +1512,54 @@ export function apiV1Router({ db, settings, objectStore }: AppDependencies): Rou
         const decided = (await aiRepo.decideGeneration(trx, generation.id, { kind: "rejected" }, userId))!;
         await audit(trx, res, orgId, "ai.proposal_rejected", "form", generation.formId, { generationId: generation.id });
         return { kind: "ok", body: { job: aiBody(decided) } };
+      }),
+    );
+  });
+
+  // Analytics (ANA-01) ----------------------------------------------------------
+
+  /** At most a year of days per request. */
+  const ANALYTICS_MAX_DAYS = 366;
+  const DAY_MS = 86_400_000;
+
+  /**
+   * Views, starts and accepts per UTC day for a form (analytics.read).
+   * Aggregated from respondent sessions only: no answers are read.
+   */
+  router.get("/organizations/:orgId/forms/:formId/analytics", async (req, res) => {
+    const query = AnalyticsQuerySchema.safeParse(req.query);
+    if (!query.success) {
+      problems.validation(res, issuesToErrors(query.error));
+      return;
+    }
+    const to = query.data.to ?? new Date().toISOString().slice(0, 10);
+    const from = query.data.from ?? new Date(Date.parse(to) - 29 * DAY_MS).toISOString().slice(0, 10);
+    const span = (Date.parse(to) - Date.parse(from)) / DAY_MS + 1;
+    if (span < 1 || span > ANALYTICS_MAX_DAYS) {
+      problems.validation(res, [{ field: "from", code: "INVALID_RANGE", message: `Choose 1 to ${ANALYTICS_MAX_DAYS} days, with from on or before to` }]);
+      return;
+    }
+    const { orgId, formId } = req.params;
+    respond(
+      res,
+      await onForm(res, orgId, formId, "analytics.read", async (trx): Promise<Outcome<AnalyticsResponse>> => {
+        const counted = new Map((await analyticsRepo.formDays(trx, formId, from, to)).map((d) => [d.day, d]));
+        const days = Array.from({ length: span }, (_, i) => {
+          const day = new Date(Date.parse(from) + i * DAY_MS).toISOString().slice(0, 10);
+          return counted.get(day) ?? { day, views: 0, starts: 0, accepts: 0 };
+        });
+        const sum = (k: "views" | "starts" | "accepts") => days.reduce((n, d) => n + d[k], 0);
+        const [views, starts, accepts] = [sum("views"), sum("starts"), sum("accepts")];
+        return {
+          kind: "ok",
+          body: {
+            from,
+            to,
+            days,
+            totals: { views, starts, accepts, startRate: views ? starts / views : null, completionRate: starts ? accepts / starts : null },
+            definitions: { ...ANALYTICS_DEFINITIONS },
+          },
+        };
       }),
     );
   });
