@@ -13,7 +13,7 @@ export * as exportsRepo from "./repositories/exports.js";
 export * as governanceRepo from "./repositories/governance.js";
 export * as jobsRepo from "./repositories/jobs.js";
 export * as aiRepo from "./repositories/ai.js";
-export type { AiGeneration, GenerationOutcome, NewGeneration } from "./repositories/ai.js";
+export type { AiGeneration, AiSettings, GenerationOutcome, NewGeneration } from "./repositories/ai.js";
 export type { ClaimedJob, Job, JobOutcome, JobQuery, NewJob } from "./repositories/jobs.js";
 export type { AuditEntry, AuditQuery, PurgeJob, RetentionSettings } from "./repositories/governance.js";
 export type { ExportFilters, ExportJob, ExportOutcome, ExportRecord, NewExport, ReadableClass } from "./repositories/exports.js";

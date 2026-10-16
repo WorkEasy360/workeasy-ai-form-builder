@@ -10,6 +10,8 @@ export const AI_GENERATE_JOB = "ai.generate";
 export const AI_GENERATE_MAX_ATTEMPTS = 3;
 /** Every generation must end this long after it was requested. */
 export const AI_DEADLINE_SECONDS = 120;
+/** Share of the daily budget at which the worker raises a spend alarm. */
+export const AI_BUDGET_ALARM_RATIO = 0.8;
 
 export interface AiJobDeps {
   workerDb: Db;
@@ -33,18 +35,35 @@ export function aiGenerationJob(deps: AiJobDeps): JobDefinition {
     async handle(ctx) {
       const id = String(ctx.payload.generationId);
       const inTenant = <T>(fn: (trx: Transaction<Database>) => Promise<T>) => withTenant(deps.workerDb, ctx.tenantId, fn);
-      const finish = (outcome: GenerationOutcome, usage: Usage) => inTenant((trx) => aiRepo.finishGeneration(trx, id, outcome, usage));
-      const fields = { generationId: id, jobId: ctx.id, attempt: ctx.attempt };
+      const fields = { generationId: id, jobId: ctx.id, attempt: ctx.attempt, tenantId: ctx.tenantId };
+      // Records the outcome, releases the reservation, and warns when the day's budget is nearly spent.
+      const finish = (outcome: GenerationOutcome, usage: Usage) =>
+        inTenant(async (trx) => {
+          await aiRepo.finishGeneration(trx, id, outcome, usage);
+          await aiRepo.settleGeneration(trx, id);
+          const [settings, today] = await Promise.all([aiRepo.getSettings(trx), aiRepo.usageToday(trx)]);
+          if (today.used >= settings.dailyTokenLimit * AI_BUDGET_ALARM_RATIO) {
+            deps.log?.("warn", "AI daily token budget nearly used", { tenantId: ctx.tenantId, usedTokens: today.used, dailyTokenLimit: settings.dailyTokenLimit });
+          }
+        });
 
       const provider = deps.provider ?? { name: "none", model: "none" };
       const generation = await inTenant((trx) => aiRepo.startGeneration(trx, id, provider));
       if (!generation) {
-        // Cancelled, already finished, or out of time.
-        await inTenant((trx) => aiRepo.expireOverdue(trx, id));
+        // Cancelled, already finished, or out of time: release whatever it still holds.
+        await inTenant(async (trx) => {
+          await aiRepo.expireOverdue(trx, id);
+          await aiRepo.settleGeneration(trx, id);
+        });
         return;
       }
       if (!deps.provider) {
         await finish({ status: "failed", failureCode: "ai_unavailable" }, NO_USAGE);
+        return;
+      }
+      // The organization may have turned AI off since the request.
+      if (!(await inTenant((trx) => aiRepo.getSettings(trx))).enabled) {
+        await finish({ status: "failed", failureCode: "ai_not_enabled" }, NO_USAGE);
         return;
       }
 

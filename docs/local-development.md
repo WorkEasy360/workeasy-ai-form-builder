@@ -330,7 +330,12 @@ The response presentation and CSV code live in `@workeasy/responses`, shared by 
   - Each provider call has 45 s.
   - The whole generation must finish within 120 s. A generation past that fails as `deadline_exceeded`, even if its worker died.
   - Transient provider failures (rate limits, 5xx, timeouts, network errors) are retried at most twice. Authentication, refusals and truncated replies fail at once with their code.
-- **Privacy:** the prompt is kept only while the generation runs, plus its SHA-256 digest. It's never returned, logged or audited. Logs and summaries hold IDs, counts and codes, never model text. Token usage is recorded per generation; budgets and tenant opt-in arrive with AI-03. Audited actions are `ai.generation_requested`, `ai.generation_cancelled`, `ai.proposal_applied` (with the new revision) and `ai.proposal_rejected`.
+- **Privacy:** the prompt is kept only while the generation runs, plus its SHA-256 digest. It's never returned, logged or audited. Logs and summaries hold IDs, counts and codes, never model text. Token usage is recorded per generation. Audited actions are `ai.generation_requested`, `ai.generation_cancelled`, `ai.proposal_applied` (with the new revision), `ai.proposal_rejected` and `organization.ai_settings_changed`. Tests check that the API's and the worker's logs, the audit log, job rows and finished generations never contain the prompt or model output.
+- **Opt-in and budget (AI-03):** AI is **off for each organization** until an owner turns it on under **AI settings** on the forms page (`PUT /api/v1/organizations/:orgId/ai-settings`, `organization.manage`, audited). Until then, requests get `403 AI_NOT_ENABLED`; turning AI off also stops queued generations (`ai_not_enabled`).
+  - Each organization has a daily token limit (default 200,000, per UTC day). A request reserves its worst case before it is queued: two calls, each with the whole conversation as input (estimated at a token per three characters) plus the maximum output.
+  - The reservation is one conditional upsert on the day's `ai_usage_days` row. Concurrent requests queue on that row and each sees the others' tokens, so **together they cannot pass the limit**; a request that doesn't fit gets `429 AI_BUDGET_EXCEEDED`.
+  - Actual use is charged as the provider reports it, including retries and cancelled work. The reservation is released once, when the generation ends: by the worker, or by the API for a queued cancellation or an expired generation.
+  - The worker logs a warning (counts only) when a day's use reaches 80% of the limit.
 
 ## Uploads and scanning (FIL-01)
 

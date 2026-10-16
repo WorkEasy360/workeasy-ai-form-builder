@@ -574,6 +574,21 @@ export type AiGenerationBody = z.infer<typeof AiGenerationSchema>;
 export const AiJobResponseSchema = z.object({ job: AiGenerationSchema });
 export type AiJobResponse = z.infer<typeof AiJobResponseSchema>;
 
+/** An organization's AI opt-in and daily budget (AI-03). */
+export const AiSettingsBodySchema = z.object({
+  enabled: z.boolean(),
+  /** Tokens per UTC day across the organization, reserved worst-case per request. */
+  dailyTokenLimit: z.number().int().min(1000).max(100_000_000),
+});
+
+export const AiSettingsResponseSchema = z.object({
+  settings: AiSettingsBodySchema,
+  /** Whether this deployment has an AI provider at all. */
+  available: z.boolean(),
+  today: z.object({ usedTokens: z.number().int(), reservedTokens: z.number().int() }),
+});
+export type AiSettingsResponse = z.infer<typeof AiSettingsResponseSchema>;
+
 export const AiApplyBodySchema = z.object({
   /** The draft revision the author is looking at; it must still be the proposal's base. */
   expectedRevision: z.number().int().min(1),

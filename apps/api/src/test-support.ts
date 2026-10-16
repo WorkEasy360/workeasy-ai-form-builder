@@ -55,9 +55,10 @@ export function buildTestApp(
   publicDb: Db = db,
   respondentIdentityProvider: IdentityProvider = identityProvider,
   objectStore: ObjectStore = testObjectStore(),
+  logger = createLogger({ service: "api-test", level: "silent" }),
 ): Express {
   return createApp({
-    logger: createLogger({ service: "api-test", level: "silent" }),
+    logger,
     db,
     publicDb,
     objectStore,

@@ -37,6 +37,7 @@ const ACTIONS: Record<string, string> = {
   "ai.generation_cancelled": "Cancelled an AI request",
   "ai.proposal_applied": "Applied an AI suggestion to a draft",
   "ai.proposal_rejected": "Rejected an AI suggestion",
+  "organization.ai_settings_changed": "Changed AI settings",
 };
 
 function details(metadata: Record<string, unknown>): string {

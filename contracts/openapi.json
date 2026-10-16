@@ -6243,7 +6243,7 @@
             }
           },
           "403": {
-            "description": "No forms.edit",
+            "description": "No forms.edit, or AI_NOT_ENABLED: the organization has not turned AI on",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6293,7 +6293,7 @@
             }
           },
           "429": {
-            "description": "AI_BUSY: the organization has five generations running",
+            "description": "AI_BUSY: five generations running; or AI_BUDGET_EXCEEDED: the worst-case cost does not fit in today's budget",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6304,6 +6304,245 @@
           },
           "503": {
             "description": "AI_UNAVAILABLE: AI is not configured; manual editing is unaffected",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/organizations/{orgId}/ai-settings": {
+      "parameters": [
+        {
+          "name": "orgId",
+          "in": "path",
+          "required": true,
+          "description": "Organization (tenant) ID",
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "getAiSettings",
+        "summary": "The organization's AI opt-in, daily token budget and today's use (any member)",
+        "security": [
+          {
+            "consoleSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Settings and usage",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "settings": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "dailyTokenLimit": {
+                          "type": "integer",
+                          "minimum": 1000,
+                          "maximum": 100000000
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "dailyTokenLimit"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "available": {
+                      "type": "boolean"
+                    },
+                    "today": {
+                      "type": "object",
+                      "properties": {
+                        "usedTokens": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "reservedTokens": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "usedTokens",
+                        "reservedTokens"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "settings",
+                    "available",
+                    "today"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Organization not found or not visible",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "updateAiSettings",
+        "summary": "Turn AI on or off and set the daily token budget (requires organization.manage)",
+        "description": "AI is off until turned on. Each request reserves its worst-case token use against the UTC day's budget before it is queued, atomically, so concurrent requests cannot together exceed it; actual use is charged as reported and the rest released when the request ends. Audited.",
+        "security": [
+          {
+            "consoleSession": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "dailyTokenLimit": {
+                    "type": "integer",
+                    "minimum": 1000,
+                    "maximum": 100000000
+                  }
+                },
+                "required": [
+                  "enabled",
+                  "dailyTokenLimit"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Settings and usage",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "settings": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "dailyTokenLimit": {
+                          "type": "integer",
+                          "minimum": 1000,
+                          "maximum": 100000000
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "dailyTokenLimit"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "available": {
+                      "type": "boolean"
+                    },
+                    "today": {
+                      "type": "object",
+                      "properties": {
+                        "usedTokens": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "reservedTokens": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "usedTokens",
+                        "reservedTokens"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "settings",
+                    "available",
+                    "today"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No organization.manage",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Organization not found or not visible",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid settings",
             "content": {
               "application/problem+json": {
                 "schema": {

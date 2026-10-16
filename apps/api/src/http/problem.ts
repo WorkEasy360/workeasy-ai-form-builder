@@ -13,6 +13,13 @@ export interface ProblemExtensions {
   checks?: Record<string, string>;
   /** Current draft revision, returned with a 412 draft conflict. */
   currentRevision?: number;
+  /** The revision an AI proposal was built on, returned when it is stale. */
+  baseRevision?: number;
+  /** The organization's AI budget state, returned with AI_BUDGET_EXCEEDED. */
+  dailyTokenLimit?: number;
+  usedTokens?: number;
+  reservedTokens?: number;
+  requestTokens?: number;
   /** Where a respondent signs in, returned with SIGN_IN_REQUIRED. */
   signInUrl?: string;
   /** When a scheduled form opens, returned with FORM_NOT_OPEN. */

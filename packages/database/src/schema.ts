@@ -303,6 +303,22 @@ export interface AiGenerationsTable {
   decided_by: string | null;
   decided_at: Date | null;
   applied_revision: number | null;
+  reserved_tokens: Generated<number>;
+}
+
+export interface AiSettingsTable {
+  tenant_id: string;
+  enabled: Generated<boolean>;
+  daily_token_limit: Generated<number>;
+  updated_by: string | null;
+  updated_at: Generated<Date>;
+}
+
+export interface AiUsageDaysTable {
+  tenant_id: string;
+  day: ColumnType<string, string, never>;
+  reserved_tokens: ColumnType<string, number | undefined, number>;
+  used_tokens: ColumnType<string, number | undefined, number>;
 }
 
 export interface Database {
@@ -318,6 +334,8 @@ export interface Database {
   outbox_events: OutboxEventsTable;
   jobs: JobsTable;
   ai_generations: AiGenerationsTable;
+  ai_settings: AiSettingsTable;
+  ai_usage_days: AiUsageDaysTable;
   form_access_policies: FormAccessPoliciesTable;
   respondent_sessions: RespondentSessionsTable;
   submissions: SubmissionsTable;

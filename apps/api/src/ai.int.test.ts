@@ -100,6 +100,11 @@ beforeAll(async () => {
     users[name] = id;
     tokens[name] = (await identityRepo.createSession(db, id, 60 * 60 * 1000)).token;
   }
+  // AI is opt-in (AI-03); budgets are tested in ai-budget.int.test.ts.
+  for (const [who, tenant] of [["ownerA", a], ["ownerB", b]] as const) {
+    const on = await consoleReq(who, "put", `/api/v1/organizations/${tenant.id}/ai-settings`).send({ enabled: true, dailyTokenLimit: 100_000_000 });
+    if (on.status !== 200) throw new Error(`Turning AI on failed: ${JSON.stringify(on.body)}`);
+  }
 });
 
 beforeEach(async () => {

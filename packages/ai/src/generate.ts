@@ -5,7 +5,21 @@ import { ProviderError, type JsonCompletionProvider, type Usage } from "./provid
 
 /** One provider call may take this long (docs/03 §4). */
 export const PROVIDER_TIMEOUT_MS = 45_000;
-const MAX_OUTPUT_TOKENS = 16_000;
+export const MAX_OUTPUT_TOKENS = 16_000;
+const CALLS = 2;
+
+/**
+ * The most tokens a generation can spend, reserved against the daily budget
+ * before it is queued (docs/03 §4): two calls (the request and one repair),
+ * each with the whole conversation as input and the maximum output. Inputs
+ * are estimated at one token per three characters, which overestimates for
+ * typical text. The repair call also resends the first reply.
+ */
+export function reservationTokens(request: GenerationRequest): number {
+  const inputChars = systemPrompt().length + requestMessage(request).length;
+  const perCallInput = Math.ceil(inputChars / 3) + MAX_OUTPUT_TOKENS;
+  return CALLS * (perCallInput + MAX_OUTPUT_TOKENS);
+}
 
 export type GenerationResult =
   | { ok: true; definition: FormDefinition; summary: ProposalSummary; usage: Usage }

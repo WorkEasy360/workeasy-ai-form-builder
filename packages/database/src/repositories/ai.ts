@@ -74,7 +74,8 @@ export async function lockTenantGenerations(trx: Trx, tenantId: string): Promise
 
 /**
  * Fails active generations past their deadline (a worker that died, or a
- * backlog); returns how many. `id` limits it to one generation.
+ * backlog) and releases their reservations; returns how many. `id` limits
+ * it to one generation.
  */
 export async function expireOverdue(trx: Trx, id?: string): Promise<number> {
   let q = trx
@@ -83,8 +84,85 @@ export async function expireOverdue(trx: Trx, id?: string): Promise<number> {
     .where("status", "in", ACTIVE)
     .where("deadline_at", "<", sql<Date>`now()`);
   if (id) q = q.where("id", "=", id);
-  const result = await q.executeTakeFirst();
-  return Number(result.numUpdatedRows);
+  const expired = await q.returning("id").execute();
+  for (const row of expired) await settleGeneration(trx, row.id);
+  return expired.length;
+}
+
+// Opt-in and budgets (AI-03) -----------------------------------------------------
+
+export interface AiSettings {
+  enabled: boolean;
+  dailyTokenLimit: number;
+}
+
+export const DEFAULT_AI_SETTINGS: AiSettings = { enabled: false, dailyTokenLimit: 200_000 };
+
+/** The organization's AI settings; AI is off until someone turns it on. */
+export async function getSettings(trx: Trx): Promise<AiSettings> {
+  const row = await trx.selectFrom("ai_settings").select(["enabled", "daily_token_limit"]).executeTakeFirst();
+  return row ? { enabled: row.enabled, dailyTokenLimit: row.daily_token_limit } : DEFAULT_AI_SETTINGS;
+}
+
+export async function saveSettings(trx: Trx, tenantId: string, settings: AiSettings, userId: string): Promise<AiSettings> {
+  const values = { enabled: settings.enabled, daily_token_limit: settings.dailyTokenLimit, updated_by: userId, updated_at: sql<Date>`now()` };
+  const row = await trx
+    .insertInto("ai_settings")
+    .values({ tenant_id: tenantId, ...values })
+    .onConflict((oc) => oc.column("tenant_id").doUpdateSet(values))
+    .returning(["enabled", "daily_token_limit"])
+    .executeTakeFirstOrThrow();
+  return { enabled: row.enabled, dailyTokenLimit: row.daily_token_limit };
+}
+
+/** Budget days are UTC dates; a generation counts against the day it was requested. */
+const TODAY = sql<string>`(now() AT TIME ZONE 'UTC')::date`;
+
+export async function usageToday(trx: Trx): Promise<{ used: number; reserved: number }> {
+  const row = await trx.selectFrom("ai_usage_days").select(["used_tokens", "reserved_tokens"]).where("day", "=", TODAY).executeTakeFirst();
+  return { used: Number(row?.used_tokens ?? 0), reserved: Number(row?.reserved_tokens ?? 0) };
+}
+
+/**
+ * Reserves tokens against today's limit; returns false if they do not fit.
+ * One conditional upsert: concurrent reservations queue on the day's row
+ * and each sees the others' tokens, so together they never pass the limit.
+ */
+export async function reserveTokens(trx: Trx, tenantId: string, tokens: number, limit: number): Promise<boolean> {
+  const { rows } = await sql<{ ok: number }>`
+    INSERT INTO app.ai_usage_days AS d (tenant_id, day, reserved_tokens)
+    SELECT ${tenantId}::uuid, ${TODAY}, ${tokens}::bigint WHERE ${tokens}::bigint <= ${limit}::bigint
+    ON CONFLICT (tenant_id, day) DO UPDATE SET reserved_tokens = d.reserved_tokens + EXCLUDED.reserved_tokens
+      WHERE d.used_tokens + d.reserved_tokens + EXCLUDED.reserved_tokens <= ${limit}::bigint
+    RETURNING 1 AS ok`.execute(trx);
+  return rows.length === 1;
+}
+
+/** Adds tokens the provider reported to the generation's budget day. */
+async function chargeDay(trx: Trx, id: string, tokens: number): Promise<void> {
+  if (tokens <= 0) return;
+  await sql`
+    UPDATE app.ai_usage_days d SET used_tokens = d.used_tokens + ${tokens}::bigint
+      FROM app.ai_generations g
+     WHERE g.id = ${id}::uuid AND d.tenant_id = g.tenant_id AND d.day = (g.created_at AT TIME ZONE 'UTC')::date`.execute(trx);
+}
+
+/**
+ * Releases what a finished generation still holds against its day, once.
+ * Its actual use was charged as it was reported.
+ */
+export async function settleGeneration(trx: Trx, id: string): Promise<void> {
+  const { rows } = await sql<{ reserved: number; tenant_id: string; day: string }>`
+    UPDATE app.ai_generations g SET reserved_tokens = 0
+      FROM (SELECT id, reserved_tokens FROM app.ai_generations
+             WHERE id = ${id}::uuid AND reserved_tokens > 0 AND status NOT IN ('queued', 'running') FOR UPDATE) old
+     WHERE g.id = old.id
+    RETURNING old.reserved_tokens AS reserved, g.tenant_id, (g.created_at AT TIME ZONE 'UTC')::date::text AS day`.execute(trx);
+  const released = rows[0];
+  if (!released) return;
+  await sql`
+    UPDATE app.ai_usage_days SET reserved_tokens = greatest(reserved_tokens - ${released.reserved}::bigint, 0)
+     WHERE tenant_id = ${released.tenant_id}::uuid AND day = ${released.day}::date`.execute(trx);
 }
 
 /** Active generations in the tenant, and those of one user. */
@@ -108,6 +186,8 @@ export interface NewGeneration {
   promptDigest: string;
   templateVersion: string;
   deadlineSeconds: number;
+  /** Already reserved against today's budget (reserveTokens). */
+  reservedTokens: number;
 }
 
 export async function createGeneration(trx: Trx, input: NewGeneration): Promise<AiGeneration> {
@@ -123,6 +203,7 @@ export async function createGeneration(trx: Trx, input: NewGeneration): Promise<
       prompt: input.prompt,
       prompt_digest: input.promptDigest,
       template_version: input.templateVersion,
+      reserved_tokens: input.reservedTokens,
       deadline_at: sql<Date>`now() + make_interval(secs => ${input.deadlineSeconds})`,
     })
     .returningAll()
@@ -135,8 +216,13 @@ export async function getGeneration(trx: Trx, id: string): Promise<AiGeneration 
   return row ? toGeneration(row) : undefined;
 }
 
-/** Cancels a queued or running generation; returns it, or undefined if it had already ended. */
+/**
+ * Cancels a queued or running generation; returns it, or undefined if it had
+ * already ended. A queued one is settled now; a running one is settled by
+ * its worker, which may still report use.
+ */
 export async function cancelGeneration(trx: Trx, id: string): Promise<AiGeneration | undefined> {
+  const before = await trx.selectFrom("ai_generations").select("status").where("id", "=", id).forUpdate().executeTakeFirst();
   const row = await trx
     .updateTable("ai_generations")
     .set({ status: "cancelled", prompt: null, finished_at: sql<Date>`now()`, updated_at: sql<Date>`now()` })
@@ -144,7 +230,12 @@ export async function cancelGeneration(trx: Trx, id: string): Promise<AiGenerati
     .where("status", "in", ACTIVE)
     .returningAll()
     .executeTakeFirst();
-  return row ? toGeneration(row) : undefined;
+  if (!row) return undefined;
+  if (before?.status === "queued") {
+    await settleGeneration(trx, id);
+    return toGeneration({ ...row, reserved_tokens: 0 });
+  }
+  return toGeneration(row);
 }
 
 /** Locks a generation for the rest of the transaction (deciding a proposal). */
@@ -228,6 +319,7 @@ export async function finishGeneration(
     .where("id", "=", id)
     .where("status", "=", "running")
     .executeTakeFirst();
+  await chargeDay(trx, id, usage.inputTokens + usage.outputTokens);
   if (Number(result.numUpdatedRows) === 1) return true;
   // Cancelled or expired meanwhile: the outcome is dropped, the spend is still recorded.
   await trx.updateTable("ai_generations").set(tokens).where("id", "=", id).execute();
@@ -246,4 +338,5 @@ export async function addUsage(trx: Trx, id: string, usage: { inputTokens: numbe
     })
     .where("id", "=", id)
     .execute();
+  await chargeDay(trx, id, usage.inputTokens + usage.outputTokens);
 }

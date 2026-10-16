@@ -32,7 +32,7 @@ import {
   type ResolvedSession,
   type VersionSummary,
 } from "@workeasy/database";
-import { AI_DEADLINE_SECONDS, AI_GENERATE_JOB, AI_GENERATE_MAX_ATTEMPTS, TEMPLATE_VERSION } from "@workeasy/ai";
+import { AI_DEADLINE_SECONDS, AI_GENERATE_JOB, AI_GENERATE_MAX_ATTEMPTS, reservationTokens, TEMPLATE_VERSION } from "@workeasy/ai";
 import { FORM_PUBLISHED_V1, formPublishedV1 } from "@workeasy/events";
 import {
   blankDefinition,
@@ -51,6 +51,7 @@ import {
   AccessPolicyBodySchema,
   ActivateVersionBodySchema,
   AiApplyBodySchema,
+  AiSettingsBodySchema,
   AiJobCreateBodySchema,
   AuditQuerySchema,
   CloseFormBodySchema,
@@ -68,6 +69,7 @@ import {
   type FormListResponse,
   type AccessPolicyResponse,
   type AiApplyResponse,
+  type AiSettingsResponse,
   type AiGenerationBody,
   type AiJobResponse,
   type AuditListResponse,
@@ -1259,6 +1261,10 @@ export function apiV1Router({ db, settings, objectStore }: AppDependencies): Rou
       res,
       await onForm(res, orgId, formId, "forms.edit", async (trx, { form }): Promise<Outcome<AiJobResponse>> => {
         if (!settings.aiEnabled) return AI_UNAVAILABLE;
+        const aiSettings = await aiRepo.getSettings(trx);
+        if (!aiSettings.enabled) {
+          return { kind: "problem", status: 403, code: "AI_NOT_ENABLED", title: "AI is turned off for this organization; an owner can turn it on" };
+        }
         if (form.state === "archived") return { kind: "conflict", code: "FORM_ARCHIVED", title: "Restore the form before editing it" };
         const draft = await orgRepo.getDraft(trx, formId);
         if (!draft) return { kind: "not_found" };
@@ -1274,6 +1280,22 @@ export function apiV1Router({ db, settings, objectStore }: AppDependencies): Rou
         if (active.tenant >= AI_ACTIVE_PER_TENANT) {
           return { kind: "problem", status: 429, code: "AI_BUSY", title: "Your organization has too many AI requests running; try again shortly" };
         }
+        // Worst case reserved now, against today's limit; the worker charges actual use and releases the rest.
+        const reserved = reservationTokens({
+          operation: body.data.operation,
+          prompt: body.data.prompt,
+          base: draft.definition as unknown as FormDefinition,
+        });
+        if (!(await aiRepo.reserveTokens(trx, orgId, reserved, aiSettings.dailyTokenLimit))) {
+          const today = await aiRepo.usageToday(trx);
+          return {
+            kind: "problem",
+            status: 429,
+            code: "AI_BUDGET_EXCEEDED",
+            title: "Your organization has used today's AI budget; try again tomorrow or ask an owner to raise it",
+            extra: { dailyTokenLimit: aiSettings.dailyTokenLimit, usedTokens: today.used, reservedTokens: today.reserved, requestTokens: reserved },
+          };
+        }
         const generation = await aiRepo.createGeneration(trx, {
           tenantId: orgId,
           formId,
@@ -1285,6 +1307,7 @@ export function apiV1Router({ db, settings, objectStore }: AppDependencies): Rou
           promptDigest: createHash("sha256").update(body.data.prompt, "utf8").digest("hex"),
           templateVersion: TEMPLATE_VERSION,
           deadlineSeconds: AI_DEADLINE_SECONDS,
+          reservedTokens: reserved,
         });
         await jobsRepo.enqueueJob(trx, {
           tenantId: orgId,
@@ -1347,6 +1370,50 @@ export function apiV1Router({ db, settings, objectStore }: AppDependencies): Rou
         if (!cancelled) return { kind: "ok", body: { job: aiBody(generation) } };
         await audit(trx, res, orgId, "ai.generation_cancelled", "form", generation.formId, { generationId: jobId });
         return { kind: "ok", body: { job: aiBody(cancelled) } };
+      }),
+    );
+  });
+
+  // AI opt-in and budget (AI-03, docs/03 §4) ----------------------------------
+
+  async function aiSettingsBody(trx: Trx): Promise<AiSettingsResponse> {
+    const [current, today] = await Promise.all([aiRepo.getSettings(trx), aiRepo.usageToday(trx)]);
+    return { settings: current, available: settings.aiEnabled, today: { usedTokens: today.used, reservedTokens: today.reserved } };
+  }
+
+  /** AI settings and today's use, for any member (so the builder can explain why AI is off). */
+  router.get("/organizations/:orgId/ai-settings", async (req, res) => {
+    respond(
+      res,
+      await inOrganization(req.params.orgId, sessionOf(res).userId, async (trx): Promise<Outcome<AiSettingsResponse>> => ({ kind: "ok", body: await aiSettingsBody(trx) })),
+    );
+  });
+
+  /** Turns AI on or off and sets the daily budget (organization.manage). Audited. */
+  router.put("/organizations/:orgId/ai-settings", async (req, res) => {
+    const body = AiSettingsBodySchema.safeParse(req.body ?? {});
+    if (!body.success) {
+      problems.validation(res, issuesToErrors(body.error));
+      return;
+    }
+    const { orgId } = req.params;
+    const userId = sessionOf(res).userId;
+    respond(
+      res,
+      await inOrganization(orgId, userId, async (trx, membership): Promise<Outcome<AiSettingsResponse>> => {
+        if (!orgPermissions(membership).has("organization.manage")) return { kind: "forbidden" };
+        const before = await aiRepo.getSettings(trx);
+        await aiRepo.saveSettings(trx, orgId, body.data, userId);
+        await publishRepo.appendAudit(trx, {
+          tenantId: orgId,
+          actor: { type: "user", id: userId },
+          action: "organization.ai_settings_changed",
+          resourceType: "organization",
+          resourceId: orgId,
+          requestId: requestIdOf(res),
+          metadata: { before, after: body.data },
+        });
+        return { kind: "ok", body: await aiSettingsBody(trx) };
       }),
     );
   });

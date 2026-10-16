@@ -8,7 +8,7 @@
  * proposal or a failure, never a change to a draft.
  */
 export { AI_PROVIDERS, providerFromSettings, type AiProviderName, type AiSettings } from "./config.js";
-export { generateProposal, PROVIDER_TIMEOUT_MS, type GenerationResult } from "./generate.js";
+export { generateProposal, MAX_OUTPUT_TOKENS, PROVIDER_TIMEOUT_MS, reservationTokens, type GenerationResult } from "./generate.js";
 export { geminiProvider } from "./gemini.js";
 export { AI_DEADLINE_SECONDS, AI_GENERATE_JOB, AI_GENERATE_MAX_ATTEMPTS, aiGenerationJob, type AiJobDeps } from "./job.js";
 export { proposalFromReply, type ProposalResult, type ProposalSummary } from "./normalize.js";

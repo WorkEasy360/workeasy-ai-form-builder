@@ -244,6 +244,8 @@ export function FormsPanel({ orgId }: { orgId: string }) {
             <a href={`/o/${orgId}/audit`}>Audit log</a>
             {" · "}
             <a href={`/o/${orgId}/jobs`}>Background jobs</a>
+            {" · "}
+            <a href={`/o/${orgId}/ai`}>AI settings</a>
           </>
         )}
       </p>
