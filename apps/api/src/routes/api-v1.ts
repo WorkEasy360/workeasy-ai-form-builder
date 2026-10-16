@@ -15,6 +15,7 @@ import {
   exportsRepo,
   aiRepo,
   governanceRepo,
+  integrationsRepo,
   jobsRepo,
   publishRepo,
   responsesRepo,
@@ -23,6 +24,8 @@ import {
   type Database,
   type AccessPolicy,
   type AiGeneration,
+  type Delivery,
+  type Integration,
   type ExportRecord,
   type Job,
   type FormListCursor,
@@ -34,6 +37,7 @@ import {
 } from "@workeasy/database";
 import { AI_DEADLINE_SECONDS, AI_GENERATE_JOB, AI_GENERATE_MAX_ATTEMPTS, reservationTokens, TEMPLATE_VERSION } from "@workeasy/ai";
 import { FORM_PUBLISHED_V1, formPublishedV1 } from "@workeasy/events";
+import { checkWebhookUrl, DELIVER_JOB, encryptSecret, newWebhookSecret } from "@workeasy/integrations";
 import {
   blankDefinition,
   canonicalJson,
@@ -52,6 +56,9 @@ import {
   ActivateVersionBodySchema,
   AiApplyBodySchema,
   AiSettingsBodySchema,
+  DeliveryQuerySchema,
+  IntegrationCreateBodySchema,
+  IntegrationPatchBodySchema,
   AiJobCreateBodySchema,
   AuditQuerySchema,
   CloseFormBodySchema,
@@ -70,6 +77,12 @@ import {
   type AccessPolicyResponse,
   type AiApplyResponse,
   type AiSettingsResponse,
+  type DeliveryBody,
+  type DeliveryDetailResponse,
+  type DeliveryListResponse,
+  type IntegrationBody,
+  type IntegrationListResponse,
+  type IntegrationResponse,
   type AiGenerationBody,
   type AiJobResponse,
   type AuditListResponse,
@@ -1495,6 +1508,299 @@ export function apiV1Router({ db, settings, objectStore }: AppDependencies): Rou
         const decided = (await aiRepo.decideGeneration(trx, generation.id, { kind: "rejected" }, userId))!;
         await audit(trx, res, orgId, "ai.proposal_rejected", "form", generation.formId, { generationId: generation.id });
         return { kind: "ok", body: { job: aiBody(decided) } };
+      }),
+    );
+  });
+
+  // Email and webhooks (AUT-01, docs/05 §6) ----------------------------------
+
+  /** After a rotation the previous secret keeps signing (as a second signature) this long. */
+  const SECRET_OVERLAP_SECONDS = 24 * 60 * 60;
+
+  function integrationBody(i: Integration): IntegrationBody {
+    return {
+      id: i.id,
+      formId: i.formId,
+      kind: i.kind,
+      name: i.name,
+      enabled: i.enabled,
+      url: i.url,
+      recipients: i.recipients,
+      fieldIds: i.fieldIds,
+      previousSecretExpiresAt: i.previousSecretExpiresAt?.toISOString() ?? null,
+      createdAt: i.createdAt.toISOString(),
+      updatedAt: i.updatedAt.toISOString(),
+    };
+  }
+
+  function deliveryBody(d: Delivery): DeliveryBody {
+    return {
+      id: d.id,
+      integrationId: d.integrationId,
+      submissionId: d.submissionId,
+      eventId: d.eventId,
+      status: d.status,
+      attempts: d.attempts,
+      lastStatusCode: d.lastStatusCode,
+      lastError: d.lastError,
+      ambiguous: d.ambiguous,
+      nextAttemptAt: d.nextAttemptAt?.toISOString() ?? null,
+      createdAt: d.createdAt.toISOString(),
+      completedAt: d.completedAt?.toISOString() ?? null,
+    };
+  }
+
+  /**
+   * Webhook payload fields must exist in the draft, and the person choosing
+   * them must be allowed to read their answers: a webhook cannot be used to
+   * send out answers its creator could not see (docs/06 §3).
+   */
+  async function payloadFieldErrors(trx: Trx, formId: string, fieldIds: string[], permissions: Set<FormPermission>): Promise<FieldError[]> {
+    const draft = await orgRepo.getDraft(trx, formId);
+    const fields = new Map(((draft?.definition as unknown as FormDefinition | undefined)?.fields ?? []).map((f) => [f.id, f]));
+    const errors: FieldError[] = [];
+    fieldIds.forEach((id, i) => {
+      const field = fields.get(id);
+      if (!field) {
+        errors.push({ field: `fieldIds[${i}]`, code: "UNKNOWN_FIELD", message: "This question is not on the form" });
+        return;
+      }
+      const privacy = privacyOf(field);
+      const needed: FormPermission =
+        privacy === "sensitive" ? "responses.read_sensitive" : privacy === "personal" ? "responses.read_personal" : "responses.read";
+      if (!permissions.has("responses.read") || !permissions.has(needed)) {
+        errors.push({ field: `fieldIds[${i}]`, code: "FIELD_NOT_READABLE", message: "You can't send answers you aren't allowed to read" });
+      }
+    });
+    return errors;
+  }
+
+  /** A form's integrations for people who manage integrations and can read the form. */
+  router.get("/organizations/:orgId/forms/:formId/integrations", async (req, res) => {
+    const { orgId, formId } = req.params;
+    respond(
+      res,
+      await onForm(res, orgId, formId, "forms.read", async (trx, { membership }): Promise<Outcome<IntegrationListResponse>> => {
+        if (!orgPermissions(membership).has("integrations.manage")) return { kind: "forbidden" };
+        return { kind: "ok", body: { items: (await integrationsRepo.listIntegrations(trx, formId)).map(integrationBody) } };
+      }),
+    );
+  });
+
+  /** Adds an email notification or a signed webhook; a webhook's signing secret is returned once. */
+  router.post("/organizations/:orgId/forms/:formId/integrations", async (req, res) => {
+    const body = IntegrationCreateBodySchema.safeParse(req.body ?? {});
+    if (!body.success) {
+      problems.validation(res, issuesToErrors(body.error));
+      return;
+    }
+    const { orgId, formId } = req.params;
+    const userId = sessionOf(res).userId;
+    const input = body.data;
+    if (input.kind === "webhook") {
+      const problem = checkWebhookUrl(input.url, settings.webhookPolicy);
+      if (problem) {
+        problems.validation(res, [{ field: "url", code: problem.code, message: problem.message }]);
+        return;
+      }
+    }
+    respond(
+      res,
+      await onForm(res, orgId, formId, "forms.read", async (trx, { membership, permissions }): Promise<Outcome<IntegrationResponse>> => {
+        if (!orgPermissions(membership).has("integrations.manage")) return { kind: "forbidden" };
+        let secret: string | undefined;
+        let integration: Integration;
+        if (input.kind === "webhook") {
+          const errors = await payloadFieldErrors(trx, formId, input.fieldIds, permissions);
+          if (errors.length > 0) return { kind: "invalid", errors };
+          secret = newWebhookSecret();
+          integration = await integrationsRepo.createIntegration(trx, orgId, formId, userId, {
+            kind: "webhook",
+            name: input.name,
+            url: input.url,
+            fieldIds: [...new Set(input.fieldIds)],
+            secretCiphertext: encryptSecret(secret, settings.integrationSecretKey),
+          });
+        } else {
+          integration = await integrationsRepo.createIntegration(trx, orgId, formId, userId, {
+            kind: "email",
+            name: input.name,
+            recipients: [...new Set(input.recipients.map((r) => r.toLowerCase()))],
+          });
+        }
+        // Destinations stay out of the audit log: URLs can carry tokens and addresses are personal data.
+        await audit(trx, res, orgId, "integration.created", "integration", integration.id, { formId, kind: integration.kind, fields: integration.fieldIds.length });
+        return { kind: "ok", status: 201, body: { integration: integrationBody(integration), ...(secret ? { secret } : {}) } };
+      }),
+    );
+  });
+
+  /** Loads an integration for someone who manages integrations and can read its form. */
+  function onIntegration<T>(
+    res: Response,
+    orgId: string,
+    integrationId: string,
+    action: (trx: Trx, integration: Integration, permissions: Set<FormPermission>) => Promise<Outcome<T>>,
+  ) {
+    const userId = sessionOf(res).userId;
+    if (!UUID_PATTERN.test(integrationId)) return Promise.resolve(NOT_VISIBLE);
+    return inOrganization(orgId, userId, async (trx, membership): Promise<Outcome<T>> => {
+      const integration = await integrationsRepo.getIntegration(trx, integrationId);
+      if (!integration || !(await orgRepo.getFormSummary(trx, integration.formId))) return { kind: "not_found" };
+      const grants = (await orgRepo.listUserFormGrants(trx, integration.formId, userId)).filter(isFormPermission);
+      const permissions = formPermissions(membership, grants);
+      if (!permissions.has("forms.read")) return { kind: "not_found" };
+      if (!orgPermissions(membership).has("integrations.manage")) return { kind: "forbidden" };
+      return action(trx, integration, permissions);
+    });
+  }
+
+  /** Renames, pauses or resumes an integration, or changes its destination or fields. */
+  router.patch("/organizations/:orgId/integrations/:integrationId", async (req, res) => {
+    const body = IntegrationPatchBodySchema.safeParse(req.body ?? {});
+    if (!body.success) {
+      problems.validation(res, issuesToErrors(body.error));
+      return;
+    }
+    const { orgId, integrationId } = req.params;
+    respond(
+      res,
+      await onIntegration(res, orgId, integrationId, async (trx, integration, permissions): Promise<Outcome<IntegrationResponse>> => {
+        const patch = body.data;
+        const wrongKind =
+          integration.kind === "webhook" ? (patch.recipients !== undefined ? "recipients" : undefined) : patch.url !== undefined ? "url" : patch.fieldIds !== undefined ? "fieldIds" : undefined;
+        if (wrongKind) return { kind: "invalid", errors: [{ field: wrongKind, code: "NOT_FOR_THIS_KIND", message: `A ${integration.kind} integration has no ${wrongKind}` }] };
+        if (patch.url !== undefined) {
+          const problem = checkWebhookUrl(patch.url, settings.webhookPolicy);
+          if (problem) return { kind: "invalid", errors: [{ field: "url", code: problem.code, message: problem.message }] };
+        }
+        if (patch.fieldIds !== undefined) {
+          const errors = await payloadFieldErrors(trx, integration.formId, patch.fieldIds, permissions);
+          if (errors.length > 0) return { kind: "invalid", errors };
+        }
+        const updated = (await integrationsRepo.updateIntegration(trx, integration.id, {
+          ...patch,
+          ...(patch.fieldIds ? { fieldIds: [...new Set(patch.fieldIds)] } : {}),
+          ...(patch.recipients ? { recipients: [...new Set(patch.recipients.map((r) => r.toLowerCase()))] } : {}),
+        }))!;
+        await audit(trx, res, orgId, "integration.updated", "integration", integration.id, { formId: integration.formId, changed: Object.keys(patch).toSorted() });
+        return { kind: "ok", body: { integration: integrationBody(updated) } };
+      }),
+    );
+  });
+
+  /** Removes an integration; deliveries not yet sent are skipped. */
+  router.delete("/organizations/:orgId/integrations/:integrationId", async (req, res) => {
+    const { orgId, integrationId } = req.params;
+    respond(
+      res,
+      await onIntegration(res, orgId, integrationId, async (trx, integration): Promise<Outcome<{ deleted: true }>> => {
+        await integrationsRepo.deleteIntegration(trx, integration.id);
+        await audit(trx, res, orgId, "integration.deleted", "integration", integration.id, { formId: integration.formId, kind: integration.kind });
+        return { kind: "ok", body: { deleted: true } };
+      }),
+    );
+  });
+
+  /** New webhook signing secret, returned once; the old one is still sent for 24 hours. */
+  router.post("/organizations/:orgId/integrations/:integrationId/rotate-secret", async (req, res) => {
+    const { orgId, integrationId } = req.params;
+    respond(
+      res,
+      await onIntegration(res, orgId, integrationId, async (trx, integration): Promise<Outcome<IntegrationResponse>> => {
+        if (integration.kind !== "webhook") return { kind: "conflict", code: "NOT_A_WEBHOOK", title: "Only webhooks have signing secrets" };
+        const secret = newWebhookSecret();
+        const rotated = (await integrationsRepo.rotateSecret(trx, integration.id, encryptSecret(secret, settings.integrationSecretKey), SECRET_OVERLAP_SECONDS))!;
+        await audit(trx, res, orgId, "integration.secret_rotated", "integration", integration.id, { formId: integration.formId });
+        return { kind: "ok", body: { integration: integrationBody(rotated), secret } };
+      }),
+    );
+  });
+
+  /** An integration's delivery history, newest first. */
+  router.get("/organizations/:orgId/integrations/:integrationId/deliveries", async (req, res) => {
+    const query = DeliveryQuerySchema.safeParse(req.query);
+    if (!query.success) {
+      problems.validation(res, issuesToErrors(query.error));
+      return;
+    }
+    const cursor = query.data.cursor === undefined ? undefined : decodeAuditCursor(query.data.cursor);
+    if (query.data.cursor !== undefined && !cursor) {
+      problems.validation(res, [{ field: "cursor", code: "INVALID_CURSOR", message: "Cursor is not valid" }]);
+      return;
+    }
+    const { orgId, integrationId } = req.params;
+    respond(
+      res,
+      await onIntegration(res, orgId, integrationId, async (trx, integration): Promise<Outcome<DeliveryListResponse>> => {
+        const page = await integrationsRepo.listDeliveries(trx, integration.id, {
+          limit: query.data.limit,
+          after: cursor ? { createdAt: cursor.occurredAt, id: cursor.id } : undefined,
+          status: query.data.status,
+        });
+        const last = page.deliveries.at(-1);
+        return { kind: "ok", body: { items: page.deliveries.map(deliveryBody), ...(page.more && last ? { nextCursor: encodeAuditCursor(last.createdAtKey, last.id) } : {}) } };
+      }),
+    );
+  });
+
+  /** Loads a delivery through its integration's access rules. */
+  function onDelivery<T>(res: Response, orgId: string, deliveryId: string, action: (trx: Trx, delivery: Delivery) => Promise<Outcome<T>>) {
+    const userId = sessionOf(res).userId;
+    if (!UUID_PATTERN.test(deliveryId)) return Promise.resolve(NOT_VISIBLE);
+    return inOrganization(orgId, userId, async (trx): Promise<Outcome<T>> => {
+      const delivery = await integrationsRepo.getDelivery(trx, deliveryId);
+      if (!delivery) return { kind: "not_found" };
+      const outcome = await onIntegrationIn(trx, res, delivery.integrationId);
+      return outcome ?? action(trx, delivery);
+    });
+  }
+
+  /** The same checks as onIntegration, inside an existing transaction; undefined when allowed. */
+  async function onIntegrationIn(trx: Trx, res: Response, integrationId: string): Promise<Outcome<never> | undefined> {
+    const userId = sessionOf(res).userId;
+    const membership = (await orgRepo.getMembership(trx, userId))!;
+    const integration = await trx.selectFrom("integrations").select("form_id").where("id", "=", integrationId).executeTakeFirst();
+    if (!integration || !(await orgRepo.getFormSummary(trx, integration.form_id))) return { kind: "not_found" };
+    const grants = (await orgRepo.listUserFormGrants(trx, integration.form_id, userId)).filter(isFormPermission);
+    if (!formPermissions(membership, grants).has("forms.read")) return { kind: "not_found" };
+    if (!orgPermissions(membership).has("integrations.manage")) return { kind: "forbidden" };
+    return undefined;
+  }
+
+  /** One delivery and every attempt at it. */
+  router.get("/organizations/:orgId/deliveries/:deliveryId", async (req, res) => {
+    const { orgId, deliveryId } = req.params;
+    respond(
+      res,
+      await onDelivery(res, orgId, deliveryId, async (trx, delivery): Promise<Outcome<DeliveryDetailResponse>> => {
+        const detail = (await integrationsRepo.getDelivery(trx, delivery.id))!;
+        return {
+          kind: "ok",
+          body: {
+            delivery: deliveryBody(detail),
+            attempts: detail.attemptLog.map((a) => ({ ...a, startedAt: a.startedAt.toISOString() })),
+          },
+        };
+      }),
+    );
+  });
+
+  /**
+   * Sends a failed delivery again, with the same event ID, so a destination
+   * that did receive it can recognize the repeat. Audited.
+   */
+  router.post("/organizations/:orgId/deliveries/:deliveryId/retry", async (req, res) => {
+    const { orgId, deliveryId } = req.params;
+    respond(
+      res,
+      await onDelivery(res, orgId, deliveryId, async (trx, delivery): Promise<Outcome<{ delivery: DeliveryBody }>> => {
+        if (delivery.status !== "failed") return { kind: "conflict", code: "DELIVERY_NOT_FAILED", title: "Only failed deliveries can be sent again" };
+        const job = await jobsRepo.findJob(trx, DELIVER_JOB, delivery.id);
+        if (!job || !(await jobsRepo.replayJob(trx, job.id))) return { kind: "conflict", code: "DELIVERY_NOT_FAILED", title: "This delivery is already being retried" };
+        const requeued = (await integrationsRepo.requeueDelivery(trx, delivery.id))!;
+        await audit(trx, res, orgId, "delivery.retried", "delivery", delivery.id, { integrationId: delivery.integrationId, lastError: delivery.lastError });
+        return { kind: "ok", body: { delivery: deliveryBody(requeued) } };
       }),
     );
   });

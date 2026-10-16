@@ -30,10 +30,17 @@ const ConfigSchema = z
     SESSION_COOKIE_SECURE: z.stringbool().default(true),
     /** AI authoring (AI-01); the worker holds the provider keys. "disabled" hides it. */
     AI_PROVIDER: z.enum(AI_PROVIDERS).default("disabled"),
+    /** Encrypts webhook signing secrets at rest (AUT-01): 32 bytes, base64. Shared with the worker. */
+    INTEGRATION_SECRET_KEY: z.string().min(40),
+    /** Local development only: accept http:// and private webhook URLs. Refused in production. */
+    WEBHOOK_ALLOW_PRIVATE_NETWORKS: z.stringbool().default(false),
   })
   .superRefine((config, ctx) => {
     if (config.NODE_ENV !== "production") return;
     // Local-only conveniences must be impossible to enable in production (docs/06 §1).
+    if (config.WEBHOOK_ALLOW_PRIVATE_NETWORKS) {
+      ctx.addIssue({ code: "custom", path: ["WEBHOOK_ALLOW_PRIVATE_NETWORKS"], message: "is for local development only" });
+    }
     if (config.AI_PROVIDER === "stub") {
       ctx.addIssue({ code: "custom", path: ["AI_PROVIDER"], message: "stub is for local development and tests only" });
     }

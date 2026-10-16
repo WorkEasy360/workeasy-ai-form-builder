@@ -18,6 +18,7 @@
     "@workeasy/events": "workspace:*",
     "@workeasy/files": "workspace:*",
     "@workeasy/form-engine": "workspace:*",
+    "@workeasy/integrations": "workspace:*",
     "@workeasy/observability": "workspace:*",
     "@workeasy/responses": "workspace:*",
     "express": "5.3.0",

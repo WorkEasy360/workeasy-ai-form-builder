@@ -321,6 +321,59 @@ export interface AiUsageDaysTable {
   used_tokens: ColumnType<string, number | undefined, number>;
 }
 
+export type IntegrationKind = "webhook" | "email";
+export type DeliveryStatus = "pending" | "retrying" | "succeeded" | "failed" | "skipped";
+export type AttemptOutcome = "succeeded" | "retry" | "failed" | "skipped";
+
+export interface IntegrationsTable {
+  id: Generated<string>;
+  tenant_id: string;
+  form_id: string;
+  kind: IntegrationKind;
+  name: string;
+  enabled: Generated<boolean>;
+  url: string | null;
+  recipients: string[] | null;
+  field_ids: Generated<string[]>;
+  secret_ciphertext: string | null;
+  previous_secret_ciphertext: string | null;
+  previous_secret_expires_at: Date | null;
+  created_by: string;
+  created_at: ColumnType<Date, never, never>;
+  updated_at: Generated<Date>;
+  deleted_at: Date | null;
+}
+
+export interface DeliveriesTable {
+  id: Generated<string>;
+  tenant_id: string;
+  integration_id: string;
+  form_id: string;
+  submission_id: string;
+  event_id: string;
+  status: Generated<DeliveryStatus>;
+  attempts: Generated<number>;
+  last_status_code: number | null;
+  last_error: string | null;
+  ambiguous: Generated<boolean>;
+  next_attempt_at: Date | null;
+  created_at: ColumnType<Date, never, never>;
+  updated_at: Generated<Date>;
+  completed_at: Date | null;
+}
+
+export interface DeliveryAttemptsTable {
+  id: Generated<string>;
+  tenant_id: string;
+  delivery_id: string;
+  attempt: number;
+  started_at: Date;
+  duration_ms: number;
+  status_code: number | null;
+  error_code: string | null;
+  outcome: AttemptOutcome;
+}
+
 export interface Database {
   tenants: TenantsTable;
   users: UsersTable;
@@ -336,6 +389,9 @@ export interface Database {
   ai_generations: AiGenerationsTable;
   ai_settings: AiSettingsTable;
   ai_usage_days: AiUsageDaysTable;
+  integrations: IntegrationsTable;
+  deliveries: DeliveriesTable;
+  delivery_attempts: DeliveryAttemptsTable;
   form_access_policies: FormAccessPoliciesTable;
   respondent_sessions: RespondentSessionsTable;
   submissions: SubmissionsTable;

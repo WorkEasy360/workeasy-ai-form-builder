@@ -8,4 +8,4 @@
  * once: handlers pass `dedupeKey` to destinations so a repeat is recognized.
  */
 export { backoffDelayMs, type BackoffOptions } from "./backoff.js";
-export { dispatchOutbox, errorCode, PermanentJobError, routesFor, runJobs, type JobContext, type JobDefinition, type JobDeps, type JobRegistry } from "./runner.js";
+export { dispatchOutbox, errorCode, PermanentJobError, RetryLaterError, routesFor, runJobs, type JobContext, type JobDefinition, type JobDeps, type JobRegistry } from "./runner.js";

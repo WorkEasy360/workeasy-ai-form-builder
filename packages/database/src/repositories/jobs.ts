@@ -118,6 +118,12 @@ export async function enqueueJob(trx: Trx, input: NewJob): Promise<{ job: Job; c
   return { job: toJob(existing), created: false };
 }
 
+/** The job of a type with a dedupe key, if any (e.g. a delivery's job). */
+export async function findJob(trx: Trx, type: string, dedupeKey: string): Promise<Job | undefined> {
+  const row = await trx.selectFrom("jobs").selectAll().where("type", "=", type).where("dedupe_key", "=", dedupeKey).executeTakeFirst();
+  return row ? toJob(row) : undefined;
+}
+
 export async function getJob(trx: Trx, id: string): Promise<Job | undefined> {
   const row = await trx.selectFrom("jobs").selectAll().where("id", "=", id).executeTakeFirst();
   return row ? toJob(row) : undefined;

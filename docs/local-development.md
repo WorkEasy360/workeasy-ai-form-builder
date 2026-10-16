@@ -290,7 +290,7 @@ The response presentation and CSV code live in `@workeasy/responses`, shared by 
 - **Dispatch:** the worker's `dispatch-outbox` task turns committed outbox events into jobs. In one transaction, `app.dispatch_outbox` claims events (`FOR UPDATE SKIP LOCKED`), inserts one job per job type subscribed to the event and marks the event dispatched.
   - A job's `(tenant, type, dedupe key)` is unique, and an event's jobs use the event ID as the key. Concurrent dispatchers, or an event dispatched again, never make a second job.
   - If the API commits and the process dies before anything is delivered, the event waits in the outbox until a worker is back.
-- **Job types** live in `apps/worker/src/jobs.ts`. Each one has a handler and, optionally, the events it subscribes to. `ai.generate` (AI-01) is enqueued directly by the API; email and webhooks (AUT-01) will subscribe to events. Events no type subscribes to are marked dispatched with no jobs. The API can also enqueue a job directly (`jobsRepo.enqueueJob`); the same dedupe key returns the existing job.
+- **Job types** live in `apps/worker/src/jobs.ts`. Each one has a handler and, optionally, the events it subscribes to. `ai.generate` (AI-01) is enqueued directly by the API; `integrations.fanout` (AUT-01) subscribes to `submission.accepted.v1` and enqueues one `integrations.deliver` job per destination. Events no type subscribes to are marked dispatched with no jobs. The API can also enqueue a job directly (`jobsRepo.enqueueJob`); the same dedupe key returns the existing job.
 - **Running:** the `run-jobs` task claims due jobs under a lease (60 seconds by default, per type) with a fresh lease token, counts the attempt, and runs the handler outside any transaction, under the job's recorded tenant.
   - Completion is compare-and-set on the token. A worker whose lease ran out, and whose job was reclaimed, cannot overwrite the newer attempt.
   - The handler's `AbortSignal` fires shortly before the lease ends.
@@ -336,6 +336,29 @@ The response presentation and CSV code live in `@workeasy/responses`, shared by 
   - The reservation is one conditional upsert on the day's `ai_usage_days` row. Concurrent requests queue on that row and each sees the others' tokens, so **together they cannot pass the limit**; a request that doesn't fit gets `429 AI_BUDGET_EXCEEDED`.
   - Actual use is charged as the provider reports it, including retries and cancelled work. The reservation is released once, when the generation ends: by the worker, or by the API for a queued cancellation or an expired generation.
   - The worker logs a warning (counts only) when a day's use reaches 80% of the limit.
+
+## Email notifications and webhooks (AUT-01)
+
+- **Setup:** people with `integrations.manage` (owners and admins) open **Integrations** next to a form in the forms list (`…/forms/:id/integrations`). Each form can have email notifications and webhooks; adding, changing, pausing, removing them and rotating secrets is audited, without URLs or addresses.
+- **Delivery:** each accepted response's `submission.accepted.v1` event fans out into one delivery per enabled integration, unique per integration and event, so a redispatched event sends nothing twice. Each delivery is a durable job.
+  - **History:** every attempt is kept (time, duration, status code, error code, outcome) and shown under **Show deliveries**, with **Details** per delivery.
+  - **Retries:** 408, 429, 5xx, timeouts and network errors retry at about 1m, 5m, 30m, 2h, 8h and 24h (±20%). A 429's `Retry-After` is honoured, up to 24 hours.
+  - **Permanent failures:** other 4xx, redirects, blocked destinations and the seventh failed attempt mark the delivery **Failed permanently** with the reason, and dead-letter its job. **Send again** (`POST …/deliveries/:id/retry`, audited) requeues it with the same event ID.
+  - **Possibly delivered:** a timeout after the request was sent is flagged, because it may have arrived.
+  - **Skipped:** a response deleted before delivery, or an integration paused or removed, is skipped, not sent.
+- **Webhooks:**
+  - **Payload:** JSON with `version`, `eventId`, `eventType`, `formId`, `submissionId`, `receivedAt` and only the answers chosen when the webhook was set up. Whoever chooses them must be allowed to read those answers, including personal or sensitive ones.
+  - **Headers:** `Workeasy-Event-Id` (the same on every retry: deduplicate on it), `Workeasy-Timestamp`, and `Workeasy-Signature: v1=<hex>`, an HMAC-SHA256 of `"<timestamp>.<raw body>"`. Receivers should reject timestamps more than five minutes old; `verifyWebhookSignature` in `@workeasy/integrations` shows how.
+  - **Secrets:** the signing secret is shown once. It's stored encrypted with `INTEGRATION_SECRET_KEY` (AES-256-GCM), which the API and worker share. **New signing secret** sends the old and new signatures side by side for 24 hours.
+  - **Timeouts:** a request gets 10 seconds, and at most 4 KB of the response is read.
+- **SSRF protection:**
+  - Webhook URLs must be `https://` on port 443 or 8443, with no credentials, and must not name local or internal hosts.
+  - Before **every** delivery the host is resolved, and the delivery is refused (`destination_blocked`, permanent) if any answer is loopback, private, link-local (including `169.254.169.254` metadata), carrier-grade NAT, multicast, reserved, IPv6 unique-local or link-local, or an IPv4-mapped or NAT64 form of those.
+  - The connection is pinned to the checked address, while TLS still verifies the URL's host name, so DNS rebinding cannot redirect it. Redirects are never followed.
+  - `WEBHOOK_ALLOW_PRIVATE_NETWORKS=true` lifts this for local development only, for example a receiver on your machine; the API and the worker refuse it in production. An egress proxy is still recommended in production.
+- **Email:** plain text only, to the integration's fixed recipients (up to 10; never addresses taken from answers). It says a response arrived and links to it in the console, without answers. Subjects are stripped of line breaks.
+  - Sent through the SMTP relay in `SMTP_HOST`; locally that's Mailpit, with its inbox at <http://localhost:8025>.
+  - The relay accepting a message counts as delivered; bounces are not tracked yet. SMTP 4xx and connection failures retry; 5xx fails permanently.
 
 ## Uploads and scanning (FIL-01)
 

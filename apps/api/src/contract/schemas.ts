@@ -596,3 +596,101 @@ export const AiApplyBodySchema = z.object({
 
 export const AiApplyResponseSchema = z.object({ job: AiGenerationSchema, draft: z.object({ revision: z.number().int() }) });
 export type AiApplyResponse = z.infer<typeof AiApplyResponseSchema>;
+
+// Email and webhooks (AUT-01) ----------------------------------------------------
+
+const FieldIdSchema = z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{1,79}$/);
+const IntegrationName = z.string().trim().min(1).max(100);
+
+export const IntegrationCreateBodySchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("webhook"),
+    name: IntegrationName,
+    url: z.string().trim().min(1).max(2000),
+    /** Answers to include in the payload; only fields you may read. Empty sends identifiers only. */
+    fieldIds: z.array(FieldIdSchema).max(100).default([]),
+  }),
+  z.object({
+    kind: z.literal("email"),
+    name: IntegrationName,
+    /** Fixed recipients; emails carry a link to the response, never answers. */
+    recipients: z.array(z.email().max(254)).min(1).max(10),
+  }),
+]);
+
+export const IntegrationPatchBodySchema = z
+  .object({
+    name: IntegrationName.optional(),
+    enabled: z.boolean().optional(),
+    url: z.string().trim().min(1).max(2000).optional(),
+    recipients: z.array(z.email().max(254)).min(1).max(10).optional(),
+    fieldIds: z.array(FieldIdSchema).max(100).optional(),
+  })
+  .refine((v) => Object.keys(v).length > 0, { message: "Send at least one setting to change" });
+
+export const IntegrationSchema = z.object({
+  id: Uuid,
+  formId: Uuid,
+  kind: z.enum(["webhook", "email"]),
+  name: z.string(),
+  enabled: z.boolean(),
+  url: z.string().nullable(),
+  recipients: z.array(z.string()).nullable(),
+  fieldIds: z.array(z.string()),
+  /** After a secret rotation, the old secret is still sent as a second signature until then. */
+  previousSecretExpiresAt: Timestamp.nullable(),
+  createdAt: Timestamp,
+  updatedAt: Timestamp,
+});
+export type IntegrationBody = z.infer<typeof IntegrationSchema>;
+
+export const IntegrationListResponseSchema = z.object({ items: z.array(IntegrationSchema) });
+export type IntegrationListResponse = z.infer<typeof IntegrationListResponseSchema>;
+
+/** `secret` is the webhook signing secret: returned once, on creation or rotation, and never again. */
+export const IntegrationResponseSchema = z.object({ integration: IntegrationSchema, secret: z.string().optional() });
+export type IntegrationResponse = z.infer<typeof IntegrationResponseSchema>;
+
+export const DELIVERY_STATUSES = ["pending", "retrying", "succeeded", "failed", "skipped"] as const;
+
+export const DeliverySchema = z.object({
+  id: Uuid,
+  integrationId: Uuid,
+  submissionId: Uuid,
+  /** Sent as Workeasy-Event-Id; the same on every retry, for deduplication. */
+  eventId: Uuid,
+  status: z.enum(DELIVERY_STATUSES),
+  attempts: z.number().int(),
+  lastStatusCode: z.number().int().nullable(),
+  lastError: z.string().nullable(),
+  /** A timed-out attempt may have reached the destination anyway. */
+  ambiguous: z.boolean(),
+  nextAttemptAt: Timestamp.nullable(),
+  createdAt: Timestamp,
+  completedAt: Timestamp.nullable(),
+});
+export type DeliveryBody = z.infer<typeof DeliverySchema>;
+
+export const DeliveryQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  cursor: z.string().min(1).max(500).optional(),
+  status: z.enum(DELIVERY_STATUSES).optional(),
+});
+
+export const DeliveryListResponseSchema = z.object({ items: z.array(DeliverySchema), nextCursor: z.string().optional() });
+export type DeliveryListResponse = z.infer<typeof DeliveryListResponseSchema>;
+
+export const DeliveryDetailResponseSchema = z.object({
+  delivery: DeliverySchema,
+  attempts: z.array(
+    z.object({
+      attempt: z.number().int(),
+      startedAt: Timestamp,
+      durationMs: z.number().int(),
+      statusCode: z.number().int().nullable(),
+      errorCode: z.string().nullable(),
+      outcome: z.enum(["succeeded", "retry", "failed", "skipped"]),
+    }),
+  ),
+});
+export type DeliveryDetailResponse = z.infer<typeof DeliveryDetailResponseSchema>;

@@ -1,3 +1,4 @@
+import { STRICT_POLICY } from "@workeasy/integrations";
 import { Writable } from "node:stream";
 import request from "supertest";
 import { describe, expect, it } from "vitest";
@@ -26,6 +27,8 @@ const settings = {
   sessionTtlMs: 60_000,
   secureCookies: false,
   aiEnabled: false,
+  integrationSecretKey: Buffer.alloc(32, 3),
+  webhookPolicy: STRICT_POLICY,
 };
 
 function build(overrides: Partial<AppDependencies> = {}) {

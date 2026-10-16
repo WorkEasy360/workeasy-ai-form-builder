@@ -10,6 +10,9 @@ import { createApp, type AppSettings } from "./app.js";
 export const TEST_CONSOLE_ORIGIN = "http://localhost:3000";
 export const TEST_RESPONDENT_ORIGIN = "http://localhost:3001";
 
+/** The signing-secret key the test API and test worker share. */
+export const TEST_INTEGRATION_KEY = Buffer.alloc(32, 9);
+
 export const testSettings: AppSettings = {
   consoleOrigin: TEST_CONSOLE_ORIGIN,
   respondentOrigin: TEST_RESPONDENT_ORIGIN,
@@ -17,6 +20,9 @@ export const testSettings: AppSettings = {
   sessionTtlMs: 60 * 60 * 1000,
   secureCookies: false,
   aiEnabled: true,
+  integrationSecretKey: TEST_INTEGRATION_KEY,
+  // Integration tests deliver to a local receiver; the strict policy has its own unit tests.
+  webhookPolicy: { allowHttp: true, allowPrivateNetworks: true, allowedPorts: [] },
 };
 
 /**

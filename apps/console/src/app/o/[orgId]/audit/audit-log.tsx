@@ -38,6 +38,11 @@ const ACTIONS: Record<string, string> = {
   "ai.proposal_applied": "Applied an AI suggestion to a draft",
   "ai.proposal_rejected": "Rejected an AI suggestion",
   "organization.ai_settings_changed": "Changed AI settings",
+  "integration.created": "Added a notification or webhook",
+  "integration.updated": "Changed a notification or webhook",
+  "integration.deleted": "Removed a notification or webhook",
+  "integration.secret_rotated": "Replaced a webhook signing secret",
+  "delivery.retried": "Sent a failed delivery again",
 };
 
 function details(metadata: Record<string, unknown>): string {

@@ -1,3 +1,4 @@
+import type { DestinationPolicy } from "@workeasy/integrations";
 import express, { type ErrorRequestHandler, type Express } from "express";
 import type { IdentityProvider } from "@workeasy/auth";
 import type { Db } from "@workeasy/database";
@@ -24,6 +25,10 @@ export interface AppSettings {
   secureCookies: boolean;
   /** Whether AI generation is offered (a worker with a provider runs it). Manual editing never depends on it. */
   aiEnabled: boolean;
+  /** Encrypts webhook signing secrets before they are stored (AUT-01). */
+  integrationSecretKey: Buffer;
+  /** Which webhook URLs may be saved; the worker checks again before every delivery. */
+  webhookPolicy: DestinationPolicy;
 }
 
 export interface AppDependencies {

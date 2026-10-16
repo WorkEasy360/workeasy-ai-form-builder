@@ -9,6 +9,7 @@ const base = {
   OBJECT_STORAGE_BUCKET_QUARANTINE: "quarantine",
   OBJECT_STORAGE_BUCKET_CLEAN: "clean",
   OBJECT_STORAGE_BUCKET_EXPORTS: "exports",
+  INTEGRATION_SECRET_KEY: Buffer.alloc(32, 1).toString("base64"),
 };
 
 describe("worker AI settings", () => {
@@ -18,6 +19,11 @@ describe("worker AI settings", () => {
     expect(config).toMatchObject({ AI_PROVIDER: "stub" });
     expect(config.AI_MODEL).toBeUndefined();
     expect(config.OPENAI_API_KEY).toBeUndefined();
+  });
+
+  it("refuse private webhook destinations in production", () => {
+    expect(loadConfig({ ...base, WEBHOOK_ALLOW_PRIVATE_NETWORKS: "true" })).toMatchObject({ WEBHOOK_ALLOW_PRIVATE_NETWORKS: true });
+    expect(() => loadConfig({ ...base, NODE_ENV: "production", WEBHOOK_ALLOW_PRIVATE_NETWORKS: "true" })).toThrow(/local development only/);
   });
 
   it("refuse the stub provider in production and unknown providers anywhere", () => {

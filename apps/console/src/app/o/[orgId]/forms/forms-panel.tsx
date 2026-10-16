@@ -14,7 +14,7 @@ type Load =
   | { kind: "signed-out" }
   | { kind: "not-found" }
   | { kind: "error"; message: string }
-  | { kind: "ready"; orgName: string; canCreate: boolean; canReadAudit: boolean };
+  | { kind: "ready"; orgName: string; canCreate: boolean; canReadAudit: boolean; canManageIntegrations: boolean };
 
 /** Below 640px the table becomes stacked rows, each cell labelled from data-label. */
 const RESPONSIVE_TABLE_CSS = `
@@ -95,6 +95,7 @@ export function FormsPanel({ orgId }: { orgId: string }) {
           orgName: org.name,
           canCreate: org.permissions.includes("forms.create"),
           canReadAudit: org.permissions.includes("organization.audit.read"),
+          canManageIntegrations: org.permissions.includes("integrations.manage"),
         });
       })
       .catch((err: unknown) => {
@@ -385,6 +386,11 @@ export function FormsPanel({ orgId }: { orgId: string }) {
                       <button type="button" style={button} disabled={busy !== null} onClick={() => void act(f, "archive")} aria-label={`Archive ${f.name}`}>
                         Archive
                       </button>
+                    )}
+                    {load.canManageIntegrations && (
+                      <a href={`/o/${orgId}/forms/${f.id}/integrations`} aria-label={`Notifications and webhooks for ${f.name}`}>
+                        Integrations
+                      </a>
                     )}
                     {f.permissions.includes("forms.delete") && (
                       <button type="button" style={button} disabled={busy !== null} onClick={() => void remove(f)} aria-label={`Delete ${f.name}`}>

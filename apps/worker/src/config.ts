@@ -30,6 +30,19 @@ const ConfigSchema = z.object({
   AI_MODEL: optionalText(100),
   OPENAI_API_KEY: optionalText(500),
   GEMINI_API_KEY: optionalText(500),
+  /** Encrypts webhook signing secrets at rest (AUT-01): 32 bytes, base64. Shared with the API. */
+  INTEGRATION_SECRET_KEY: z.string().min(40),
+  /** Local development only: let webhooks reach http:// and private addresses. Refused in production. */
+  WEBHOOK_ALLOW_PRIVATE_NETWORKS: z.stringbool().default(false),
+  /** SMTP relay for notification email; unset means email deliveries fail as email_not_configured. */
+  SMTP_HOST: optionalText(200),
+  SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(587),
+  SMTP_SECURE: z.stringbool().default(false),
+  SMTP_USER: optionalText(200),
+  SMTP_PASSWORD: optionalText(500),
+  MAIL_FROM: z.string().min(3).max(200).default("Workeasy <notifications@workeasy.test>"),
+  /** Links in notification email point at the console. */
+  CONSOLE_PUBLIC_URL: z.url().default("http://localhost:3000"),
 });
 
 export type WorkerConfig = z.infer<typeof ConfigSchema>;
@@ -38,6 +51,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): WorkerConfig {
   const result = ConfigSchema.safeParse(env);
   if (!result.success) {
     throw new Error(`Invalid worker configuration:\n${z.prettifyError(result.error)}`);
+  }
+  if (result.data.NODE_ENV === "production" && result.data.WEBHOOK_ALLOW_PRIVATE_NETWORKS) {
+    throw new Error("Invalid worker configuration: WEBHOOK_ALLOW_PRIVATE_NETWORKS is for local development only");
   }
   if (result.data.NODE_ENV === "production" && result.data.AI_PROVIDER === "stub") {
     throw new Error("Invalid worker configuration: AI_PROVIDER=stub is for local development and tests only");

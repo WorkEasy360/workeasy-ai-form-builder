@@ -28,6 +28,8 @@ export interface JobDefinition {
   handle(ctx: JobContext): Promise<void>;
   /** How long one attempt may hold the job. Default 60 seconds. */
   leaseSeconds?: number;
+  /** Delay before retrying after the given attempt; default exponential backoff with jitter. */
+  retryDelayMs?: (attempt: number) => number;
 }
 
 /** Job types by name. */
@@ -52,6 +54,20 @@ export class PermanentJobError extends Error {
   }
 }
 
+/**
+ * A transient failure with a known retry time, such as a 429 with
+ * Retry-After. The delay replaces the job type's own schedule.
+ */
+export class RetryLaterError extends Error {
+  constructor(
+    readonly code: string,
+    readonly delayMs: number,
+  ) {
+    super(code);
+    this.name = "RetryLaterError";
+  }
+}
+
 const DEFAULT_LEASE_SECONDS = 60;
 /** The handler's signal aborts this long before the lease ends. */
 const LEASE_MARGIN_MS = 2_000;
@@ -69,6 +85,11 @@ export function errorCode(err: unknown): string {
     if (/^[a-z][a-z0-9_]*$/.test(code)) return code;
   }
   return "handler_error";
+}
+
+function retryDelay(def: JobDefinition, attempt: number, err: unknown, deps: JobDeps): number {
+  if (err instanceof RetryLaterError) return Math.max(0, err.delayMs);
+  return def.retryDelayMs ? def.retryDelayMs(attempt) : backoffDelayMs(attempt, deps.backoff);
 }
 
 /** The event → job types map the dispatcher needs, from the registry. */
@@ -108,7 +129,7 @@ async function runOne(deps: JobDeps, def: JobDefinition, job: ClaimedJob): Promi
     status =
       err instanceof PermanentJobError
         ? await jobsRepo.completeJob(deps.workerDb, job, { outcome: "failed", error })
-        : await jobsRepo.completeJob(deps.workerDb, job, { outcome: "retry", error, retryAt: new Date(Date.now() + backoffDelayMs(job.attempt, deps.backoff)) });
+        : await jobsRepo.completeJob(deps.workerDb, job, { outcome: "retry", error, retryAt: new Date(Date.now() + retryDelay(def, job.attempt, err, deps)) });
     deps.log?.(status === "dead" ? "error" : "warn", status === "dead" ? "job dead-lettered" : "job attempt failed; will retry", { ...fields, error });
   } finally {
     clearTimeout(timer);

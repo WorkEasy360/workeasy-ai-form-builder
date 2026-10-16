@@ -1,5 +1,6 @@
 import { createDb } from "@workeasy/database";
 import { providerFromSettings } from "@workeasy/ai";
+import { createMailer, parseSecretKey, STRICT_POLICY } from "@workeasy/integrations";
 import { dispatchOutbox, runJobs, type JobDeps } from "@workeasy/jobs";
 import { createObjectStore, expireStaleUploads, scanPendingUploads, type ScanDeps } from "@workeasy/files";
 import { createLogger } from "@workeasy/observability";
@@ -31,7 +32,26 @@ const scanDeps: ScanDeps = {
 
 const jobDeps: JobDeps = { workerDb, log: (level, message, fields) => logger[level](fields, message) };
 const aiProvider = providerFromSettings(config);
-const registry = createRegistry({ workerDb, provider: aiProvider, log: jobDeps.log! });
+const registry = createRegistry({
+  ai: { workerDb, provider: aiProvider, log: jobDeps.log! },
+  delivery: {
+    workerDb,
+    secretKey: parseSecretKey(config.INTEGRATION_SECRET_KEY),
+    policy: config.WEBHOOK_ALLOW_PRIVATE_NETWORKS ? { allowHttp: true, allowPrivateNetworks: true, allowedPorts: [] } : STRICT_POLICY,
+    mailer: config.SMTP_HOST
+      ? createMailer({
+          host: config.SMTP_HOST,
+          port: config.SMTP_PORT,
+          secure: config.SMTP_SECURE,
+          user: config.SMTP_USER,
+          password: config.SMTP_PASSWORD,
+          from: config.MAIL_FROM,
+        })
+      : undefined,
+    consolePublicUrl: config.CONSOLE_PUBLIC_URL,
+    log: jobDeps.log!,
+  },
+});
 
 const tasks: PollingTask[] = [
   {

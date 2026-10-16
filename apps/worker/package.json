@@ -14,6 +14,7 @@
     "@workeasy/ai": "workspace:*",
     "@workeasy/database": "workspace:*",
     "@workeasy/files": "workspace:*",
+    "@workeasy/integrations": "workspace:*",
     "@workeasy/jobs": "workspace:*",
     "@workeasy/observability": "workspace:*",
     "@workeasy/responses": "workspace:*",
