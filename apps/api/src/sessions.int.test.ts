@@ -230,7 +230,7 @@ describe("organization-only forms", () => {
       trx.selectFrom("audit_events").select(["action", "metadata"]).where("resource_id", "=", f.id).where("action", "=", "form.access_policy_changed").execute(),
     );
     // Setting the same mode twice is one change.
-    expect(audit).toEqual([{ action: "form.access_policy_changed", metadata: { mode: "organization", previousMode: "public" } }]);
+    expect(audit).toEqual([{ action: "form.access_policy_changed", metadata: { changed: { mode: "organization" }, previous: { mode: "public" } } }]);
   });
 });
 

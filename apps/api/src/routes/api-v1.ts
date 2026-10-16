@@ -15,6 +15,7 @@ import {
   publishRepo,
   withContext,
   type Database,
+  type AccessPolicy,
   type FormListCursor,
   type FormSummary,
   type MembershipRecord,
@@ -116,6 +117,16 @@ function embedSnippet(embedUrl: string, respondentOrigin: string, slug: string, 
     "})();",
     "</script>",
   ].join("\n");
+}
+
+function policyBody(policy: AccessPolicy, acceptedResponses: number): AccessPolicyResponse {
+  return {
+    mode: policy.mode,
+    maxResponses: policy.maxResponses,
+    openAt: policy.openAt?.toISOString() ?? null,
+    closeAt: policy.closeAt?.toISOString() ?? null,
+    acceptedResponses,
+  };
 }
 
 function issuesAsErrors(issues: readonly DefinitionIssue[]): FieldError[] {
@@ -760,15 +771,16 @@ export function apiV1Router({ db, settings }: AppDependencies): Router {
       res,
       await onForm(res, orgId, formId, "forms.read", async (trx): Promise<Outcome<AccessPolicyResponse>> => ({
         kind: "ok",
-        body: { mode: await orgRepo.getAccessMode(trx, formId) },
+        body: policyBody(await orgRepo.getAccessPolicy(trx, formId), await orgRepo.countResponses(trx, formId)),
       })),
     );
   });
 
   /**
-   * Who may respond: anyone with the link, or only signed-in active members of
-   * this organization. Takes effect immediately, including for sessions
-   * already started (their acceptance check reads the current policy).
+   * Who may respond (anyone with the link, or only signed-in active members),
+   * when (an optional opening and closing time) and how many (an optional
+   * response limit). Takes effect immediately, including for sessions already
+   * started: their acceptance check and intake read the current policy.
    */
   router.patch("/organizations/:orgId/forms/:formId/access-policy", async (req, res) => {
     const body = AccessPolicyBodySchema.safeParse(req.body);
@@ -781,9 +793,21 @@ export function apiV1Router({ db, settings }: AppDependencies): Router {
     respond(
       res,
       await onForm(res, orgId, formId, "forms.publish", async (trx): Promise<Outcome<AccessPolicyResponse>> => {
-        const previous = await orgRepo.getAccessMode(trx, formId);
-        if (previous !== body.data.mode) {
-          await orgRepo.setAccessMode(trx, orgId, formId, body.data.mode, userId);
+        const previous = await orgRepo.getAccessPolicy(trx, formId);
+        const change = body.data;
+        const next: AccessPolicy = {
+          mode: change.mode ?? previous.mode,
+          maxResponses: change.maxResponses === undefined ? previous.maxResponses : change.maxResponses,
+          openAt: change.openAt === undefined ? previous.openAt : change.openAt === null ? null : new Date(change.openAt),
+          closeAt: change.closeAt === undefined ? previous.closeAt : change.closeAt === null ? null : new Date(change.closeAt),
+        };
+        if (next.openAt && next.closeAt && next.closeAt <= next.openAt) {
+          return { kind: "invalid", errors: [{ field: "closeAt", code: "CLOSE_BEFORE_OPEN", message: "The closing time must be after the opening time" }] };
+        }
+        const changed = (Object.keys(next) as Array<keyof AccessPolicy>).filter((k) => String(next[k]?.valueOf() ?? null) !== String(previous[k]?.valueOf() ?? null));
+        if (changed.length > 0) {
+          await orgRepo.setAccessPolicy(trx, orgId, formId, next, userId);
+          const audited = (p: AccessPolicy) => Object.fromEntries(changed.map((k) => [k, p[k] instanceof Date ? (p[k] as Date).toISOString() : p[k]]));
           await publishRepo.appendAudit(trx, {
             tenantId: orgId,
             actor: { type: "user", id: userId },
@@ -791,10 +815,10 @@ export function apiV1Router({ db, settings }: AppDependencies): Router {
             resourceType: "form",
             resourceId: formId,
             requestId: requestIdOf(res),
-            metadata: { mode: body.data.mode, previousMode: previous },
+            metadata: { changed: audited(next), previous: audited(previous) },
           });
         }
-        return { kind: "ok", body: { mode: body.data.mode } };
+        return { kind: "ok", body: policyBody(next, await orgRepo.countResponses(trx, formId)) };
       }),
     );
   });

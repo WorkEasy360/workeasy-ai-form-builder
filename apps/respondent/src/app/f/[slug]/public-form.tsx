@@ -32,15 +32,25 @@ async function startSession(slug: string, embed: boolean): Promise<SessionState>
     return { kind: "failed", message: "We couldn't reach Workeasy Forms. Check your connection and reload the page." };
   }
   if (res.status === 201) return { kind: "ready", session: (await res.json()) as Session };
-  if (res.status === 410) return { kind: "failed", message: "This form has closed and isn't accepting responses any more." };
+  if (res.status === 410) return { kind: "failed", message: (await isFull(res)) ? "This form is full and isn't accepting more responses." : "This form has closed and isn't accepting responses any more." };
+  if (res.status === 409) return { kind: "failed", message: "This form isn't open yet. Reload the page when it opens." };
+  if (res.status === 429) return { kind: "failed", message: "This form can't take responses right now. Please try again later." };
   if (res.status === 401) return { kind: "failed", message: "Your sign-in has ended. Reload the page to sign in again." };
   if (res.status === 403) return { kind: "failed", message: "You don't have access to this form." };
   return { kind: "failed", message: "Something went wrong. Please reload the page." };
 }
 
+async function isFull(res: Response): Promise<boolean> {
+  const problem = (await res.json().catch(() => ({}))) as { code?: string };
+  return problem.code === "FORM_FULL";
+}
+
 /** Problem messages for refusals; the respondent's answers always stay on screen. */
-function refusal(status: number, body: { errors?: Array<{ message: string }> }): string {
+function refusal(status: number, body: { code?: string; errors?: Array<{ message: string }> }): string {
+  if (status === 410 && body.code === "FORM_FULL") return "Sorry, this form filled up before your answers arrived. They weren't sent.";
   if (status === 410) return "This form has closed and isn't accepting responses any more. Your answers weren't sent.";
+  if (status === 409 && body.code === "FORM_NOT_OPEN") return "This form isn't open yet. Your answers weren't sent; try again when it opens.";
+  if (status === 429 && body.code === "RESPONSE_QUOTA_REACHED") return "This form can't take more responses right now. Your answers weren't sent; please try again later.";
   if (status === 401) return "This form session has expired. Copy anything you need, then reload the page to start again; your answers weren't sent.";
   if (status === 403) return "You no longer have access to this form. Your answers weren't sent.";
   if (status === 404) return "This form is no longer available. Your answers weren't sent.";
@@ -106,7 +116,7 @@ export function PublicForm({ slug, versionId, definition, embed }: { slug: strin
       setReceipt((await res.json()) as Receipt);
       return undefined;
     }
-    return refusal(res.status, (await res.json().catch(() => ({}))) as { errors?: Array<{ message: string }> });
+    return refusal(res.status, (await res.json().catch(() => ({}))) as { code?: string; errors?: Array<{ message: string }> });
   }
 
   // The session decides the version; it matches the page unless a new version went live in between.

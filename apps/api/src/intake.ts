@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { intakeRepo, publicFormsRepo, publishRepo, withTenant, type Db, type RespondentSession } from "@workeasy/database";
+import { intakeRepo, publicFormsRepo, publishRepo, withTenant, type Db, type RespondentSession, type Unavailable } from "@workeasy/database";
 import { SUBMISSION_ACCEPTED_V1, submissionAcceptedV1 } from "@workeasy/events";
 import { canonicalJson, evaluate } from "@workeasy/form-engine";
 import type { FormDefinition } from "@workeasy/form-schema";
@@ -31,8 +31,8 @@ export type IntakeOutcome =
   | { kind: "idempotency_conflict" }
   | { kind: "session_invalid" }
   | { kind: "version_mismatch" }
-  | { kind: "not_found" }
-  | { kind: "closed" }
+  /** Closed, outside its schedule, full, over the tenant's quota, or gone. */
+  | { kind: "unavailable"; reason: Unavailable; opensAt?: Date | undefined }
   | { kind: "access_revoked" }
   | { kind: "invalid"; errors: FieldError[] };
 
@@ -82,7 +82,9 @@ export function intake(publicDb: Db, request: IntakeRequest): Promise<IntakeOutc
     // 5. The form's current state and policy, locked until commit so a concurrent close waits for us.
     const form = await intakeRepo.lockForm(trx, locked.formId);
     const acceptance = await publicFormsRepo.judgeAcceptance(trx, form, { tenantId: session.tenantId, actorId: locked.actorId });
-    if (!acceptance.accepting) return { kind: acceptance.reason === "access_revoked" ? "access_revoked" : acceptance.reason };
+    if (!acceptance.accepting) {
+      return acceptance.reason === "access_revoked" ? { kind: "access_revoked" } : { kind: "unavailable", reason: acceptance.reason, opensAt: acceptance.opensAt };
+    }
 
     // 6. The same engine the browser ran, against the pinned version.
     const projection = await intakeRepo.versionProjection(trx, locked.formId, locked.formVersionId);
@@ -93,7 +95,11 @@ export function intake(publicDb: Db, request: IntakeRequest): Promise<IntakeOutc
       return { kind: "invalid", errors: evaluation.errors.map((e) => ({ field: e.fieldId ? `answers.${e.fieldId}` : "answers", code: e.code, message: e.message })) };
     }
 
-    // 7. Store the response, its receipt, the session's accepted marker and the event together.
+    // 7. Reserve against the form's limit and the tenant's quota; only valid answers count (docs/04 §5).
+    const reserved = await intakeRepo.reserveResponse(trx, locked.formId);
+    if (reserved !== "ok") return { kind: "unavailable", reason: reserved === "form_full" ? "full" : "quota" };
+
+    // 8. Store the response, its receipt, the session's accepted marker and the event together.
     const receivedAt = new Date();
     const submissionId = randomUUID();
     const consents = definition.fields

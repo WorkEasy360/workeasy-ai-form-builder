@@ -26,6 +26,8 @@ export const ProblemSchema = z.object({
   currentRevision: z.number().int().optional(),
   /** Where a respondent signs in, with SIGN_IN_REQUIRED. */
   signInUrl: z.url().optional(),
+  /** When a scheduled form opens, with FORM_NOT_OPEN. */
+  opensAt: Timestamp.optional(),
 });
 
 const DefinitionIssueSchema = z.object({ path: z.string(), code: z.string(), message: z.string() });
@@ -181,8 +183,27 @@ export const ActivateVersionBodySchema = z.object({ versionId: Uuid });
 /** Client-chosen key that makes a publish request safe to retry. */
 export const IDEMPOTENCY_KEY_PATTERN = /^[!-~]{8,200}$/;
 
-export const AccessPolicyBodySchema = z.object({ mode: z.enum(ACCESS_MODES) });
-export const AccessPolicyResponseSchema = z.object({ mode: z.enum(ACCESS_MODES) });
+/** A partial change: send only what changes; null clears a limit or a date. */
+export const AccessPolicyBodySchema = z
+  .object({
+    mode: z.enum(ACCESS_MODES).optional(),
+    /** Stop accepting responses after this many. */
+    maxResponses: z.number().int().min(1).max(10_000_000).nullable().optional(),
+    /** Accept responses from this time (UTC). */
+    openAt: Timestamp.nullable().optional(),
+    /** Stop accepting responses at this time (UTC). */
+    closeAt: Timestamp.nullable().optional(),
+  })
+  .refine((b) => Object.keys(b).length > 0, { message: "Send at least one setting to change" });
+
+export const AccessPolicyResponseSchema = z.object({
+  mode: z.enum(ACCESS_MODES),
+  maxResponses: z.number().int().nullable(),
+  openAt: Timestamp.nullable(),
+  closeAt: Timestamp.nullable(),
+  /** Responses stored so far. */
+  acceptedResponses: z.number().int().min(0),
+});
 export type AccessPolicyResponse = z.infer<typeof AccessPolicyResponseSchema>;
 
 export const CloseFormBodySchema = z.object({

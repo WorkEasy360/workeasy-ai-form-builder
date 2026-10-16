@@ -1,5 +1,6 @@
 import { sql, type Transaction } from "kysely";
-import type { AccessMode, Database, FormState } from "../schema.js";
+import type { Database, FormState } from "../schema.js";
+import type { FormGate } from "./public-forms.js";
 
 /**
  * Steps of the intake transaction (docs/04 §5), run by the public role inside
@@ -59,17 +60,35 @@ export async function receiptFor(trx: Trx, submissionId: string): Promise<Record
 }
 
 /**
- * Locks the form row (FOR SHARE) until commit and returns its lifecycle state
- * and access mode. Closing a form must wait for in-flight intakes, and an
- * intake that starts after a close sees it.
+ * Locks the form row (FOR SHARE) until commit and returns its gate. Closing
+ * a form must wait for in-flight intakes, and an intake that starts after a
+ * close sees it.
  */
-export async function lockForm(trx: Trx, formId: string): Promise<{ state: FormState; activeVersionId: string | null; accessMode: AccessMode } | undefined> {
+export async function lockForm(trx: Trx, formId: string): Promise<FormGate | undefined> {
   const { rows } = await sql<{ state: FormState; active_version_id: string | null }>`
     SELECT state, active_version_id FROM app.lock_form_for_intake(${formId}::uuid)`.execute(trx);
   const form = rows[0];
   if (!form) return undefined;
-  const policy = await trx.selectFrom("form_access_policies").select("mode").where("form_id", "=", formId).executeTakeFirst();
-  return { state: form.state, activeVersionId: form.active_version_id, accessMode: policy?.mode ?? "public" };
+  const policy = await trx.selectFrom("form_access_policies").select(["mode", "open_at", "close_at"]).where("form_id", "=", formId).executeTakeFirst();
+  return {
+    formId,
+    state: form.state,
+    activeVersionId: form.active_version_id,
+    accessMode: policy?.mode ?? "public",
+    openAt: policy?.open_at ?? null,
+    closeAt: policy?.close_at ?? null,
+  };
+}
+
+/**
+ * Reserves one response against the form's limit and the tenant's monthly
+ * quota (docs/04 §5 step 7). Counters are locked in a fixed order and both
+ * limits are checked before either moves; the increments commit or roll back
+ * with the rest of the intake transaction.
+ */
+export async function reserveResponse(trx: Trx, formId: string): Promise<"ok" | "form_full" | "tenant_quota"> {
+  const { rows } = await sql<{ result: "ok" | "form_full" | "tenant_quota" }>`SELECT app.reserve_response(${formId}::uuid) AS result`.execute(trx);
+  return rows[0]!.result;
 }
 
 /** The public projection of the version a session is pinned to: what the engine validates against. */

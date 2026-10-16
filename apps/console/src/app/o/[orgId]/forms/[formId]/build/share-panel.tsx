@@ -3,6 +3,7 @@
 import createQrCode from "qrcode-generator";
 import { useEffect, useId, useMemo, useState } from "react";
 import { api, ApiError, type FormResponse, type FormSummary } from "../../../../../../lib/api";
+import { LimitsEditor } from "./limits-editor";
 
 interface Share {
   url: string;
@@ -240,6 +241,8 @@ export function SharePanel({
             ))}
           </fieldset>
         )}
+
+        <LimitsEditor formPath={formPath} canEdit={canPublish} announce={copied} />
 
         <h2 style={{ marginTop: 24 }}>Accepting responses</h2>
         {form.state === "published" && (

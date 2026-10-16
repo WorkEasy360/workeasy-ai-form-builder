@@ -347,16 +347,44 @@ export async function replaceFormGrants(trx: Trx, formId: string, tenantId: stri
     .execute();
 }
 
-/** Who may respond to a form; forms without a policy row are open to anyone with the link. */
-export async function getAccessMode(trx: Trx, formId: string): Promise<AccessMode> {
-  const row = await trx.selectFrom("form_access_policies").select("mode").where("form_id", "=", formId).executeTakeFirst();
-  return row?.mode ?? "public";
+export interface AccessPolicy {
+  mode: AccessMode;
+  maxResponses: number | null;
+  openAt: Date | null;
+  closeAt: Date | null;
 }
 
-export async function setAccessMode(trx: Trx, tenantId: string, formId: string, mode: AccessMode, updatedBy: string): Promise<void> {
+/** Who may respond and when; forms without a policy row are open to anyone with the link, with no limits. */
+export async function getAccessPolicy(trx: Trx, formId: string): Promise<AccessPolicy> {
+  const row = await trx
+    .selectFrom("form_access_policies")
+    .select(["mode", "max_responses", "open_at", "close_at"])
+    .where("form_id", "=", formId)
+    .executeTakeFirst();
+  return { mode: row?.mode ?? "public", maxResponses: row?.max_responses ?? null, openAt: row?.open_at ?? null, closeAt: row?.close_at ?? null };
+}
+
+export async function getAccessMode(trx: Trx, formId: string): Promise<AccessMode> {
+  return (await getAccessPolicy(trx, formId)).mode;
+}
+
+/** Replaces the whole policy (callers merge a partial change into the current one first). */
+export async function setAccessPolicy(trx: Trx, tenantId: string, formId: string, policy: AccessPolicy, updatedBy: string): Promise<void> {
+  const values = { mode: policy.mode, max_responses: policy.maxResponses, open_at: policy.openAt, close_at: policy.closeAt, updated_by: updatedBy };
   await trx
     .insertInto("form_access_policies")
-    .values({ tenant_id: tenantId, form_id: formId, mode, updated_by: updatedBy })
-    .onConflict((oc) => oc.columns(["tenant_id", "form_id"]).doUpdateSet({ mode, updated_by: updatedBy }))
+    .values({ tenant_id: tenantId, form_id: formId, ...values })
+    .onConflict((oc) => oc.columns(["tenant_id", "form_id"]).doUpdateSet(values))
     .execute();
+}
+
+/** Responses stored for a form (not deleted). */
+export async function countResponses(trx: Trx, formId: string): Promise<number> {
+  const row = await trx
+    .selectFrom("submissions")
+    .select((eb) => eb.fn.countAll<string>().as("n"))
+    .where("form_id", "=", formId)
+    .where("deleted_at", "is", null)
+    .executeTakeFirstOrThrow();
+  return Number(row.n);
 }

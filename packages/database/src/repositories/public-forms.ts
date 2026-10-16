@@ -34,11 +34,34 @@ export async function isActiveMember(db: Db | Trx, tenantId: string, userId: str
   return rows[0]?.member === true;
 }
 
+/** What decides whether a form takes responses: lifecycle, who may respond, schedule. */
+export interface FormGate {
+  formId: string;
+  state: FormState;
+  activeVersionId: string | null;
+  accessMode: AccessMode;
+  openAt: Date | null;
+  closeAt: Date | null;
+}
+
 export interface PublicForm {
   slug: string;
-  state: FormState;
-  accessMode: AccessMode;
+  gate: FormGate;
   version: { id: string; versionNumber: number; projection: Record<string, unknown> };
+}
+
+/** Reads the gate for a form (unlocked); intake reads it under its form lock instead. */
+export async function getGate(trx: Trx, formId: string): Promise<FormGate | undefined> {
+  const row = await trx
+    .selectFrom("forms as f")
+    .leftJoin("form_access_policies as p", "p.form_id", "f.id")
+    .select(["f.state", "f.active_version_id", "p.mode", "p.open_at", "p.close_at"])
+    .where("f.id", "=", formId)
+    .where("f.deleted_at", "is", null)
+    .executeTakeFirst();
+  return row
+    ? { formId, state: row.state, activeVersionId: row.active_version_id, accessMode: row.mode ?? "public", openAt: row.open_at, closeAt: row.close_at }
+    : undefined;
 }
 
 /** The form's state, who may respond, and its active version's public projection. */
@@ -47,16 +70,22 @@ export async function getPublicForm(trx: Trx, formId: string): Promise<PublicFor
     .selectFrom("forms as f")
     .innerJoin("form_versions as v", (join) => join.onRef("v.id", "=", "f.active_version_id").onRef("v.form_id", "=", "f.id"))
     .leftJoin("form_access_policies as p", "p.form_id", "f.id")
-    .select(["f.slug", "f.state", "p.mode", "v.id as version_id", "v.version_number", "v.public_projection"])
+    .select(["f.slug", "f.state", "f.active_version_id", "p.mode", "p.open_at", "p.close_at", "v.id as version_id", "v.version_number", "v.public_projection"])
     .where("f.id", "=", formId)
     .where("f.deleted_at", "is", null)
     .executeTakeFirst();
   return row
     ? {
         slug: row.slug,
-        state: row.state,
-        // No policy row means the default: anyone with the link.
-        accessMode: row.mode ?? "public",
+        gate: {
+          formId,
+          state: row.state,
+          activeVersionId: row.active_version_id,
+          // No policy row means the default: anyone with the link.
+          accessMode: row.mode ?? "public",
+          openAt: row.open_at,
+          closeAt: row.close_at,
+        },
         version: { id: row.version_id, versionNumber: row.version_number, projection: row.public_projection },
       }
     : undefined;
@@ -118,7 +147,30 @@ export async function resolveCapability(db: Db, capability: string): Promise<Res
     : undefined;
 }
 
-export type Acceptance = { accepting: true } | { accepting: false; reason: "not_found" | "closed" | "access_revoked" };
+/** Why a form is not taking responses. */
+export type Unavailable = "not_found" | "closed" | "not_open_yet" | "full" | "quota";
+
+export type Availability = { available: true } | { available: false; reason: Unavailable; opensAt?: Date };
+
+/**
+ * Whether the form takes responses at all right now: published and open,
+ * inside its schedule, below its response limit and the tenant's monthly
+ * quota. Counts are read without locks here; intake reserves them atomically
+ * with app.reserve_response, which is the final word.
+ */
+export async function availability(trx: Trx, gate: FormGate | undefined, now: Date = new Date()): Promise<Availability> {
+  if (!gate?.activeVersionId || gate.state === "draft" || gate.state === "archived") return { available: false, reason: "not_found" };
+  if (gate.state !== "published") return { available: false, reason: "closed" };
+  if (gate.openAt && now < gate.openAt) return { available: false, reason: "not_open_yet", opensAt: gate.openAt };
+  if (gate.closeAt && now >= gate.closeAt) return { available: false, reason: "closed" };
+  const { rows } = await sql<{ form_full: boolean; tenant_quota_reached: boolean }>`
+    SELECT form_full, tenant_quota_reached FROM app.response_capacity(${gate.formId}::uuid)`.execute(trx);
+  if (rows[0]?.form_full) return { available: false, reason: "full" };
+  if (rows[0]?.tenant_quota_reached) return { available: false, reason: "quota" };
+  return { available: true };
+}
+
+export type Acceptance = { accepting: true } | { accepting: false; reason: Unavailable | "access_revoked"; opensAt?: Date };
 
 /**
  * Whether the form accepts a response from this session right now, read from
@@ -128,34 +180,26 @@ export type Acceptance = { accepting: true } | { accepting: false; reason: "not_
  * organization-only form the respondent must still be an active member.
  *
  * A session keeps the version it started with for its whole lifetime, even
- * after a newer version is published or an older one is reactivated. The
- * intake transaction (RUN-02) must call this after locking the form row,
- * before storing anything.
+ * after a newer version is published or an older one is reactivated.
  */
 export async function checkSessionAcceptance(trx: Trx, session: RespondentSession): Promise<Acceptance> {
-  const form = await trx
-    .selectFrom("forms as f")
-    .leftJoin("form_access_policies as p", "p.form_id", "f.id")
-    .select(["f.state", "f.active_version_id", "p.mode"])
-    .where("f.id", "=", session.formId)
-    .where("f.deleted_at", "is", null)
-    .executeTakeFirst();
-  return judgeAcceptance(trx, form ? { state: form.state, activeVersionId: form.active_version_id, accessMode: form.mode ?? "public" } : undefined, session);
+  return judgeAcceptance(trx, await getGate(trx, session.formId), session);
 }
 
 /**
- * The single rule for whether a session may submit, given the form's current
- * lifecycle and policy: shared by the acceptance check and the intake
- * transaction (which passes the row it has locked).
+ * The single rule for whether a session may submit: shared by the acceptance
+ * check and the intake transaction (which passes the gate it read under its
+ * form lock).
  */
 export async function judgeAcceptance(
   trx: Trx,
-  form: { state: FormState; activeVersionId: string | null; accessMode: AccessMode } | undefined,
+  gate: FormGate | undefined,
   session: Pick<RespondentSession, "tenantId" | "actorId">,
+  now: Date = new Date(),
 ): Promise<Acceptance> {
-  if (!form?.activeVersionId || form.state === "draft" || form.state === "archived") return { accepting: false, reason: "not_found" };
-  if (form.state !== "published") return { accepting: false, reason: "closed" };
-  if (form.accessMode === "organization") {
+  const available = await availability(trx, gate, now);
+  if (!available.available) return { accepting: false, reason: available.reason, ...(available.opensAt ? { opensAt: available.opensAt } : {}) };
+  if (gate!.accessMode === "organization") {
     if (!session.actorId || !(await isActiveMember(trx, session.tenantId, session.actorId))) return { accepting: false, reason: "access_revoked" };
   }
   return { accepting: true };

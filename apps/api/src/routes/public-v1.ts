@@ -1,5 +1,5 @@
 import { Router, type Request, type Response } from "express";
-import { identityRepo, publicFormsRepo, withTenant, type PublicForm } from "@workeasy/database";
+import { identityRepo, publicFormsRepo, withTenant, type PublicForm, type Unavailable } from "@workeasy/database";
 import type { AppDependencies } from "../app.js";
 import {
   IDEMPOTENCY_KEY_PATTERN,
@@ -44,7 +44,7 @@ export function publicV1Router(deps: AppDependencies): Router {
 
   /** Who is asking, for an organization-only form: anonymous, a non-member, or a member. */
   async function accessFor(req: Request, form: PublicForm, tenantId: string): Promise<Access> {
-    if (form.accessMode === "public") return { kind: "allowed", actorId: null };
+    if (form.gate.accessMode === "public") return { kind: "allowed", actorId: null };
     const token = parseCookies(req.get("cookie")).get(respondentCookie);
     const session = token ? await identityRepo.resolveSession(publicDb, token) : undefined;
     if (!session) return { kind: "sign_in" };
@@ -70,11 +70,32 @@ export function publicV1Router(deps: AppDependencies): Router {
     problems.notFound(res);
   }
 
+  /**
+   * Why a form takes no responses, in respondent terms. Only "closed" may be
+   * cached (for anyone-with-the-link forms); schedules and counts change.
+   */
+  function unavailable(res: Response, reason: Unavailable, opensAt: Date | undefined, cacheClosed: boolean) {
+    if (reason === "not_found") return notFound(res);
+    if (reason === "closed") return closed(res, cacheClosed ? PUBLIC_FORM_MAX_AGE_SECONDS : 0);
+    res.set("Cache-Control", "no-store");
+    if (reason === "not_open_yet") {
+      sendProblem(res, 409, "FORM_NOT_OPEN", "This form isn't open for responses yet", opensAt ? { opensAt: opensAt.toISOString() } : {});
+    } else if (reason === "full") {
+      sendProblem(res, 410, "FORM_FULL", "This form has reached its response limit");
+    } else {
+      // The tenant's monthly quota resets at the start of the next month (UTC).
+      const now = new Date();
+      const next = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1);
+      res.set("Retry-After", String(Math.max(1, Math.ceil((next - now.getTime()) / 1000))));
+      sendProblem(res, 429, "RESPONSE_QUOTA_REACHED", "This form can't take more responses right now");
+    }
+  }
+
   /** Resolves a slug to a published, existing form; answers 404 itself when there is none. */
   async function load(res: Response, slug: string): Promise<{ tenantId: string; formId: string; form: PublicForm } | undefined> {
     const located = await publicFormsRepo.resolveSlug(publicDb, slug);
     const form = located ? await withTenant(publicDb, located.tenantId, (trx) => publicFormsRepo.getPublicForm(trx, located.formId)) : undefined;
-    if (!located || !form || form.state === "draft" || form.state === "archived") {
+    if (!located || !form || form.gate.state === "draft" || form.gate.state === "archived") {
       notFound(res);
       return undefined;
     }
@@ -84,7 +105,7 @@ export function publicV1Router(deps: AppDependencies): Router {
   function formBody(form: PublicForm): PublicFormResponse {
     return {
       slug: form.slug,
-      accessMode: form.accessMode,
+      accessMode: form.gate.accessMode,
       versionId: form.version.id,
       versionNumber: form.version.versionNumber,
       definition: form.version.projection,
@@ -101,12 +122,15 @@ export function publicV1Router(deps: AppDependencies): Router {
       denied(res, access, form.slug, req.query.embed === "1");
       return;
     }
-    if (form.state === "closed") {
-      closed(res, form.accessMode === "public" ? PUBLIC_FORM_MAX_AGE_SECONDS : 0);
+    const available = await withTenant(publicDb, loaded.tenantId, (trx) => publicFormsRepo.availability(trx, form.gate));
+    if (!available.available) {
+      unavailable(res, available.reason, available.opensAt, form.gate.accessMode === "public");
       return;
     }
-    // Organization-only forms are personal to the signed-in member: never cache them (docs/05 §3).
-    res.set("Cache-Control", form.accessMode === "public" ? `public, max-age=${PUBLIC_FORM_MAX_AGE_SECONDS}` : "private, no-store");
+    // Organization-only forms are personal to the signed-in member, and limited or
+    // scheduled forms change state without a publish: neither may be cached (docs/05 §3).
+    const cacheable = form.gate.accessMode === "public" && !form.gate.openAt && !form.gate.closeAt;
+    res.set("Cache-Control", cacheable ? `public, max-age=${PUBLIC_FORM_MAX_AGE_SECONDS}` : "private, no-store");
     res.json(formBody(form));
   });
 
@@ -125,13 +149,16 @@ export function publicV1Router(deps: AppDependencies): Router {
       denied(res, access, form.slug, req.query.embed === "1");
       return;
     }
-    if (form.state === "closed") {
-      closed(res, 0);
+    const started = await withTenant(publicDb, tenantId, async (trx) => {
+      const available = await publicFormsRepo.availability(trx, form.gate);
+      if (!available.available) return available;
+      return publicFormsRepo.startSession(trx, { tenantId, formId, formVersionId: form.version.id, actorId: access.actorId });
+    });
+    if ("available" in started) {
+      unavailable(res, started.reason, started.opensAt, false);
       return;
     }
-    const session = await withTenant(publicDb, tenantId, (trx) =>
-      publicFormsRepo.startSession(trx, { tenantId, formId, formVersionId: form.version.id, actorId: access.actorId }),
-    );
+    const session = started;
     requestLog(res, logger).info({ respondentSessionId: session.id, formId }, "respondent session started");
     const body: SessionStartResponse = {
       ...formBody(form),
@@ -170,9 +197,8 @@ export function publicV1Router(deps: AppDependencies): Router {
     if (!session) return;
     const acceptance = await withTenant(publicDb, session.tenantId, (trx) => publicFormsRepo.checkSessionAcceptance(trx, session));
     if (acceptance.accepting) res.json({ accepting: true, versionId: session.formVersionId } satisfies PublicAcceptanceResponse);
-    else if (acceptance.reason === "closed") closed(res, 0);
     else if (acceptance.reason === "access_revoked") sendProblem(res, 403, "NOT_A_MEMBER", "You no longer have access to this form");
-    else notFound(res);
+    else unavailable(res, acceptance.reason, acceptance.opensAt, false);
   });
 
   /**
@@ -229,14 +255,11 @@ export function publicV1Router(deps: AppDependencies): Router {
       case "session_invalid":
         sessionInvalid(res);
         return;
-      case "closed":
-        closed(res, 0);
+      case "unavailable":
+        unavailable(res, outcome.reason, outcome.opensAt, false);
         return;
       case "access_revoked":
         sendProblem(res, 403, "NOT_A_MEMBER", "You no longer have access to this form");
-        return;
-      case "not_found":
-        notFound(res);
         return;
       case "invalid":
         problems.validation(res, outcome.errors);

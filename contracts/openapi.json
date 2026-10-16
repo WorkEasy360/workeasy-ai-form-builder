@@ -3,7 +3,7 @@
   "info": {
     "title": "Workeasy Forms API",
     "version": "0.1.0",
-    "description": "Routes implemented through RUN-02. Organization routes derive the tenant from the authenticated membership; resources outside the caller's organizations return 404. Every response carries an X-Request-Id header, and every error is application/problem+json with the same requestId."
+    "description": "Routes implemented through RUN-03. Organization routes derive the tenant from the authenticated membership; resources outside the caller's organizations return 404. Every response carries an X-Request-Id header, and every error is application/problem+json with the same requestId."
   },
   "servers": [
     {
@@ -91,6 +91,11 @@
           "signInUrl": {
             "type": "string",
             "format": "uri"
+          },
+          "opensAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
           }
         },
         "required": [
@@ -3648,8 +3653,28 @@
               }
             }
           },
+          "409": {
+            "description": "FORM_NOT_OPEN: scheduled to open later; opensAt says when",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "410": {
-            "description": "FORM_CLOSED: the form is closed",
+            "description": "FORM_CLOSED (closed, or past its closing time) or FORM_FULL (response limit reached)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "RESPONSE_QUOTA_REACHED: the organization's monthly quota is used up; Retry-After says when it resets",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -3778,8 +3803,28 @@
               }
             }
           },
+          "409": {
+            "description": "FORM_NOT_OPEN",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "410": {
-            "description": "FORM_CLOSED",
+            "description": "FORM_CLOSED or FORM_FULL",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "RESPONSE_QUOTA_REACHED",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -3870,8 +3915,28 @@
               }
             }
           },
+          "409": {
+            "description": "FORM_NOT_OPEN",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "410": {
-            "description": "FORM_CLOSED",
+            "description": "FORM_CLOSED or FORM_FULL",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "RESPONSE_QUOTA_REACHED",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4116,7 +4181,7 @@
             }
           },
           "409": {
-            "description": "IDEMPOTENCY_CONFLICT (same key, different answers) or VERSION_MISMATCH (not the session's version)",
+            "description": "IDEMPOTENCY_CONFLICT (same key, different answers), VERSION_MISMATCH (not the session's version) or FORM_NOT_OPEN",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4126,7 +4191,7 @@
             }
           },
           "410": {
-            "description": "FORM_CLOSED",
+            "description": "FORM_CLOSED, or FORM_FULL when the response limit is reached (checked atomically with other submissions)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4147,6 +4212,16 @@
           },
           "422": {
             "description": "VALIDATION_FAILED: field errors from the engine, as answers.<fieldId>",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "RESPONSE_QUOTA_REACHED: the organization's monthly quota is used up; Retry-After says when it resets",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4247,7 +4322,7 @@
       ],
       "get": {
         "operationId": "getAccessPolicy",
-        "summary": "Who may respond to the form (requires forms.read)",
+        "summary": "Who may respond, limits and schedule, with the responses stored so far (requires forms.read)",
         "security": [
           {
             "consoleSession": []
@@ -4267,10 +4342,55 @@
                         "public",
                         "organization"
                       ]
+                    },
+                    "maxResponses": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "openAt": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "closeAt": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "acceptedResponses": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
                     }
                   },
                   "required": [
-                    "mode"
+                    "mode",
+                    "maxResponses",
+                    "openAt",
+                    "closeAt",
+                    "acceptedResponses"
                   ],
                   "additionalProperties": false
                 }
@@ -4301,8 +4421,8 @@
       },
       "patch": {
         "operationId": "updateAccessPolicy",
-        "summary": "Anyone with the link, or signed-in members of the organization only (requires forms.publish)",
-        "description": "Takes effect immediately, including for respondent sessions already started. Changes are audited.",
+        "summary": "Who may respond, a response limit and an opening/closing schedule (requires forms.publish)",
+        "description": "A partial change: send only the settings to change; null clears a limit or a time. Takes effect immediately, including for respondent sessions already started. Changes are audited.",
         "security": [
           {
             "consoleSession": []
@@ -4321,11 +4441,44 @@
                       "public",
                       "organization"
                     ]
+                  },
+                  "maxResponses": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 10000000
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "openAt": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "date-time",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "closeAt": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "date-time",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
-                },
-                "required": [
-                  "mode"
-                ]
+                }
               }
             }
           }
@@ -4344,10 +4497,55 @@
                         "public",
                         "organization"
                       ]
+                    },
+                    "maxResponses": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "openAt": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "closeAt": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "acceptedResponses": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
                     }
                   },
                   "required": [
-                    "mode"
+                    "mode",
+                    "maxResponses",
+                    "openAt",
+                    "closeAt",
+                    "acceptedResponses"
                   ],
                   "additionalProperties": false
                 }

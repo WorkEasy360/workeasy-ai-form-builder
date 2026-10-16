@@ -133,6 +133,9 @@ export interface FormAccessPoliciesTable {
   tenant_id: string;
   form_id: string;
   mode: AccessMode;
+  max_responses: Generated<number | null>;
+  open_at: Generated<Date | null>;
+  close_at: Generated<Date | null>;
   updated_by: string;
   created_at: CreatedAt;
   updated_at: UpdatedAt;
@@ -177,6 +180,23 @@ export interface SubmissionRequestsTable {
   created_at: CreatedAt;
 }
 
+export interface FormResponseCountersTable {
+  tenant_id: string;
+  form_id: string;
+  accepted: number;
+  updated_at: UpdatedAt;
+}
+
+export interface UsageBucketsTable {
+  tenant_id: string;
+  metric: "responses";
+  period_start: Date;
+  consumed: number;
+  reserved: number;
+  limit_value: number | null;
+  updated_at: UpdatedAt;
+}
+
 export interface Database {
   tenants: TenantsTable;
   users: UsersTable;
@@ -192,6 +212,8 @@ export interface Database {
   respondent_sessions: RespondentSessionsTable;
   submissions: SubmissionsTable;
   submission_requests: SubmissionRequestsTable;
+  form_response_counters: FormResponseCountersTable;
+  usage_buckets: UsageBucketsTable;
 }
 
 export type Tenant = Selectable<TenantsTable>;

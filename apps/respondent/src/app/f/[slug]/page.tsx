@@ -12,6 +12,9 @@ const RESPONDENT_COOKIES = ["__Host-we_respondent", "we_respondent"];
 type Loaded =
   | { kind: "open"; versionId: string; definition: FormDefinition }
   | { kind: "closed" }
+  | { kind: "full" }
+  | { kind: "not_open_yet"; opensAt: string | undefined }
+  | { kind: "busy" }
   | { kind: "missing" }
   | { kind: "sign_in"; signInUrl: string }
   | { kind: "not_member" }
@@ -35,7 +38,15 @@ const loadForm = cache(async (slug: string, embed: boolean): Promise<Loaded> => 
     return { kind: "unavailable" };
   }
   if (res.status === 404) return { kind: "missing" };
-  if (res.status === 410) return { kind: "closed" };
+  if (res.status === 410) {
+    const problem = (await res.json().catch(() => ({}))) as { code?: string };
+    return problem.code === "FORM_FULL" ? { kind: "full" } : { kind: "closed" };
+  }
+  if (res.status === 409) {
+    const problem = (await res.json().catch(() => ({}))) as { code?: string; opensAt?: string };
+    if (problem.code === "FORM_NOT_OPEN") return { kind: "not_open_yet", opensAt: problem.opensAt };
+  }
+  if (res.status === 429) return { kind: "busy" };
   if (res.status === 401) {
     const problem = (await res.json().catch(() => ({}))) as { signInUrl?: string };
     return problem.signInUrl ? { kind: "sign_in", signInUrl: problem.signInUrl } : { kind: "unavailable" };
@@ -45,6 +56,9 @@ const loadForm = cache(async (slug: string, embed: boolean): Promise<Loaded> => 
   const body = (await res.json()) as { versionId: string; definition: FormDefinition };
   return { kind: "open", versionId: body.versionId, definition: body.definition };
 });
+
+/** Rendered on the server, which has no respondent time zone: shown in UTC and labelled so. */
+const OPENS_FORMAT = new Intl.DateTimeFormat("en", { dateStyle: "long", timeStyle: "short", timeZone: "UTC" });
 
 type Props = { params: Promise<{ slug: string }>; searchParams: Promise<Record<string, string | string[] | undefined>> };
 
@@ -76,6 +90,35 @@ export default async function FormPage({ params, searchParams }: Props) {
     return (
       <Notice title="This form is closed" embed={embed}>
         <p>It isn&apos;t accepting responses any more. If you think this is a mistake, contact whoever shared it with you.</p>
+      </Notice>
+    );
+  }
+  if (loaded.kind === "full") {
+    return (
+      <Notice title="This form is full" embed={embed}>
+        <p>It has received all the responses it can take. If you think this is a mistake, contact whoever shared it with you.</p>
+      </Notice>
+    );
+  }
+  if (loaded.kind === "not_open_yet") {
+    return (
+      <Notice title="This form isn't open yet" embed={embed}>
+        <p>
+          {loaded.opensAt ? (
+            <>
+              It opens on <time dateTime={loaded.opensAt}>{OPENS_FORMAT.format(new Date(loaded.opensAt))} (UTC)</time>. Come back then.
+            </>
+          ) : (
+            "Come back later."
+          )}
+        </p>
+      </Notice>
+    );
+  }
+  if (loaded.kind === "busy") {
+    return (
+      <Notice title="This form can't take responses right now" embed={embed}>
+        <p>Please try again later.</p>
       </Notice>
     );
   }

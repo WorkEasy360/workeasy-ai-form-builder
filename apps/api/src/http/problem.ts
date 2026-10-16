@@ -15,6 +15,8 @@ export interface ProblemExtensions {
   currentRevision?: number;
   /** Where a respondent signs in, returned with SIGN_IN_REQUIRED. */
   signInUrl?: string;
+  /** When a scheduled form opens, returned with FORM_NOT_OPEN. */
+  opensAt?: string;
 }
 
 /**
