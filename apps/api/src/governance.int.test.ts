@@ -76,7 +76,7 @@ async function uploadText(sessionId: string, auth: Record<string, string>, text:
   // Other test files scan concurrently and may hold the claim for a moment, so wait for this upload to settle.
   const deadline = Date.now() + 15_000;
   for (;;) {
-    while ((await scanPendingUploads({ workerDb, store, scanner: scanner() }, 20)) > 0);
+    while ((await scanPendingUploads({ workerDb, store, scanner: scanner(), tenantId: a.id }, 20)) > 0);
     const { state } = UploadStatusResponseSchema.parse((await request(app).get(`/public/v1/sessions/${sessionId}/uploads/${target.uploadId}`).set(auth)).body);
     if (state !== "pending_scan" && state !== "scanning") return target.uploadId;
     if (Date.now() > deadline) throw new Error(`upload ${target.uploadId} is still ${state}`);

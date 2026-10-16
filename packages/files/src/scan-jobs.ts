@@ -18,6 +18,8 @@ export interface ScanDeps {
   store: ObjectStore;
   scanner: ScannerConfig;
   log?: (level: "info" | "warn" | "error", message: string, fields: Record<string, unknown>) => void;
+  /** Limits scanning to one tenant (tests running in parallel); the worker scans every tenant. */
+  tenantId?: string;
 }
 
 /** Each lease must outlast one scan of the largest file. */
@@ -93,7 +95,7 @@ export async function processScanJob(deps: ScanDeps, job: ScanJob): Promise<Scan
 
 /** Leases and processes up to `limit` waiting uploads; returns how many were handled. */
 export async function scanPendingUploads(deps: ScanDeps, limit = 10): Promise<number> {
-  const jobs = await uploadsRepo.claimScanJobs(deps.workerDb, limit, SCAN_LEASE_SECONDS);
+  const jobs = await uploadsRepo.claimScanJobs(deps.workerDb, limit, SCAN_LEASE_SECONDS, deps.tenantId);
   for (const job of jobs) {
     try {
       await processScanJob(deps, job);

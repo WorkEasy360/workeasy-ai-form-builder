@@ -120,7 +120,7 @@ async function storageKey(uploadId: string, tenant = a) {
 async function runScans(session: Session, uploadId: string) {
   const deadline = Date.now() + 15_000;
   for (;;) {
-    while ((await scanPendingUploads(scan, 20)) > 0);
+    while ((await scanPendingUploads({ ...scan, tenantId: a.id }, 20)) > 0);
     const { state } = await uploadState(session, uploadId);
     if (state !== "pending_scan" && state !== "scanning") return;
     if (Date.now() > deadline) throw new Error(`upload ${uploadId} is still ${state}`);
@@ -267,7 +267,7 @@ describe("worker behaviour", () => {
     const f = await publishedForm();
     const session = await startSession(f.slug);
     const uploadId = await upload(session, "waiting for the scanner");
-    const jobs = (await uploadsRepo.claimScanJobs(workerDb, 50, SCAN_LEASE_SECONDS)).filter((j) => j.uploadId === uploadId);
+    const jobs = (await uploadsRepo.claimScanJobs(workerDb, 50, SCAN_LEASE_SECONDS, a.id)).filter((j) => j.uploadId === uploadId);
     expect(jobs).toHaveLength(1);
     const outcome = await processScanJob({ ...scan, scanner: { host: "127.0.0.1", port: 1, timeoutMs: 2000 } }, jobs[0]!);
     expect(outcome).toEqual({ outcome: "retry" });

@@ -191,7 +191,8 @@ export interface ScanJob {
   attempt: number;
 }
 
-export async function claimScanJobs(db: Db, limit: number, leaseSeconds: number): Promise<ScanJob[]> {
+/** `tenantId` limits the claim to one tenant (tests); the worker claims across tenants. */
+export async function claimScanJobs(db: Db, limit: number, leaseSeconds: number, tenantId?: string): Promise<ScanJob[]> {
   const { rows } = await sql<{
     upload_id: string;
     tenant_id: string;
@@ -202,7 +203,7 @@ export async function claimScanJobs(db: Db, limit: number, leaseSeconds: number)
     declared_type: string;
     declared_bytes: number;
     attempt: number;
-  }>`SELECT * FROM app.claim_scan_jobs(${limit}::integer, ${leaseSeconds}::integer)`.execute(db);
+  }>`SELECT * FROM app.claim_scan_jobs(${limit}::integer, ${leaseSeconds}::integer, ${tenantId ?? null}::uuid)`.execute(db);
   return rows.map((r) => ({
     uploadId: r.upload_id,
     tenantId: r.tenant_id,
