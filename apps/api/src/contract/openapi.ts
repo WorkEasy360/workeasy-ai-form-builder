@@ -22,7 +22,11 @@ import {
   ReadyResponseSchema,
   ReceiptSchema,
   SessionStartResponseSchema,
+  FileDownloadResponseSchema,
   ShareResponseSchema,
+  UploadCreateBodySchema,
+  UploadCreateResponseSchema,
+  UploadStatusResponseSchema,
   SubmitBodySchema,
   ValidateResponseSchema,
   VersionListResponseSchema,
@@ -74,7 +78,7 @@ export function buildOpenApiDocument(): JsonSchema {
       title: "Workeasy Forms API",
       version: "0.1.0",
       description:
-        "Routes implemented through RUN-03. Organization routes derive the tenant from the authenticated membership; resources outside the caller's organizations return 404. Every response carries an X-Request-Id header, and every error is application/problem+json with the same requestId.",
+        "Routes implemented through FIL-01. Organization routes derive the tenant from the authenticated membership; resources outside the caller's organizations return 404. Every response carries an X-Request-Id header, and every error is application/problem+json with the same requestId.",
     },
     servers: [{ url: "/" }],
     components: {
@@ -492,7 +496,71 @@ export function buildOpenApiDocument(): JsonSchema {
             "410": problem("FORM_CLOSED, or FORM_FULL when the response limit is reached (checked atomically with other submissions)"),
             "413": problem("ANSWERS_TOO_LARGE: over 256 KiB"),
             "429": problem("RESPONSE_QUOTA_REACHED: the organization's monthly quota is used up; Retry-After says when it resets"),
-            "422": problem("VALIDATION_FAILED: field errors from the engine, as answers.<fieldId>"),
+            "422": problem("VALIDATION_FAILED: field errors from the engine, as answers.<fieldId>, including FILE_PENDING, FILE_INFECTED, FILE_REJECTED, FILE_EXPIRED and FILE_NOT_FOUND for attachments"),
+          },
+        },
+      },
+      "/public/v1/sessions/{sessionId}/uploads": {
+        parameters: [uuidPath("sessionId", "Respondent session ID")],
+        post: {
+          operationId: "createUpload",
+          summary: "Announce a file for a file field and get a presigned PUT to quarantine storage",
+          description:
+            "The field must be a file field of the session's version, the type one it allows and the size within its limit. The URL accepts exactly that type and size for five minutes. Files are scanned before they can be submitted.",
+          security: [{ sessionCapability: [] }],
+          requestBody: { required: true, content: { "application/json": { schema: schemaOf(UploadCreateBodySchema, "input") } } },
+          responses: {
+            "201": json("Where and how to PUT the file", UploadCreateResponseSchema),
+            "401": problem("SESSION_INVALID"),
+            "403": problem("NOT_A_MEMBER"),
+            "409": problem("FORM_NOT_OPEN"),
+            "410": problem("FORM_CLOSED or FORM_FULL"),
+            "422": problem("NOT_A_FILE_FIELD, TYPE_NOT_ALLOWED or FILE_TOO_LARGE"),
+            "429": problem("TOO_MANY_UPLOADS or RESPONSE_QUOTA_REACHED"),
+          },
+        },
+      },
+      "/public/v1/sessions/{sessionId}/uploads/{uploadId}/complete": {
+        parameters: [uuidPath("sessionId", "Respondent session ID"), uuidPath("uploadId", "Upload ID")],
+        post: {
+          operationId: "completeUpload",
+          summary: "Confirm the PUT finished; checks the stored size and queues the scan",
+          security: [{ sessionCapability: [] }],
+          responses: {
+            "200": json("Already confirmed: its current state", UploadStatusResponseSchema),
+            "202": json("Queued for scanning", UploadStatusResponseSchema),
+            "401": problem("SESSION_INVALID"),
+            "404": problem("No such upload in this session"),
+            "409": problem("UPLOAD_NOT_RECEIVED: nothing stored yet"),
+            "422": problem("SIZE_MISMATCH: the stored file is not the announced one; it was deleted"),
+          },
+        },
+      },
+      "/public/v1/sessions/{sessionId}/uploads/{uploadId}": {
+        parameters: [uuidPath("sessionId", "Respondent session ID"), uuidPath("uploadId", "Upload ID")],
+        get: {
+          operationId: "getUpload",
+          summary: "Where an upload is in quarantine and scanning (only this session's uploads)",
+          security: [{ sessionCapability: [] }],
+          responses: { "200": json("The upload's state", UploadStatusResponseSchema), "401": problem("SESSION_INVALID"), "404": problem("No such upload in this session") },
+        },
+      },
+      "/api/v1/organizations/{orgId}/forms/{formId}/submissions/{submissionId}/files/{uploadId}": {
+        parameters: [
+          uuidPath("orgId", "Organization (tenant) ID"),
+          uuidPath("formId", "Form ID"),
+          uuidPath("submissionId", "Submission ID"),
+          uuidPath("uploadId", "Upload ID"),
+        ],
+        get: {
+          operationId: "getSubmissionFile",
+          summary: "A 60-second link to download a clean file attached to a response (requires responses.read)",
+          security: [{ consoleSession: [] }],
+          responses: {
+            "200": json("The download link", FileDownloadResponseSchema),
+            "401": unauthenticated,
+            "403": crossOrigin,
+            "404": problem("No such file on this response, or not visible"),
           },
         },
       },

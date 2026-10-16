@@ -1,7 +1,7 @@
 import { evaluate, type AnswerError, type AnswerValue } from "@workeasy/form-engine";
 import type { FormDefinition } from "@workeasy/form-schema";
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
-import { FormField } from "./fields";
+import { FormField, type FileEntry } from "./fields";
 import { themeStyle } from "./theme";
 
 /**
@@ -16,6 +16,17 @@ import { themeStyle } from "./theme";
  */
 
 export type Answers = Record<string, AnswerValue>;
+
+/**
+ * Uploads one file for a file field (FIL-01). It reports progress through
+ * `onStatus` and resolves with the upload's ID once the file is accepted, or
+ * with an error to show. The public form provides one; previews do not.
+ */
+export type FileUploader = (
+  fieldId: string,
+  file: File,
+  onStatus: (status: "uploading" | "checking") => void,
+) => Promise<{ uploadId: string } | { error: string }>;
 
 export interface FormRendererProps {
   definition: FormDefinition;
@@ -32,7 +43,11 @@ export interface FormRendererProps {
   restartLabel?: string | undefined;
   /** Extra text under the success message, such as a receipt reference. */
   successDetail?: string | undefined;
+  /** Uploads files for file fields; without it, file fields cannot be answered. */
+  uploader?: FileUploader | undefined;
 }
+
+type AttachedFile = FileEntry & { uploadId?: string | undefined };
 
 type Phase = { kind: "filling" } | { kind: "submitting" } | { kind: "failed"; message: string } | { kind: "done" };
 
@@ -52,17 +67,29 @@ function focusControl(event: MouseEvent<HTMLAnchorElement>, id: string) {
   target.scrollIntoView?.({ block: "center" });
 }
 
-export function FormRenderer({ definition, onSubmit, idPrefix = "we", titleLevel = 1, restartLabel, successDetail }: FormRendererProps) {
+export function FormRenderer({ definition, onSubmit, idPrefix = "we", titleLevel = 1, restartLabel, successDetail, uploader }: FormRendererProps) {
   const [answers, setAnswers] = useState<Answers>({});
   const [pageId, setPageId] = useState<string | undefined>();
   const [attempted, setAttempted] = useState<ReadonlySet<string>>(new Set());
   const [phase, setPhase] = useState<Phase>({ kind: "filling" });
+  // Files per file field; only accepted ones become the field's answer (their upload IDs).
+  const [files, setFiles] = useState<Record<string, AttachedFile[]>>({});
+  const fileKey = useRef(0);
   const focusRef = useRef<"page" | "summary" | "done" | undefined>(undefined);
   const pageHeading = useRef<HTMLHeadingElement>(null);
   const summary = useRef<HTMLDivElement>(null);
   const doneHeading = useRef<HTMLHeadingElement>(null);
 
-  const evaluation = useMemo(() => evaluate(definition, knownAnswers(definition, answers)), [definition, answers]);
+  // File fields are answered by the upload IDs of their accepted files.
+  const allAnswers = useMemo(() => {
+    const merged: Answers = { ...answers };
+    for (const [fieldId, list] of Object.entries(files)) {
+      const ready = list.flatMap((f) => (f.status === "ready" && f.uploadId ? [f.uploadId] : []));
+      if (ready.length > 0) merged[fieldId] = ready;
+    }
+    return merged;
+  }, [answers, files]);
+  const evaluation = useMemo(() => evaluate(definition, knownAnswers(definition, allAnswers)), [definition, allAnswers]);
   const reachable = evaluation.reachablePageIds;
   // The page shown: the chosen one while it is still on the respondent's path, otherwise the first.
   const currentId = pageId !== undefined && reachable.includes(pageId) ? pageId : reachable[0];
@@ -98,7 +125,31 @@ export function FormRenderer({ definition, onSubmit, idPrefix = "we", titleLevel
     focusRef.current = "page";
   }
 
+  function updateFiles(fieldId: string, change: (list: AttachedFile[]) => AttachedFile[]) {
+    setFiles((prev) => ({ ...prev, [fieldId]: change(prev[fieldId] ?? []) }));
+  }
+
+  function attach(fieldId: string, chosen: FileList) {
+    if (!uploader) return;
+    for (const file of Array.from(chosen)) {
+      const key = `file-${(fileKey.current += 1)}`;
+      updateFiles(fieldId, (list) => [...list, { key, name: file.name, status: "uploading" }]);
+      const setEntry = (patch: Partial<AttachedFile>) => updateFiles(fieldId, (list) => list.map((f) => (f.key === key ? { ...f, ...patch } : f)));
+      void uploader(fieldId, file, (status) => setEntry({ status }))
+        .then((result) => setEntry("uploadId" in result ? { status: "ready", uploadId: result.uploadId } : { status: "failed", message: result.error }))
+        .catch(() => setEntry({ status: "failed", message: "The upload didn't finish. Remove it and try again." }));
+    }
+  }
+
+  const busyFiles = fieldsOnPage.some((f) => (files[f.id] ?? []).some((e) => e.status === "uploading" || e.status === "checking"));
+
   async function next() {
+    if (busyFiles) {
+      setPhase({ kind: "failed", message: "Wait until your files have finished uploading and being checked." });
+      focusRef.current = "summary";
+      return;
+    }
+    if (phase.kind === "failed") setPhase({ kind: "filling" });
     const problems = errorsOnPage(evaluation.errors);
     if (problems.length > 0) {
       setAttempted((prev) => new Set(prev).add(page.id));
@@ -136,6 +187,7 @@ export function FormRenderer({ definition, onSubmit, idPrefix = "we", titleLevel
 
   function restart() {
     setAnswers({});
+    setFiles({});
     setPageId(undefined);
     setAttempted(new Set());
     setPhase({ kind: "filling" });
@@ -219,9 +271,16 @@ export function FormRenderer({ definition, onSubmit, idPrefix = "we", titleLevel
               key={field.id}
               field={field}
               idPrefix={idPrefix}
-              value={answers[field.id]}
+              value={allAnswers[field.id]}
               required={required.has(field.id)}
               error={errorFor.get(field.id)}
+              {...(field.type === "file"
+                ? {
+                    fileEntries: files[field.id] ?? [],
+                    onFilesSelected: uploader ? (chosen: FileList) => attach(field.id, chosen) : undefined,
+                    onRemoveFile: (key: string) => updateFiles(field.id, (list) => list.filter((f) => f.key !== key)),
+                  }
+                : {})}
               onChange={(value) =>
                 setAnswers((prev) => {
                   const nextAnswers = { ...prev };

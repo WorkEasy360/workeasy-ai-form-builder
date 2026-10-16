@@ -14,6 +14,15 @@ const ConfigSchema = z
     CONSOLE_PUBLIC_URL: z.url(),
     /** Public origin of the respondent app: share links, QR codes and embeds point here. */
     RESPONDENT_PUBLIC_URL: z.url().default("http://localhost:3001"),
+    /** S3-compatible storage for uploads (docs/06 §3). */
+    OBJECT_STORAGE_ENDPOINT: z.url(),
+    /** Where browsers reach storage for presigned uploads and downloads; defaults to the endpoint. */
+    OBJECT_STORAGE_PUBLIC_ENDPOINT: z.url().optional(),
+    OBJECT_STORAGE_REGION: z.string().min(1).default("us-east-1"),
+    OBJECT_STORAGE_ACCESS_KEY: z.string().min(1),
+    OBJECT_STORAGE_SECRET_KEY: z.string().min(1),
+    OBJECT_STORAGE_BUCKET_QUARANTINE: z.string().min(3),
+    OBJECT_STORAGE_BUCKET_CLEAN: z.string().min(3),
     SESSION_SECRET: z.string().min(32, "SESSION_SECRET must be at least 32 characters"),
     SESSION_TTL_HOURS: z.coerce.number().int().min(1).max(168).default(12),
     SESSION_COOKIE_SECURE: z.stringbool().default(true),

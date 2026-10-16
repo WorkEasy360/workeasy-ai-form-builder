@@ -1,10 +1,16 @@
 import { Router, type Request, type Response } from "express";
-import { identityRepo, publicFormsRepo, withTenant, type PublicForm, type Unavailable } from "@workeasy/database";
+import { randomUUID } from "node:crypto";
+import { identityRepo, intakeRepo, publicFormsRepo, uploadsRepo, withTenant, type PublicForm, type RespondentSession, type Unavailable, type Upload } from "@workeasy/database";
+import { safeFileName } from "@workeasy/files";
+import type { Field, FormDefinition } from "@workeasy/form-schema";
 import type { AppDependencies } from "../app.js";
 import {
   IDEMPOTENCY_KEY_PATTERN,
   MAX_ANSWERS_BYTES,
   SubmitBodySchema,
+  UploadCreateBodySchema,
+  type UploadCreateResponse,
+  type UploadStatusResponse,
   type PublicAcceptanceResponse,
   type PublicFormResponse,
   type ReceiptBody,
@@ -16,6 +22,8 @@ import { problems, sendProblem } from "../http/problem.js";
 import { requestIdOf, requestLog } from "../http/request-context.js";
 import { requireSameOrigin } from "../http/same-origin.js";
 import { respondentAuthRouter, respondentSessionCookieName } from "./auth.js";
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** How long a public form may be cached; closing still takes effect at once at acceptance (docs/02 §5). */
 export const PUBLIC_FORM_MAX_AGE_SECONDS = 30;
@@ -30,7 +38,7 @@ type Access = { kind: "allowed"; actorId: string | null } | { kind: "sign_in" } 
  * Unknown, draft, archived and deleted forms are all "not found".
  */
 export function publicV1Router(deps: AppDependencies): Router {
-  const { publicDb, settings, logger } = deps;
+  const { publicDb, settings, logger, objectStore } = deps;
   const router = Router();
   const respondentCookie = respondentSessionCookieName(settings.secureCookies);
 
@@ -265,6 +273,148 @@ export function publicV1Router(deps: AppDependencies): Router {
         problems.validation(res, outcome.errors);
         return;
     }
+  });
+
+  // Uploads (FIL-01, docs/05 §3 and docs/06 §3) ------------------------------
+
+  /** How long a presigned upload URL stays valid. */
+  const UPLOAD_URL_SECONDS = 5 * 60;
+  /** Replacements allowed beyond a field's maxFiles, so a respondent can swap a file without abuse. */
+  const SPARE_UPLOADS = 5;
+
+  function uploadBody(upload: Upload): UploadStatusResponse {
+    return {
+      uploadId: upload.id,
+      fieldId: upload.fieldId,
+      fileName: upload.fileName,
+      bytes: upload.bytes,
+      state: upload.state,
+      rejectionReason: (upload.rejectionReason as UploadStatusResponse["rejectionReason"]) ?? null,
+    };
+  }
+
+  async function fileField(session: RespondentSession, fieldId: string): Promise<Field | undefined> {
+    const projection = await withTenant(publicDb, session.tenantId, (trx) => intakeRepo.versionProjection(trx, session.formId, session.formVersionId));
+    const field = (projection as unknown as FormDefinition | undefined)?.fields.find((f) => f.id === fieldId);
+    return field?.type === "file" ? field : undefined;
+  }
+
+  /**
+   * Prepares an upload: checks the session may still respond and the file
+   * suits the field, records it, and returns a presigned PUT to the
+   * quarantine bucket that accepts exactly this type and size briefly.
+   */
+  router.post("/sessions/:sessionId/uploads", async (req, res) => {
+    res.set("Cache-Control", "no-store");
+    const session = await sessionOf(req, res);
+    if (!session) return;
+    const body = UploadCreateBodySchema.safeParse(req.body);
+    if (!body.success) {
+      problems.validation(
+        res,
+        body.error.issues.map((i) => ({ field: i.path.map(String).join(".") || "body", code: i.code.toUpperCase(), message: i.message })),
+      );
+      return;
+    }
+    const { fieldId, contentType, bytes } = body.data;
+    const acceptance = await withTenant(publicDb, session.tenantId, (trx) => publicFormsRepo.checkSessionAcceptance(trx, session));
+    if (!acceptance.accepting) {
+      if (acceptance.reason === "access_revoked") sendProblem(res, 403, "NOT_A_MEMBER", "You no longer have access to this form");
+      else unavailable(res, acceptance.reason, acceptance.opensAt, false);
+      return;
+    }
+    const field = await fileField(session, fieldId);
+    if (!field) {
+      problems.validation(res, [{ field: "fieldId", code: "NOT_A_FILE_FIELD", message: "This question doesn't take files" }]);
+      return;
+    }
+    const allowed = field.settings.allowedMimeTypes ?? [];
+    if (!allowed.includes(contentType)) {
+      problems.validation(res, [{ field: "contentType", code: "TYPE_NOT_ALLOWED", message: "This type of file isn't accepted for this question" }]);
+      return;
+    }
+    if (bytes > (field.settings.maxFileBytes ?? 0)) {
+      problems.validation(res, [{ field: "bytes", code: "FILE_TOO_LARGE", message: "This file is larger than this question accepts" }]);
+      return;
+    }
+    const uploadId = randomUUID();
+    const storageKey = randomUUID();
+    const created = await withTenant(publicDb, session.tenantId, async (trx) => {
+      if ((await uploadsRepo.countActiveUploads(trx, session.id, fieldId)) >= (field.settings.maxFiles ?? 1) + SPARE_UPLOADS) return false;
+      await uploadsRepo.createUpload(trx, {
+        id: uploadId,
+        tenantId: session.tenantId,
+        formId: session.formId,
+        formVersionId: session.formVersionId,
+        sessionId: session.id,
+        fieldId,
+        fileName: safeFileName(body.data.fileName),
+        declaredType: contentType,
+        declaredBytes: bytes,
+        storageKey,
+      });
+      return true;
+    });
+    if (!created) {
+      sendProblem(res, 429, "TOO_MANY_UPLOADS", "Too many files were uploaded for this question. Remove some and try again.");
+      return;
+    }
+    const uploadUrl = await objectStore.presignUpload(storageKey, contentType, bytes, UPLOAD_URL_SECONDS);
+    const response: UploadCreateResponse = {
+      uploadId,
+      uploadUrl,
+      method: "PUT",
+      headers: { "Content-Type": contentType },
+      expiresAt: new Date(Date.now() + UPLOAD_URL_SECONDS * 1000).toISOString(),
+    };
+    res.status(201).json(response);
+  });
+
+  /** The browser finished its PUT: check what was stored, then queue the scan. */
+  router.post("/sessions/:sessionId/uploads/:uploadId/complete", async (req, res) => {
+    res.set("Cache-Control", "no-store");
+    const session = await sessionOf(req, res);
+    if (!session) return;
+    const uploadId = String(req.params.uploadId);
+    const upload = UUID_PATTERN.test(uploadId) ? await withTenant(publicDb, session.tenantId, (trx) => uploadsRepo.getSessionUpload(trx, session.id, uploadId)) : undefined;
+    if (!upload) {
+      notFound(res);
+      return;
+    }
+    if (upload.state !== "awaiting_upload") {
+      res.json(uploadBody(upload));
+      return;
+    }
+    const stored = await objectStore.head(objectStore.quarantineBucket, upload.storageKey);
+    if (!stored) {
+      sendProblem(res, 409, "UPLOAD_NOT_RECEIVED", "The file hasn't arrived yet. Upload it, then try again.");
+      return;
+    }
+    if (stored.bytes !== upload.declaredBytes) {
+      await withTenant(publicDb, session.tenantId, (trx) => uploadsRepo.rejectUpload(trx, session.id, upload.id, "size_mismatch"));
+      await objectStore.remove(objectStore.quarantineBucket, upload.storageKey);
+      problems.validation(res, [{ field: "bytes", code: "SIZE_MISMATCH", message: "The file that arrived isn't the one that was announced. Upload it again." }]);
+      return;
+    }
+    const updated = await withTenant(publicDb, session.tenantId, async (trx) => {
+      await uploadsRepo.markReceived(trx, session.id, upload.id, stored.bytes);
+      return uploadsRepo.getSessionUpload(trx, session.id, upload.id);
+    });
+    res.status(202).json(uploadBody(updated!));
+  });
+
+  /** Where an upload is in quarantine and scanning; nothing else about it. */
+  router.get("/sessions/:sessionId/uploads/:uploadId", async (req, res) => {
+    res.set("Cache-Control", "no-store");
+    const session = await sessionOf(req, res);
+    if (!session) return;
+    const uploadId = String(req.params.uploadId);
+    const upload = UUID_PATTERN.test(uploadId) ? await withTenant(publicDb, session.tenantId, (trx) => uploadsRepo.getSessionUpload(trx, session.id, uploadId)) : undefined;
+    if (!upload) {
+      notFound(res);
+      return;
+    }
+    res.json(uploadBody(upload));
   });
 
   return router;

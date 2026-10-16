@@ -61,6 +61,9 @@ services:
       AWS_ACCESS_KEY_ID: ${OBJECT_STORAGE_ACCESS_KEY}
       AWS_SECRET_ACCESS_KEY: ${OBJECT_STORAGE_SECRET_KEY}
       AWS_DEFAULT_REGION: ${OBJECT_STORAGE_REGION:-us-east-1}
+      # Respondents upload straight to the quarantine bucket with presigned PUTs.
+      RESPONDENT_ORIGIN: ${RESPONDENT_PUBLIC_URL:-http://localhost:3001}
+      QUARANTINE_BUCKET: ${OBJECT_STORAGE_BUCKET_QUARANTINE}
       BUCKETS: >-
         ${OBJECT_STORAGE_BUCKET_QUARANTINE:?set OBJECT_STORAGE_BUCKET_QUARANTINE in .env}
         ${OBJECT_STORAGE_BUCKET_CLEAN:?set OBJECT_STORAGE_BUCKET_CLEAN in .env}
@@ -81,7 +84,27 @@ services:
             echo "bucket created: $$bucket"
           fi
         done
+        $$s3 put-bucket-cors --bucket "$$QUARANTINE_BUCKET" --cors-configuration           "{\"CORSRules\":[{\"AllowedOrigins\":[\"$$RESPONDENT_ORIGIN\"],\"AllowedMethods\":[\"PUT\"],\"AllowedHeaders\":[\"*\"],\"MaxAgeSeconds\":600}]}"
+        echo "upload CORS set for $$RESPONDENT_ORIGIN"
     restart: "no"
+
+  # Malware scanner for uploads (FIL-01). The image ships its signature
+  # databases; automatic updates are off so local runs and CI are reproducible
+  # and do not hit ClamAV's download rate limits. Production must keep
+  # signatures current. Allow about a minute and 1 GiB of memory to start.
+  scanner:
+    image: clamav/clamav:1.5.1
+    environment:
+      CLAMAV_NO_FRESHCLAMD: "true"
+      CLAMAV_NO_MILTERD: "true"
+    ports:
+      - "127.0.0.1:${SCANNER_PORT:-3310}:3310"
+    healthcheck:
+      test: ["CMD-SHELL", "echo PING | nc -w 2 127.0.0.1 3310 | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 120s
 
   mail:
     image: axllent/mailpit:v1.31.5

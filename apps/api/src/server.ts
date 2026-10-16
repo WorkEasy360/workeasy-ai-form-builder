@@ -1,4 +1,5 @@
 import { createDb } from "@workeasy/database";
+import { createObjectStore } from "@workeasy/files";
 import { sql } from "kysely";
 import { createLogger } from "@workeasy/observability";
 import { createApp } from "./app.js";
@@ -21,6 +22,15 @@ const app = createApp({
   logger,
   db,
   publicDb,
+  objectStore: createObjectStore({
+    endpoint: config.OBJECT_STORAGE_ENDPOINT,
+    publicEndpoint: config.OBJECT_STORAGE_PUBLIC_ENDPOINT ?? config.OBJECT_STORAGE_ENDPOINT,
+    region: config.OBJECT_STORAGE_REGION,
+    accessKeyId: config.OBJECT_STORAGE_ACCESS_KEY,
+    secretAccessKey: config.OBJECT_STORAGE_SECRET_KEY,
+    quarantineBucket: config.OBJECT_STORAGE_BUCKET_QUARANTINE,
+    cleanBucket: config.OBJECT_STORAGE_BUCKET_CLEAN,
+  }),
   identityProvider: createOidcIdentityProvider({
     issuerUrl: config.OIDC_ISSUER_URL,
     clientId: config.OIDC_CLIENT_ID,

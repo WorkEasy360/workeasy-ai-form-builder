@@ -7,6 +7,8 @@ export * as orgRepo from "./repositories/organization.js";
 export * as publishRepo from "./repositories/publishing.js";
 export * as publicFormsRepo from "./repositories/public-forms.js";
 export * as intakeRepo from "./repositories/intake.js";
+export * as uploadsRepo from "./repositories/uploads.js";
+export type { NewUpload, ScanJob, ScanOutcome, Upload } from "./repositories/uploads.js";
 export type { LockedSession, NewSubmission, RecordedRequest } from "./repositories/intake.js";
 export type { Acceptance, Availability, FormGate, PublicForm, RespondentSession, StartedSession, Unavailable } from "./repositories/public-forms.js";
 export type { AuditInput, FormVersion, NewVersionInput, OutboxInput, VersionSummary } from "./repositories/publishing.js";

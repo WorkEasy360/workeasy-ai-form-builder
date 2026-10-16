@@ -3,6 +3,7 @@ import request from "supertest";
 import { describe, expect, it } from "vitest";
 import type { IdentityProvider } from "@workeasy/auth";
 import type { Db } from "@workeasy/database";
+import type { ObjectStore } from "@workeasy/files";
 import { createLogger } from "@workeasy/observability";
 import { createApp, type AppDependencies } from "./app.js";
 import { ProblemSchema, ReadyResponseSchema } from "./contract/schemas.js";
@@ -38,6 +39,7 @@ function build(overrides: Partial<AppDependencies> = {}) {
     logger: createLogger({ service: "api-test", level: "info", destination }),
     db: unused as Db,
     publicDb: unused as Db,
+    objectStore: unused as ObjectStore,
     identityProvider: unused as IdentityProvider,
     respondentIdentityProvider: unused as IdentityProvider,
     settings,

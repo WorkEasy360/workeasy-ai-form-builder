@@ -197,6 +197,31 @@ export interface UsageBucketsTable {
   updated_at: UpdatedAt;
 }
 
+export type UploadState = "awaiting_upload" | "pending_scan" | "scanning" | "clean" | "infected" | "rejected" | "expired";
+
+export interface FileUploadsTable {
+  id: string;
+  tenant_id: string;
+  form_id: string;
+  form_version_id: string;
+  session_id: string;
+  field_id: string;
+  file_name: string;
+  declared_type: string;
+  declared_bytes: number;
+  storage_key: string;
+  state: Generated<UploadState>;
+  detected_type: Generated<string | null>;
+  rejection_reason: Generated<string | null>;
+  bytes: Generated<number | null>;
+  scan_attempts: Generated<number>;
+  lease_until: Generated<Date | null>;
+  claimed_submission_id: Generated<string | null>;
+  created_at: CreatedAt;
+  updated_at: UpdatedAt;
+  expires_at: Generated<Date>;
+}
+
 export interface Database {
   tenants: TenantsTable;
   users: UsersTable;
@@ -214,6 +239,7 @@ export interface Database {
   submission_requests: SubmissionRequestsTable;
   form_response_counters: FormResponseCountersTable;
   usage_buckets: UsageBucketsTable;
+  file_uploads: FileUploadsTable;
 }
 
 export type Tenant = Selectable<TenantsTable>;

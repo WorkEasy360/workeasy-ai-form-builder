@@ -21,7 +21,7 @@ pnpm db:seed
 pnpm dev
 ```
 
-`pnpm infra:up` waits until PostgreSQL, Redis, object storage and the mail sink are healthy, then creates the private buckets. `pnpm db:setup` creates the database roles and schema and applies migrations; `pnpm db:seed` adds two local tenants (Acme Support and Globex HR) with members and sample forms. Open http://localhost:3000 and sign in as one of the [local users](#sign-in-and-permissions).
+`pnpm infra:up` waits until PostgreSQL, Redis, object storage, the mail sink, the identity provider and the malware scanner are healthy, then creates the private buckets and lets the respondent origin upload to quarantine (CORS). The scanner (ClamAV) needs about a minute and 1 GiB of memory to start. `pnpm db:setup` creates the database roles and schema and applies migrations; `pnpm db:seed` adds two local tenants (Acme Support and Globex HR) with members and sample forms. Open http://localhost:3000 and sign in as one of the [local users](#sign-in-and-permissions).
 
 | Process | URL |
 |---|---|
@@ -248,6 +248,25 @@ The respondent app serves published forms at `http://localhost:3001/f/<slug>`. T
 - **Embedding:** `/f/:slug` sends `Content-Security-Policy: frame-ancestors *`; every other respondent page refuses framing. The embed snippet (`?embed=1`) is an iframe plus a script. The embedded page posts only its height (`{ type: "workeasy:form-height", height }`). The host script accepts a message only from the respondent origin and only from that iframe. The respondent origin comes from `RESPONDENT_PUBLIC_URL` (default `http://localhost:3001`).
 - **Sample host:** `pnpm embed:sample` serves a third-party page at `http://localhost:3002`. Paste the embed code from the Share panel there and press **Embed** to check that the form loads and resizes on another origin.
 
+## Uploads and scanning (FIL-01)
+
+File questions accept uploads in three steps:
+
+1. The respondent page announces a file: `POST /public/v1/sessions/:id/uploads` with the field, name, type and size. The type must be one the field allows and the size within its limit (10 MiB at most). The response is a presigned PUT, valid for five minutes, that accepts exactly that type and size into the **quarantine** bucket under an opaque key. The file name is cleaned and used only for display.
+2. The browser PUTs the bytes straight to storage (`OBJECT_STORAGE_PUBLIC_ENDPOINT`), then calls `…/uploads/:uploadId/complete`. The API checks that the stored size matches and queues the scan.
+3. The worker's `scan-uploads` task leases queued uploads (`app.claim_scan_jobs`, `FOR UPDATE SKIP LOCKED`, across tenants) and checks each one in turn:
+   - its size and allowed types against the pinned version;
+   - its real type from the bytes, not the name or header;
+   - ClamAV (`clamd` INSTREAM).
+
+   A clean file moves to the **clean** bucket. Infected or mismatched files are deleted and marked `infected` or `rejected`. If the scanner can't be reached, the file stays pending and is retried; it is never passed unscanned.
+
+On submit, intake checks every attached upload: it must belong to this session and field, be clean and be unclaimed. Otherwise the result is `422` with `FILE_PENDING`, `FILE_INFECTED`, `FILE_REJECTED`, `FILE_EXPIRED` or `FILE_NOT_FOUND`, and nothing is stored or counted. Accepted uploads are claimed all or nothing with `app.claim_uploads`, so a file can belong to only one response. Unclaimed uploads expire after 24 hours, and the worker's `expire-uploads` task deletes their bytes.
+
+No runtime role can change an upload's state directly; every transition is a database function. Reviewers with `responses.read` get a 60-second download link: `GET /api/v1/organizations/:orgId/forms/:formId/submissions/:sid/files/:uploadId`, served as an attachment with a safe file name.
+
+The respondent page shows each file as uploading, checking, ready or not accepted, and won't continue while one is still being checked. To try a blocked file locally, attach a text file containing the [EICAR test string](https://www.eicar.org/download-anti-malware-testfile/). Signature updates are off in the local scanner (`CLAMAV_NO_FRESHCLAMD`), so runs are reproducible; production must keep signatures current.
+
 ## Errors, logs and health
 
 - **Request IDs.** Every API response has an `X-Request-Id` (`req_…`). Every log line written while handling the request carries the same ID. An incoming `X-Request-Id` is recorded only as `upstreamRequestId`, and only if it is plainly safe to log; it is never reused as our own.
@@ -286,4 +305,3 @@ Later backlog items add these:
 - Secret scanning and container image scanning in CI
 - Audit events for grant changes and sign-ins (GOV-01)
 - Rate limiting on sign-in, and invalidating sessions after high-risk account changes
-- Malware scanner (FIL-01)

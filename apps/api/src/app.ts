@@ -1,6 +1,7 @@
 import express, { type ErrorRequestHandler, type Express } from "express";
 import type { IdentityProvider } from "@workeasy/auth";
 import type { Db } from "@workeasy/database";
+import type { ObjectStore } from "@workeasy/files";
 import type { Logger } from "@workeasy/observability";
 import { healthRouter, type ReadinessCheck } from "./http/health.js";
 import { sendProblem } from "./http/problem.js";
@@ -28,6 +29,8 @@ export interface AppDependencies {
   db: Db;
   /** Connection as the public role, for respondent routes only. */
   publicDb: Db;
+  /** Upload storage: presigned uploads to quarantine, downloads from the clean bucket. */
+  objectStore: ObjectStore;
   identityProvider: IdentityProvider;
   /** The same identity provider, redirecting back to the respondent origin. */
   respondentIdentityProvider: IdentityProvider;

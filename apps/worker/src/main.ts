@@ -1,3 +1,5 @@
+import { createDb } from "@workeasy/database";
+import { createObjectStore, expireStaleUploads, scanPendingUploads, type ScanDeps } from "@workeasy/files";
 import { createLogger } from "@workeasy/observability";
 import { loadConfig } from "./config.js";
 import { createHealthServer } from "./health.js";
@@ -6,8 +8,38 @@ import { startRunner, type PollingTask } from "./runner.js";
 const config = loadConfig();
 const logger = createLogger({ service: "worker", level: config.LOG_LEVEL });
 
-// Outbox dispatch and job handlers are registered here by JOB-01 onwards.
-const tasks: PollingTask[] = [];
+const workerDb = createDb({ connectionString: config.DATABASE_WORKER_URL, applicationName: "workeasy-worker" });
+const scanDeps: ScanDeps = {
+  workerDb,
+  store: createObjectStore({
+    endpoint: config.OBJECT_STORAGE_ENDPOINT,
+    publicEndpoint: config.OBJECT_STORAGE_PUBLIC_ENDPOINT ?? config.OBJECT_STORAGE_ENDPOINT,
+    region: config.OBJECT_STORAGE_REGION,
+    accessKeyId: config.OBJECT_STORAGE_ACCESS_KEY,
+    secretAccessKey: config.OBJECT_STORAGE_SECRET_KEY,
+    quarantineBucket: config.OBJECT_STORAGE_BUCKET_QUARANTINE,
+    cleanBucket: config.OBJECT_STORAGE_BUCKET_CLEAN,
+  }),
+  scanner: { host: config.SCANNER_HOST, port: config.SCANNER_PORT },
+  log: (level, message, fields) => logger[level](fields, message),
+};
+
+// Outbox dispatch and job handlers join these from JOB-01 onwards.
+const tasks: PollingTask[] = [
+  {
+    name: "scan-uploads",
+    async run() {
+      // One batch per iteration: if the scanner is down, retries wait for the next interval.
+      await scanPendingUploads(scanDeps, 10);
+    },
+  },
+  {
+    name: "expire-uploads",
+    async run() {
+      await expireStaleUploads(scanDeps, 100);
+    },
+  },
+];
 
 const runner = startRunner({ tasks, intervalMs: config.WORKER_POLL_INTERVAL_MS, logger });
 logger.info({ tasks: tasks.map((t) => t.name), intervalMs: config.WORKER_POLL_INTERVAL_MS }, "worker started");
@@ -28,6 +60,7 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
   logger.info({ signal }, "worker stopping; finishing in-flight work");
   await runner.stop();
   health.close();
+  await workerDb.destroy();
   logger.info("worker stopped");
   process.exit(0);
 }

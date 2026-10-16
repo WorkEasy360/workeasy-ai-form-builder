@@ -1,7 +1,7 @@
 "use client";
 
 import { canonicalJson, type AnswerValue } from "@workeasy/form-engine";
-import { FormRenderer, RENDERER_CSS } from "@workeasy/form-renderer";
+import { FormRenderer, RENDERER_CSS, type FileUploader } from "@workeasy/form-renderer";
 import type { FormDefinition } from "@workeasy/form-schema";
 import { useEffect, useRef, useState } from "react";
 
@@ -59,6 +59,59 @@ function refusal(status: number, body: { code?: string; errors?: Array<{ message
   if (status === 422) return `Some answers need attention: ${(body.errors ?? []).map((e) => e.message).join(" ") || "please check them."}`;
   if (status === 429) return "Too many attempts. Wait a moment and try again; your answers are still here.";
   return "Something went wrong. Please try again; your answers are still here.";
+}
+
+const REJECTION_TEXT: Record<string, string> = {
+  malware: "it was blocked by the virus check",
+  type_mismatch: "its content doesn't match its file type",
+  size_mismatch: "it didn't arrive complete; try again",
+  too_large: "it is larger than this question accepts",
+};
+
+const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Uploads one file (FIL-01): announce it to get a presigned URL, PUT the
+ * bytes straight to quarantine storage, confirm, then wait for the scan.
+ * Only a file the scan accepted is attached to the answer.
+ */
+function uploaderFor(session: Session): FileUploader {
+  const auth = { authorization: `Bearer ${session.capability}` };
+  const base = `/public/v1/sessions/${encodeURIComponent(session.sessionId)}/uploads`;
+  return async (fieldId, file, onStatus) => {
+    try {
+      const created = await fetch(base, {
+        method: "POST",
+        headers: { ...auth, "content-type": "application/json" },
+        body: JSON.stringify({ fieldId, fileName: file.name, contentType: file.type || "application/octet-stream", bytes: file.size }),
+      });
+      if (!created.ok) {
+        const problem = (await created.json().catch(() => ({}))) as { title?: string; errors?: Array<{ message: string }> };
+        return { error: problem.errors?.[0]?.message ?? problem.title ?? "This file can't be attached." };
+      }
+      const target = (await created.json()) as { uploadId: string; uploadUrl: string; headers: Record<string, string> };
+      const put = await fetch(target.uploadUrl, { method: "PUT", headers: target.headers, body: file });
+      if (!put.ok) return { error: "The upload didn't finish. Remove it and try again." };
+      const done = await fetch(`${base}/${target.uploadId}/complete`, { method: "POST", headers: auth });
+      if (!done.ok) return { error: "The upload didn't finish. Remove it and try again." };
+      onStatus("checking");
+      // Scans usually take seconds; give up waiting after three minutes.
+      for (let attempt = 0; attempt < 120; attempt++) {
+        await pause(1500);
+        const res = await fetch(`${base}/${target.uploadId}`, { headers: auth, cache: "no-store" });
+        if (!res.ok) continue;
+        const upload = (await res.json()) as { state: string; rejectionReason: string | null };
+        if (upload.state === "clean") return { uploadId: target.uploadId };
+        if (upload.state === "infected" || upload.state === "rejected") {
+          return { error: `This file wasn't accepted: ${REJECTION_TEXT[upload.rejectionReason ?? ""] ?? "please try another file"}.` };
+        }
+        if (upload.state === "expired") return { error: "The upload expired. Remove it and try again." };
+      }
+      return { error: "Checking this file is taking too long. Remove it and try again later." };
+    } catch {
+      return { error: "We couldn't reach Workeasy Forms. Check your connection, remove the file and try again." };
+    }
+  };
 }
 
 export function PublicForm({ slug, versionId, definition, embed }: { slug: string; versionId: string; definition: FormDefinition; embed: boolean }) {
@@ -134,6 +187,7 @@ export function PublicForm({ slug, versionId, definition, embed }: { slug: strin
         definition={shown}
         idPrefix="form"
         onSubmit={submit}
+        uploader={state.kind === "ready" ? uploaderFor(state.session) : undefined}
         successDetail={receipt ? `Your receipt number is ${receipt.receiptId.slice(0, 8).toUpperCase()}. Keep it if you need to refer to this response.` : undefined}
       />
     </main>

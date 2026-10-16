@@ -10,6 +10,22 @@ import type { ComponentType, ReactNode } from "react";
  * as text: React escapes labels, so markup in a label is never interpreted.
  */
 
+/** One file the respondent attached: uploading, being checked, ready to submit, or refused. */
+export interface FileEntry {
+  key: string;
+  name: string;
+  status: "uploading" | "checking" | "ready" | "failed";
+  /** Why it failed, in respondent terms. */
+  message?: string | undefined;
+}
+
+const FILE_STATUS_TEXT: Record<FileEntry["status"], string> = {
+  uploading: "Uploading…",
+  checking: "Checking the file…",
+  ready: "Ready",
+  failed: "Not accepted",
+};
+
 export interface FieldControlProps {
   field: Field;
   value: AnswerValue | undefined;
@@ -22,6 +38,9 @@ export interface FieldControlProps {
   disabled?: boolean | undefined;
   /** Called with chosen files; uploading belongs to the respondent runtime (FIL-01). */
   onFilesSelected?: ((files: FileList) => void) | undefined;
+  /** Files attached to a file field, with where each one is in upload and scanning. */
+  fileEntries?: readonly FileEntry[] | undefined;
+  onRemoveFile?: ((key: string) => void) | undefined;
   /** Prefix keeping element IDs unique when several renderers share a page. */
   idPrefix?: string | undefined;
 }
@@ -333,7 +352,9 @@ function SingleCheckbox(props: FieldControlProps) {
 function FileInput(props: FieldControlProps) {
   const ids = idsFor(props);
   const { allowedMimeTypes, maxFiles } = props.field.settings;
-  const attached = Array.isArray(props.value) ? props.value.length : 0;
+  const entries = props.fileEntries ?? [];
+  const usable = entries.filter((e) => e.status !== "failed").length;
+  const canAdd = !props.disabled && props.onFilesSelected !== undefined && usable < (maxFiles ?? 1);
   return (
     <Labelled props={props} ids={ids}>
       <input
@@ -342,11 +363,31 @@ function FileInput(props: FieldControlProps) {
         type="file"
         accept={allowedMimeTypes?.join(",")}
         multiple={(maxFiles ?? 1) > 1}
+        disabled={props.disabled || !canAdd}
         onChange={(e) => {
           if (e.target.files && props.onFilesSelected) props.onFilesSelected(e.target.files);
+          // Allow choosing the same file again after removing it.
+          e.target.value = "";
         }}
       />
-      {attached > 0 && <p className="we-help">{attached === 1 ? "1 file attached" : `${attached} files attached`}</p>}
+      {props.onFilesSelected === undefined && !props.disabled && <p className="we-help">Files can be attached on the published form.</p>}
+      {entries.length > 0 && (
+        <ul className="we-files" aria-live="polite">
+          {entries.map((entry) => (
+            <li key={entry.key} data-status={entry.status}>
+              <span className="we-file-name">{entry.name}</span>
+              <span className="we-file-status">
+                {entry.status === "failed" && entry.message ? entry.message : FILE_STATUS_TEXT[entry.status]}
+              </span>
+              {props.onRemoveFile && (
+                <button type="button" className="we-button we-file-remove" onClick={() => props.onRemoveFile?.(entry.key)} aria-label={`Remove ${entry.name}`}>
+                  Remove
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
     </Labelled>
   );
 }

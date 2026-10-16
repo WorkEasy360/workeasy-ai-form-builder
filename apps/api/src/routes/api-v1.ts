@@ -13,6 +13,7 @@ import {
   identityRepo,
   orgRepo,
   publishRepo,
+  uploadsRepo,
   withContext,
   type Database,
   type AccessPolicy,
@@ -48,6 +49,7 @@ import {
   type FormListResponse,
   type AccessPolicyResponse,
   type DraftResponse,
+  type FileDownloadResponse,
   type FormResponse,
   type FormSummaryBody,
   type MeResponse,
@@ -227,7 +229,7 @@ interface FormContext {
   membership: MembershipRecord;
 }
 
-export function apiV1Router({ db, settings }: AppDependencies): Router {
+export function apiV1Router({ db, settings, objectStore }: AppDependencies): Router {
   const router = Router();
   const sessionCookie = sessionCookieName(settings.secureCookies);
 
@@ -870,6 +872,42 @@ export function apiV1Router({ db, settings }: AppDependencies): Router {
           metadata: { activeVersionId: form.activeVersionId },
         });
         return { kind: "ok", body: await formResponse(trx, form, permissions) };
+      }),
+    );
+  });
+
+  // Files (FIL-01) ----------------------------------------------------------
+
+  /** How long a download link works. */
+  const DOWNLOAD_URL_SECONDS = 60;
+
+  /**
+   * A short-lived link to a clean file attached to a response (docs/06 §3).
+   * Authorization is checked now, on every request: removing someone's
+   * response access stops new links at once.
+   */
+  router.get("/organizations/:orgId/forms/:formId/submissions/:submissionId/files/:uploadId", async (req, res) => {
+    const { orgId, formId, submissionId, uploadId } = req.params;
+    if (!UUID_PATTERN.test(submissionId) || !UUID_PATTERN.test(uploadId)) {
+      problems.notFound(res);
+      return;
+    }
+    respond(
+      res,
+      await onForm(res, orgId, formId, "responses.read", async (trx): Promise<Outcome<FileDownloadResponse>> => {
+        const upload = await uploadsRepo.getClaimedUpload(trx, formId, submissionId, uploadId);
+        if (!upload) return { kind: "not_found" };
+        const contentType = upload.detectedType ?? "application/octet-stream";
+        return {
+          kind: "ok",
+          body: {
+            url: await objectStore.presignDownload(upload.storageKey, upload.fileName, contentType, DOWNLOAD_URL_SECONDS),
+            expiresAt: new Date(Date.now() + DOWNLOAD_URL_SECONDS * 1000).toISOString(),
+            fileName: upload.fileName,
+            contentType,
+            bytes: upload.bytes ?? 0,
+          },
+        };
       }),
     );
   });

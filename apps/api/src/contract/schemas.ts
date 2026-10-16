@@ -275,3 +275,49 @@ export const ReceiptSchema = z.object({
   consents: z.array(z.object({ fieldId: z.string(), consentTextVersion: z.string().nullable() })),
 });
 export type ReceiptBody = z.infer<typeof ReceiptSchema>;
+
+/** Upload size cap (docs/01 §5): 10 MiB per file. */
+export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+
+export const UploadCreateBodySchema = z.object({
+  /** A file field of the session's version. */
+  fieldId: z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{1,79}$/),
+  /** Shown back to the respondent and to reviewers; never used as a storage path. */
+  fileName: z.string().min(1).max(255),
+  /** Must be one of the field's allowed types; the scan checks the bytes match it. */
+  contentType: z.string().min(3).max(100),
+  bytes: z.number().int().min(1).max(MAX_UPLOAD_BYTES),
+});
+
+export const UPLOAD_STATES = ["awaiting_upload", "pending_scan", "scanning", "clean", "infected", "rejected", "expired"] as const;
+
+export const UploadCreateResponseSchema = z.object({
+  uploadId: Uuid,
+  /** PUT the file here with exactly the headers below, before expiresAt. */
+  uploadUrl: z.url(),
+  method: z.literal("PUT"),
+  headers: z.record(z.string(), z.string()),
+  expiresAt: Timestamp,
+});
+export type UploadCreateResponse = z.infer<typeof UploadCreateResponseSchema>;
+
+export const UploadStatusResponseSchema = z.object({
+  uploadId: Uuid,
+  fieldId: z.string(),
+  fileName: z.string(),
+  bytes: z.number().int().nullable(),
+  /** clean files can be submitted; infected and rejected ones cannot. */
+  state: z.enum(UPLOAD_STATES),
+  rejectionReason: z.enum(["malware", "type_mismatch", "size_mismatch", "too_large"]).nullable(),
+});
+export type UploadStatusResponse = z.infer<typeof UploadStatusResponseSchema>;
+
+export const FileDownloadResponseSchema = z.object({
+  /** Short-lived link that downloads the file as an attachment. */
+  url: z.url(),
+  expiresAt: Timestamp,
+  fileName: z.string(),
+  contentType: z.string(),
+  bytes: z.number().int(),
+});
+export type FileDownloadResponse = z.infer<typeof FileDownloadResponseSchema>;

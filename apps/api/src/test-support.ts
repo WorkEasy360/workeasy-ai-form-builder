@@ -1,5 +1,6 @@
 import type { IdentityProvider } from "@workeasy/auth";
 import type { Db } from "@workeasy/database";
+import { createObjectStore, type ObjectStore } from "@workeasy/files";
 import { createLogger } from "@workeasy/observability";
 import type { Express } from "express";
 import { sql } from "kysely";
@@ -17,6 +18,24 @@ export const testSettings: AppSettings = {
   secureCookies: false,
 };
 
+/**
+ * The local S3-compatible storage from `pnpm infra:up`, configured like the
+ * API from .env (loaded by the integration global setup).
+ */
+export function testObjectStore(): ObjectStore {
+  const env = process.env;
+  const endpoint = env.OBJECT_STORAGE_ENDPOINT ?? "http://127.0.0.1:9000";
+  return createObjectStore({
+    endpoint,
+    publicEndpoint: env.OBJECT_STORAGE_PUBLIC_ENDPOINT ?? endpoint,
+    region: env.OBJECT_STORAGE_REGION ?? "us-east-1",
+    accessKeyId: env.OBJECT_STORAGE_ACCESS_KEY ?? "local-dev-access",
+    secretAccessKey: env.OBJECT_STORAGE_SECRET_KEY ?? "local-dev-secret-key",
+    quarantineBucket: env.OBJECT_STORAGE_BUCKET_QUARANTINE ?? "workeasy-quarantine",
+    cleanBucket: env.OBJECT_STORAGE_BUCKET_CLEAN ?? "workeasy-clean",
+  });
+}
+
 /** An identity provider for tests that must not reach sign-in. */
 export const unusedIdentityProvider: IdentityProvider = {
   beginLogin: () => Promise.reject(new Error("identity provider not available in this test")),
@@ -33,11 +52,13 @@ export function buildTestApp(
   settings = testSettings,
   publicDb: Db = db,
   respondentIdentityProvider: IdentityProvider = identityProvider,
+  objectStore: ObjectStore = testObjectStore(),
 ): Express {
   return createApp({
     logger: createLogger({ service: "api-test", level: "silent" }),
     db,
     publicDb,
+    objectStore,
     identityProvider,
     respondentIdentityProvider,
     settings,

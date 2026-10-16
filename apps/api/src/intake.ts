@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { intakeRepo, publicFormsRepo, publishRepo, withTenant, type Db, type RespondentSession, type Unavailable } from "@workeasy/database";
+import { intakeRepo, publicFormsRepo, publishRepo, uploadsRepo, withTenant, type Db, type RespondentSession, type Unavailable, type Upload } from "@workeasy/database";
 import { SUBMISSION_ACCEPTED_V1, submissionAcceptedV1 } from "@workeasy/events";
 import { canonicalJson, evaluate } from "@workeasy/form-engine";
 import type { FormDefinition } from "@workeasy/form-schema";
@@ -51,7 +51,35 @@ export function requestDigest(formVersionId: string, answers: Record<string, unk
   return sha256(canonicalJson({ formVersionId, answers }));
 }
 
-export function intake(publicDb: Db, request: IntakeRequest): Promise<IntakeOutcome> {
+/** Why an attached upload cannot be submitted, in respondent terms. */
+function uploadProblem(upload: Upload | undefined, fieldId: string): FieldError | undefined {
+  const field = `answers.${fieldId}`;
+  if (!upload || upload.fieldId !== fieldId || upload.claimedSubmissionId) {
+    return { field, code: "FILE_NOT_FOUND", message: "One of the files is no longer available. Upload it again." };
+  }
+  if (upload.state === "clean") return undefined;
+  if (upload.state === "infected") return { field, code: "FILE_INFECTED", message: "A file was blocked by the virus check. Remove it to continue." };
+  if (upload.state === "rejected") {
+    return { field, code: "FILE_REJECTED", message: "A file's content doesn't match its type, or it is too large. Remove it to continue." };
+  }
+  if (upload.state === "expired") return { field, code: "FILE_EXPIRED", message: "A file has expired. Upload it again." };
+  return { field, code: "FILE_PENDING", message: "A file is still being checked. Try again in a moment." };
+}
+
+/** Raised by app.claim_uploads when a file was claimed or changed after it was checked. */
+const isClaimRace = (err: unknown) => err instanceof Error && /UPLOAD_NOT_CLAIMABLE/.test(err.message);
+
+export async function intake(publicDb: Db, request: IntakeRequest): Promise<IntakeOutcome> {
+  try {
+    return await intakeTransaction(publicDb, request);
+  } catch (err) {
+    if (!isClaimRace(err)) throw err;
+    // Nothing was stored: the transaction rolled back. The respondent can retry.
+    return { kind: "invalid", errors: [{ field: "answers", code: "FILE_NOT_FOUND", message: "One of the files changed while sending. Try again." }] };
+  }
+}
+
+function intakeTransaction(publicDb: Db, request: IntakeRequest): Promise<IntakeOutcome> {
   const { session } = request;
   const keyHash = sha256(request.idempotencyKey);
   const requestHash = requestDigest(request.formVersionId, request.answers);
@@ -95,6 +123,16 @@ export function intake(publicDb: Db, request: IntakeRequest): Promise<IntakeOutc
       return { kind: "invalid", errors: evaluation.errors.map((e) => ({ field: e.fieldId ? `answers.${e.fieldId}` : "answers", code: e.code, message: e.message })) };
     }
 
+    // 6b. Files: every attached upload must be this session's, for that field, scanned clean and unclaimed.
+    const fileClaims = definition.fields
+      .filter((f) => f.type === "file" && Array.isArray(evaluation.answers[f.id]))
+      .flatMap((f) => (evaluation.answers[f.id] as string[]).map((uploadId) => ({ uploadId, fieldId: f.id })));
+    if (fileClaims.length > 0) {
+      const uploads = new Map((await uploadsRepo.uploadsByIds(trx, session.id, fileClaims.map((c) => c.uploadId))).map((u) => [u.id, u]));
+      const problems = fileClaims.flatMap((c) => uploadProblem(uploads.get(c.uploadId), c.fieldId) ?? []);
+      if (problems.length > 0) return { kind: "invalid", errors: problems };
+    }
+
     // 7. Reserve against the form's limit and the tenant's quota; only valid answers count (docs/04 §5).
     const reserved = await intakeRepo.reserveResponse(trx, locked.formId);
     if (reserved !== "ok") return { kind: "unavailable", reason: reserved === "form_full" ? "full" : "quota" };
@@ -128,6 +166,8 @@ export function intake(publicDb: Db, request: IntakeRequest): Promise<IntakeOutc
       },
       { keyHash, requestHash, receipt: receipt as unknown as Record<string, unknown> },
     );
+    // Claimed all or nothing; a race with another claim rolls the whole intake back.
+    await uploadsRepo.claimUploads(trx, session.id, submissionId, fileClaims);
     const event = submissionAcceptedV1({
       eventId: randomUUID(),
       occurredAt: receivedAt,

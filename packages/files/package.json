@@ -1,0 +1,21 @@
+{
+  "name": "@workeasy/files",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Upload storage, malware scanning and file type detection (server only).",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "3.1144.0",
+    "@aws-sdk/s3-request-presigner": "3.1144.0",
+    "@workeasy/database": "workspace:*"
+  },
+  "devDependencies": {
+    "@workeasy/form-schema": "workspace:*"
+  }
+}

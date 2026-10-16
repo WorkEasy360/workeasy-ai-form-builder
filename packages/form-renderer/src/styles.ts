@@ -47,6 +47,14 @@ export const RENDERER_CSS = `
   color: var(--we-color-accentText, #fff); font-weight: 600; }
 .we-button:focus-visible { outline: 2px solid var(--we-color-focus, #2563EB); outline-offset: 2px; }
 .we-button:disabled { opacity: .6; cursor: progress; }
+.we-files { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 8px; }
+.we-files li { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; padding: 8px 12px;
+  border: 1px solid var(--we-color-border, #9CA3AF); border-radius: var(--we-form-radius, 8px); }
+.we-files li[data-status="failed"] { border-color: var(--we-color-danger, #B91C1C); }
+.we-file-name { font-weight: 600; overflow-wrap: anywhere; }
+.we-file-status { color: var(--we-color-textMuted, #4B5563); flex: 1 1 auto; }
+.we-files li[data-status="failed"] .we-file-status { color: var(--we-color-danger, #B91C1C); }
+.we-file-remove { min-height: 36px; padding: 4px 12px; }
 /* Narrow forms (a phone, or the builder's mobile preview) get full-width buttons. */
 @container (max-width: 480px) {
   .we-actions .we-button { flex: 1 1 auto; }
