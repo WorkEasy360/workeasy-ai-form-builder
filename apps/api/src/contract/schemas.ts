@@ -321,3 +321,86 @@ export const FileDownloadResponseSchema = z.object({
   bytes: z.number().int(),
 });
 export type FileDownloadResponse = z.infer<typeof FileDownloadResponseSchema>;
+
+// Responses (RES-01) --------------------------------------------------------
+
+export const ANSWER_FILTER_OPS = ["eq", "contains", "isEmpty", "isNotEmpty"] as const;
+
+export const ResponseListQuerySchema = z
+  .object({
+    limit: z.coerce.number().int().min(1).max(100).default(25),
+    /** From the previous page; keeps the same cutoff, so pages never repeat or skip a response. */
+    cursor: z.string().min(1).max(500).optional(),
+    /** Only responses to this version. */
+    version: Uuid.optional(),
+    /** Received at or after this instant. */
+    from: Timestamp.optional(),
+    /** Received before this instant. */
+    to: Timestamp.optional(),
+    /** One answer filter: a field ID the caller can read, an operator and (for eq/contains) a value. */
+    field: z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{1,79}$/).optional(),
+    op: z.enum(ANSWER_FILTER_OPS).optional(),
+    value: z.string().max(200).optional(),
+  })
+  .refine((q) => (q.field === undefined) === (q.op === undefined), { message: "field and op go together", path: ["op"] })
+  .refine((q) => !(q.op === "eq" || q.op === "contains") || (q.value !== undefined && q.value !== ""), { message: "This filter needs a value", path: ["value"] });
+
+const PRIVACY = z.enum(["ordinary", "personal", "sensitive"]);
+
+export const MaskedAnswerSchema = z.union([
+  z.object({ masked: z.literal(true) }),
+  z.object({ masked: z.literal(false), value: z.unknown(), display: z.string() }),
+]);
+
+export const ResponseColumnSchema = z.object({
+  fieldId: z.string(),
+  label: z.string(),
+  type: z.string(),
+  privacy: PRIVACY,
+  /** True when the caller may not see this field's answers. */
+  masked: z.boolean(),
+});
+
+export const ResponseListResponseSchema = z.object({
+  columns: z.array(ResponseColumnSchema),
+  items: z.array(
+    z.object({
+      id: Uuid,
+      receiptNumber: z.string(),
+      receivedAt: Timestamp,
+      versionNumber: z.number().int(),
+      /** By field ID; only fields of the response's own version appear. */
+      answers: z.record(z.string(), MaskedAnswerSchema),
+    }),
+  ),
+  /** Responses received up to the cutoff (matching the filters is not reflected). */
+  total: z.number().int(),
+  /** Pages of this listing include responses received up to this instant. */
+  cutoff: Timestamp,
+  nextCursor: z.string().optional(),
+});
+export type ResponseListResponse = z.infer<typeof ResponseListResponseSchema>;
+
+const AttachedFileSchema = z.object({ uploadId: Uuid, fileName: z.string(), bytes: z.number().int().nullable(), contentType: z.string().nullable() });
+
+export const ResponseDetailResponseSchema = z.object({
+  id: Uuid,
+  receiptNumber: z.string(),
+  receivedAt: Timestamp,
+  version: z.object({ id: Uuid, versionNumber: z.number().int(), active: z.boolean() }),
+  /** Who responded: anonymous, or a signed-in member (personal data, masked without responses.read_personal). */
+  respondent: z.union([
+    z.object({ kind: z.literal("anonymous") }),
+    z.object({ kind: z.literal("member"), masked: z.literal(true) }),
+    z.object({ kind: z.literal("member"), masked: z.literal(false), userId: Uuid, displayName: z.string().nullable() }),
+  ]),
+  /** The response's own version's questions, in order. */
+  fields: z.array(
+    ResponseColumnSchema.extend({
+      answer: MaskedAnswerSchema,
+      /** Attached files, only when the field is visible to the caller. */
+      files: z.array(AttachedFileSchema).optional(),
+    }),
+  ),
+});
+export type ResponseDetailResponse = z.infer<typeof ResponseDetailResponseSchema>;

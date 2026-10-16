@@ -312,7 +312,15 @@ function Editor({
       <style>{BUILDER_CSS + RENDERER_CSS}</style>
       <header className="b-topbar">
         <div style={{ display: "grid", gap: 2 }}>
-          <a href={listHref}>← Forms</a>
+          <span>
+            <a href={listHref}>← Forms</a>
+            {form.permissions.includes("responses.read") && (
+              <>
+                {" · "}
+                <a href={`${listHref}/${form.id}/responses`}>Responses</a>
+              </>
+            )}
+          </span>
           <h1>{formName}</h1>
         </div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>

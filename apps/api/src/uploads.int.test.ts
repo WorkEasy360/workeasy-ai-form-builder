@@ -183,6 +183,11 @@ describe("clean files", () => {
 
     // No response access, another tenant, or a file of another submission: not found.
     expectProblem(await consoleReq("analystA", "get", filePath), 404, "NOT_FOUND");
+    // Response access alone is not enough: files are personal data unless the field says otherwise.
+    await consoleReq("ownerA", "put", `${f.path}/grants`)
+      .send({ grants: [{ principalType: "user", principalId: roleUser(a, "analyst"), permission: "responses.read" }] })
+      .expect(200);
+    expectProblem(await consoleReq("analystA", "get", filePath), 403, "FORBIDDEN");
     expectProblem(await consoleReq("ownerB", "get", filePath), 404, "NOT_FOUND");
     expectProblem(await consoleReq("ownerA", "get", `${f.path}/submissions/${randomUUID()}/files/${uploadId}`), 404, "NOT_FOUND");
   });

@@ -248,6 +248,14 @@ The respondent app serves published forms at `http://localhost:3001/f/<slug>`. T
 - **Embedding:** `/f/:slug` sends `Content-Security-Policy: frame-ancestors *`; every other respondent page refuses framing. The embed snippet (`?embed=1`) is an iframe plus a script. The embedded page posts only its height (`{ type: "workeasy:form-height", height }`). The host script accepts a message only from the respondent origin and only from that iframe. The respondent origin comes from `RESPONDENT_PUBLIC_URL` (default `http://localhost:3001`).
 - **Sample host:** `pnpm embed:sample` serves a third-party page at `http://localhost:3002`. Paste the embed code from the Share panel there and press **Embed** to check that the form loads and resizes on another origin.
 
+## Responses (RES-01)
+
+**Responses** (from the forms list, or the builder's top bar) lists a form's responses, newest first. You can filter by one question (contains, is exactly, answered, not answered), by received date and by version, and open a response to see it in full with its attachments.
+
+- **Paging:** `GET …/submissions` uses keyset pagination on `(received_at, id)`. The first page fixes a cutoff that every later page's cursor carries, so paging never repeats or skips a response while new ones arrive; **Refresh** starts a new listing. Answer filters accept only known field IDs and the four operators, with values sent as parameters.
+- **Labels by version:** each response shows the labels of the version it was given in. The list's columns use the live version's labels, followed by questions that only older versions had.
+- **Field masks:** every question is classified as ordinary, personal or sensitive. The default comes from its type (files are personal), and the builder's **Data classification** setting can change it. Reading responses needs `responses.read`, which shows ordinary answers. Personal answers also need `responses.read_personal`, and sensitive ones `responses.read_sensitive`. Owners and admins hold all three, and others get them as form grants. Hidden answers are never sent (`{ masked: true }`). Hidden questions can't be filtered on (`FIELD_MASKED`), so their answers can't be guessed one query at a time. Their files can't be downloaded, and a member respondent's identity counts as personal data.
+
 ## Uploads and scanning (FIL-01)
 
 File questions accept uploads in three steps:

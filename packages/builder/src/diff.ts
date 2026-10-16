@@ -33,6 +33,7 @@ function fieldDetails(from: Field, to: Field, fromPage: string | undefined, toPa
   if (from.type !== to.type) details.push("type");
   if (from.required !== to.required) details.push(to.required ? "now required" : "now optional");
   if ((from.helpText ?? "") !== (to.helpText ?? "")) details.push("help text");
+  if ((from.privacy ?? null) !== (to.privacy ?? null)) details.push("data classification");
   if (!same(from.settings.options, to.settings.options)) details.push("options");
   const { options: _a, ...fromRest } = from.settings;
   const { options: _b, ...toRest } = to.settings;

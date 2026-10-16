@@ -1,4 +1,4 @@
-import type { Condition, Field, FieldSettings, FieldType, FormDefinition, Rule, Theme } from "@workeasy/form-schema";
+import type { Condition, Field, FieldSettings, FieldType, FormDefinition, PrivacyClass, Rule, Theme } from "@workeasy/form-schema";
 import { newField, newId } from "./field-types";
 
 /**
@@ -97,7 +97,8 @@ export function addField(def: FormDefinition, type: FieldType, pageId: string, i
   return { definition: next, fieldId: field.id };
 }
 
-export type FieldPatch = Partial<Pick<Field, "label" | "required">> & { helpText?: string };
+/** `privacy: null` returns the field to its type's default classification. */
+export type FieldPatch = Partial<Pick<Field, "label" | "required">> & { helpText?: string; privacy?: PrivacyClass | null };
 
 export function updateField(def: FormDefinition, fieldId: string, patch: FieldPatch): FormDefinition {
   const next = clone(def);
@@ -107,6 +108,10 @@ export function updateField(def: FormDefinition, fieldId: string, patch: FieldPa
   if (patch.helpText !== undefined) {
     if (patch.helpText === "") delete field.helpText;
     else field.helpText = patch.helpText;
+  }
+  if (patch.privacy !== undefined) {
+    if (patch.privacy === null) delete field.privacy;
+    else field.privacy = patch.privacy;
   }
   return next;
 }

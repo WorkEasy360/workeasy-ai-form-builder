@@ -56,6 +56,7 @@
         "label": {"type": "string", "minLength": 1, "maxLength": 300},
         "helpText": {"type": "string", "maxLength": 2000},
         "required": {"type": "boolean"},
+        "privacy": {"enum": ["ordinary", "personal", "sensitive"]},
         "settings": {
           "type": "object", "additionalProperties": false,
           "properties": {

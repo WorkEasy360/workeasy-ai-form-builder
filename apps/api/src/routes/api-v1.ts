@@ -13,6 +13,7 @@ import {
   identityRepo,
   orgRepo,
   publishRepo,
+  responsesRepo,
   uploadsRepo,
   withContext,
   type Database,
@@ -34,12 +35,14 @@ import {
   validateDraft,
 } from "@workeasy/form-engine";
 import type { DefinitionIssue, FormDefinition } from "@workeasy/form-schema";
+import { privacyOf } from "@workeasy/form-engine";
 import type { z } from "zod";
 import type { AppDependencies } from "../app.js";
 import {
   AccessPolicyBodySchema,
   ActivateVersionBodySchema,
   CloseFormBodySchema,
+  ResponseListQuerySchema,
   CreateFormBodySchema,
   IDEMPOTENCY_KEY_PATTERN,
   DuplicateFormBodySchema,
@@ -50,6 +53,8 @@ import {
   type AccessPolicyResponse,
   type DraftResponse,
   type FileDownloadResponse,
+  type ResponseDetailResponse,
+  type ResponseListResponse,
   type FormResponse,
   type FormSummaryBody,
   type MeResponse,
@@ -64,6 +69,7 @@ import {
 import { parseCookies } from "../http/cookies.js";
 import { problems, sendProblem, type FieldError, type ProblemExtensions } from "../http/problem.js";
 import { requestIdOf } from "../http/request-context.js";
+import { canRead, indexVersions, presentAnswer, readableClasses, shortReceipt } from "../responses.js";
 import { requireSameOrigin } from "../http/same-origin.js";
 import { sessionCookieName } from "./auth.js";
 
@@ -876,6 +882,146 @@ export function apiV1Router({ db, settings, objectStore }: AppDependencies): Rou
     );
   });
 
+  // Responses (RES-01, docs/04 §7) -----------------------------------------
+
+  function encodeResponseCursor(cutoff: string, receivedAt: string, id: string): string {
+    return Buffer.from(JSON.stringify([cutoff, receivedAt, id]), "utf8").toString("base64url");
+  }
+
+  function decodeResponseCursor(value: string): { cutoff: string; receivedAt: string; id: string } | undefined {
+    try {
+      const parsed: unknown = JSON.parse(Buffer.from(value, "base64url").toString("utf8"));
+      if (!Array.isArray(parsed) || parsed.length !== 3) return undefined;
+      const [cutoff, receivedAt, id] = parsed as unknown[];
+      const isTime = (v: unknown) => typeof v === "string" && v.length <= 64 && !Number.isNaN(Date.parse(v));
+      if (!isTime(cutoff) || !isTime(receivedAt) || typeof id !== "string" || !UUID_PATTERN.test(id)) return undefined;
+      return { cutoff: cutoff as string, receivedAt: receivedAt as string, id };
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * Responses, newest first, with every field the caller is not cleared for
+   * masked. The first page fixes a cutoff carried in the cursor, so later
+   * pages neither repeat nor skip responses while new ones arrive.
+   */
+  router.get("/organizations/:orgId/forms/:formId/submissions", async (req, res) => {
+    const query = ResponseListQuerySchema.safeParse(req.query);
+    if (!query.success) {
+      problems.validation(res, issuesToErrors(query.error));
+      return;
+    }
+    const q = query.data;
+    const cursor = q.cursor === undefined ? undefined : decodeResponseCursor(q.cursor);
+    if (q.cursor !== undefined && !cursor) {
+      problems.validation(res, [{ field: "cursor", code: "INVALID_CURSOR", message: "Cursor is not valid" }]);
+      return;
+    }
+    const { orgId, formId } = req.params;
+    respond(
+      res,
+      await onForm(res, orgId, formId, "responses.read", async (trx, { permissions }): Promise<Outcome<ResponseListResponse>> => {
+        const readable = readableClasses(permissions);
+        const versions = indexVersions(await responsesRepo.formVersions(trx, formId));
+        if (q.version && !versions.byId.has(q.version)) {
+          return { kind: "invalid", errors: [{ field: "version", code: "UNKNOWN_VERSION", message: "This form has no such version" }] };
+        }
+        if (q.field) {
+          const field = versions.latestField.get(q.field);
+          if (!field) return { kind: "invalid", errors: [{ field: "field", code: "UNKNOWN_FIELD", message: "This form has no such question" }] };
+          // Filtering on a hidden field would reveal its answers, one yes/no at a time.
+          if (!canRead(field, readable)) return { kind: "invalid", errors: [{ field: "field", code: "FIELD_MASKED", message: "You can't filter on a question you can't see" }] };
+        }
+        const cutoff = cursor?.cutoff ?? (await responsesRepo.currentCutoff(trx));
+        const page = await responsesRepo.listResponses(trx, formId, {
+          limit: q.limit,
+          cutoff,
+          after: cursor ? { receivedAt: cursor.receivedAt, id: cursor.id } : undefined,
+          versionId: q.version,
+          receivedFrom: q.from ? new Date(q.from) : undefined,
+          receivedTo: q.to ? new Date(q.to) : undefined,
+          answer: q.field && q.op ? { fieldId: q.field, op: q.op, value: q.value } : undefined,
+        });
+        const files = await responsesRepo.filesFor(trx, page.rows.map((r) => r.id));
+        const last = page.rows.at(-1);
+        return {
+          kind: "ok",
+          body: {
+            columns: versions.order.map((id) => {
+              const field = versions.latestField.get(id)!;
+              return { fieldId: id, label: field.label, type: field.type, privacy: privacyOf(field), masked: !canRead(field, readable) };
+            }),
+            items: page.rows.map((row) => {
+              const version = versions.byId.get(row.formVersionId)!;
+              return {
+                id: row.id,
+                receiptNumber: shortReceipt(row.receiptId),
+                receivedAt: row.receivedAt.toISOString(),
+                versionNumber: version.versionNumber,
+                answers: Object.fromEntries(
+                  version.definition.fields.map((f) => [f.id, presentAnswer(f, row.answers[f.id], files.get(row.id) ?? [], readable)]),
+                ),
+              };
+            }),
+            total: await responsesRepo.countResponses(trx, formId, cutoff),
+            cutoff: new Date(cutoff).toISOString(),
+            ...(page.more && last ? { nextCursor: encodeResponseCursor(cutoff, last.receivedAtKey, last.id) } : {}),
+          },
+        };
+      }),
+    );
+  });
+
+  router.get("/organizations/:orgId/forms/:formId/submissions/:submissionId", async (req, res) => {
+    const { orgId, formId, submissionId } = req.params;
+    if (!UUID_PATTERN.test(submissionId)) {
+      problems.notFound(res);
+      return;
+    }
+    respond(
+      res,
+      await onForm(res, orgId, formId, "responses.read", async (trx, { permissions }): Promise<Outcome<ResponseDetailResponse>> => {
+        const row = await responsesRepo.getResponse(trx, formId, submissionId);
+        if (!row) return { kind: "not_found" };
+        const readable = readableClasses(permissions);
+        const versions = indexVersions(await responsesRepo.formVersions(trx, formId));
+        const version = versions.byId.get(row.formVersionId)!;
+        const files = (await responsesRepo.filesFor(trx, [row.id])).get(row.id) ?? [];
+        const definition = version.definition;
+        const byId = new Map(definition.fields.map((f) => [f.id, f]));
+        const ordered = definition.pages.flatMap((p) => p.fieldIds.flatMap((id) => byId.get(id) ?? []));
+        return {
+          kind: "ok",
+          body: {
+            id: row.id,
+            receiptNumber: shortReceipt(row.receiptId),
+            receivedAt: row.receivedAt.toISOString(),
+            version: { id: row.formVersionId, versionNumber: version.versionNumber, active: version.active },
+            respondent: !row.actor
+              ? { kind: "anonymous" }
+              : readable.has("personal")
+                ? { kind: "member", masked: false, userId: row.actor.id, displayName: row.actor.displayName }
+                : { kind: "member", masked: true },
+            fields: ordered.map((field) => {
+              const visible = canRead(field, readable);
+              const fieldFiles = files.filter((f) => f.fieldId === field.id);
+              return {
+                fieldId: field.id,
+                label: field.label,
+                type: field.type,
+                privacy: privacyOf(field),
+                masked: !visible,
+                answer: presentAnswer(field, row.answers[field.id], fieldFiles, readable),
+                ...(visible && field.type === "file" ? { files: fieldFiles } : {}),
+              };
+            }),
+          },
+        };
+      }),
+    );
+  });
+
   // Files (FIL-01) ----------------------------------------------------------
 
   /** How long a download link works. */
@@ -894,9 +1040,13 @@ export function apiV1Router({ db, settings, objectStore }: AppDependencies): Rou
     }
     respond(
       res,
-      await onForm(res, orgId, formId, "responses.read", async (trx): Promise<Outcome<FileDownloadResponse>> => {
+      await onForm(res, orgId, formId, "responses.read", async (trx, { permissions }): Promise<Outcome<FileDownloadResponse>> => {
         const upload = await uploadsRepo.getClaimedUpload(trx, formId, submissionId, uploadId);
         if (!upload) return { kind: "not_found" };
+        // Files follow their field's classification, like every other answer (docs/06 §3).
+        const versions = indexVersions(await responsesRepo.formVersions(trx, formId));
+        const field = versions.byId.get(upload.formVersionId)?.definition.fields.find((f) => f.id === upload.fieldId);
+        if (!field || !canRead(field, readableClasses(permissions))) return { kind: "forbidden" };
         const contentType = upload.detectedType ?? "application/octet-stream";
         return {
           kind: "ok",

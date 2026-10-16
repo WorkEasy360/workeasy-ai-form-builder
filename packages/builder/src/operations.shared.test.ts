@@ -159,4 +159,13 @@ describe(`builder operations (${runtime})`, () => {
     expect(validateDraft(faint)).toMatchObject({ ok: true, issues: [expect.objectContaining({ code: "THEME_LOW_CONTRAST" })] });
     expect(validateDefinition(faint).ok).toBe(false);
   });
+
+  it("sets and clears a field's data classification", () => {
+    const def = definitionFromTemplate("contact", "Contact")!;
+    const raised = updateField(def, "f_name", { privacy: "sensitive" });
+    expect(raised.fields.find((f) => f.id === "f_name")!.privacy).toBe("sensitive");
+    expect(diffDefinitions(def, raised)[0]).toMatchObject({ target: "question", details: ["data classification"] });
+    expect(validateDefinition(raised).ok).toBe(true);
+    expect(updateField(raised, "f_name", { privacy: null }).fields.find((f) => f.id === "f_name")).not.toHaveProperty("privacy");
+  });
 });

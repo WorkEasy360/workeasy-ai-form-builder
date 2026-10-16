@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { FORM_PERMISSIONS } from "@workeasy/auth";
 import { createDb, identityRepo, withTenant, type Db } from "@workeasy/database";
 import { seedTenantFixture } from "@workeasy/database/testing";
 import { definitionFromTemplate } from "@workeasy/form-engine";
@@ -144,7 +145,8 @@ describe("visibility", () => {
   it("reports each caller's effective permissions", async () => {
     const { form: created } = await createAs("creatorA", "Permission view");
     const ownerView = FormResponseSchema.parse((await get(form(a.id, created.id), "ownerA")).body);
-    expect(ownerView.form.permissions).toHaveLength(11);
+    // Owners hold every form permission.
+    expect(ownerView.form.permissions).toEqual([...FORM_PERMISSIONS]);
     const listed = FormListResponseSchema.parse((await get(forms(a.id), "creatorA")).body).items.find((f) => f.id === created.id);
     expect(listed?.permissions).toEqual(["forms.read", "forms.edit", "forms.publish", "forms.manage_access"]);
   });

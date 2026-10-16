@@ -23,7 +23,10 @@ export const FORM_PERMISSIONS = [
   "forms.publish",
   "forms.delete",
   "forms.manage_access",
+  // Answers to ordinary fields; personal and sensitive answers need the next two (docs/06 §3).
   "responses.read",
+  "responses.read_personal",
+  "responses.read_sensitive",
   "responses.export",
   "responses.edit",
   "responses.delete",

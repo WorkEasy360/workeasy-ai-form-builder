@@ -46,12 +46,22 @@ export interface FieldSettings {
   consentTextVersion?: string;
 }
 
+/**
+ * How sensitive a field's answers are (docs/06 §3). Reviewers need a matching
+ * permission to see personal or sensitive answers; without it they are masked
+ * in responses, filters, downloads and exports.
+ */
+export const PRIVACY_CLASSES = ["ordinary", "personal", "sensitive"] as const;
+export type PrivacyClass = (typeof PRIVACY_CLASSES)[number];
+
 export interface Field {
   id: string;
   type: FieldType;
   label: string;
   helpText?: string;
   required: boolean;
+  /** Overrides the field type's default classification. */
+  privacy?: PrivacyClass;
   settings: FieldSettings;
 }
 

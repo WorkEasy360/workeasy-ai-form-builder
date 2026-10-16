@@ -335,6 +335,11 @@ export function FormsPanel({ orgId }: { orgId: string }) {
                     <time dateTime={f.updatedAt}>{new Date(f.updatedAt).toLocaleString()}</time>
                   </td>
                   <td className="forms-actions" style={{ padding: "var(--we-space-1)", display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "flex-end" }}>
+                    {f.permissions.includes("responses.read") && (
+                      <a href={`/o/${orgId}/forms/${f.id}/responses`} aria-label={`Responses to ${f.name}`} style={{ alignSelf: "center" }}>
+                        Responses
+                      </a>
+                    )}
                     {canDuplicate && f.state !== "archived" && (
                       <button type="button" style={button} disabled={busy !== null} onClick={() => void act(f, "duplicate")} aria-label={`Duplicate ${f.name}`}>
                         Duplicate

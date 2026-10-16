@@ -15,7 +15,9 @@ import {
   type SettingsInput,
 } from "@workeasy/builder";
 import { FIELD_REGISTRY } from "@workeasy/form-engine";
-import type { DefinitionIssue, Field, FieldSettings, FormDefinition } from "@workeasy/form-schema";
+import type { DefinitionIssue, Field, FieldSettings, FormDefinition, PrivacyClass } from "@workeasy/form-schema";
+
+const PRIVACY_LABELS: Record<PrivacyClass, string> = { ordinary: "Ordinary", personal: "Personal data", sensitive: "Sensitive data" };
 import { CommitInput, type TryApply } from "./controls";
 import { FieldLogic, PageLogic } from "./logic-editor";
 
@@ -165,7 +167,7 @@ export function FieldInspector({
     <section aria-labelledby="inspector-heading">
       <h2 id="inspector-heading">Question</h2>
       <p className="b-muted" style={{ marginTop: 0 }}>
-        {FIELD_TYPE_INFO[field.type].label} · {FIELD_REGISTRY[field.type].privacy === "personal" ? "Personal data by default" : "Ordinary data"}
+        {FIELD_TYPE_INFO[field.type].label}
       </p>
 
       <CommitInput
@@ -197,6 +199,26 @@ export function FieldInspector({
             Decided by the rule under Logic.
           </p>
         )}
+      </div>
+
+      <div className="b-field">
+        <label htmlFor={`${field.id}-privacy`}>Data classification</label>
+        <select
+          id={`${field.id}-privacy`}
+          value={field.privacy ?? "default"}
+          aria-describedby={`${field.id}-privacy-hint`}
+          onChange={(e) => tryApply(updateField(definition, field.id, { privacy: e.target.value === "default" ? null : (e.target.value as PrivacyClass) }))}
+        >
+          <option value="default">Default for this type ({PRIVACY_LABELS[FIELD_REGISTRY[field.type].privacy].toLowerCase()})</option>
+          {(Object.keys(PRIVACY_LABELS) as PrivacyClass[]).map((c) => (
+            <option key={c} value={c}>
+              {PRIVACY_LABELS[c]}
+            </option>
+          ))}
+        </select>
+        <p id={`${field.id}-privacy-hint`} className="b-muted" style={{ margin: 0 }}>
+          Reviewers need permission to see personal or sensitive answers; otherwise they are hidden.
+        </p>
       </div>
 
       {definition.pages.length > 1 && page && (

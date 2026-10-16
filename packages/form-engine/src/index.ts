@@ -5,6 +5,7 @@ export {
   DEFAULT_RATING_RANGE,
   FIELD_REGISTRY,
   isEmptyValue,
+  privacyOf,
   type AnswerValue,
   type DecodeResult,
   type FieldTypeSpec,

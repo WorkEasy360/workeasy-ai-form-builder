@@ -23,6 +23,9 @@ import {
   ReceiptSchema,
   SessionStartResponseSchema,
   FileDownloadResponseSchema,
+  ResponseDetailResponseSchema,
+  ResponseListQuerySchema,
+  ResponseListResponseSchema,
   ShareResponseSchema,
   UploadCreateBodySchema,
   UploadCreateResponseSchema,
@@ -78,7 +81,7 @@ export function buildOpenApiDocument(): JsonSchema {
       title: "Workeasy Forms API",
       version: "0.1.0",
       description:
-        "Routes implemented through FIL-01. Organization routes derive the tenant from the authenticated membership; resources outside the caller's organizations return 404. Every response carries an X-Request-Id header, and every error is application/problem+json with the same requestId.",
+        "Routes implemented through RES-01. Organization routes derive the tenant from the authenticated membership; resources outside the caller's organizations return 404. Every response carries an X-Request-Id header, and every error is application/problem+json with the same requestId.",
     },
     servers: [{ url: "/" }],
     components: {
@@ -545,6 +548,38 @@ export function buildOpenApiDocument(): JsonSchema {
           responses: { "200": json("The upload's state", UploadStatusResponseSchema), "401": problem("SESSION_INVALID"), "404": problem("No such upload in this session") },
         },
       },
+      "/api/v1/organizations/{orgId}/forms/{formId}/submissions": {
+        parameters: [uuidPath("orgId", "Organization (tenant) ID"), uuidPath("formId", "Form ID")],
+        get: {
+          operationId: "listResponses",
+          summary: "Responses, newest first, with field masks applied (requires responses.read)",
+          description:
+            "Keyset pagination on (receivedAt, id) with a cutoff fixed by the first page and carried in nextCursor, so pages never repeat or skip a response while new ones arrive. Answers to personal and sensitive fields need responses.read_personal and responses.read_sensitive; without them they are { masked: true } and cannot be filtered on (FIELD_MASKED).",
+          security: [{ consoleSession: [] }],
+          parameters: queryParameters(ResponseListQuerySchema as unknown as z.ZodObject),
+          responses: {
+            "200": json("A page of responses", ResponseListResponseSchema),
+            "401": unauthenticated,
+            "403": problem("No responses.read on this form"),
+            "404": problem("Organization or form not found or not visible"),
+            "422": problem("Invalid query: unknown or masked filter field, bad cursor, unknown version"),
+          },
+        },
+      },
+      "/api/v1/organizations/{orgId}/forms/{formId}/submissions/{submissionId}": {
+        parameters: [uuidPath("orgId", "Organization (tenant) ID"), uuidPath("formId", "Form ID"), uuidPath("submissionId", "Submission ID")],
+        get: {
+          operationId: "getResponse",
+          summary: "One response with its own version's questions, field masks applied (requires responses.read)",
+          security: [{ consoleSession: [] }],
+          responses: {
+            "200": json("The response", ResponseDetailResponseSchema),
+            "401": unauthenticated,
+            "403": problem("No responses.read on this form"),
+            "404": problem("No such response on this form, or not visible"),
+          },
+        },
+      },
       "/api/v1/organizations/{orgId}/forms/{formId}/submissions/{submissionId}/files/{uploadId}": {
         parameters: [
           uuidPath("orgId", "Organization (tenant) ID"),
@@ -554,7 +589,7 @@ export function buildOpenApiDocument(): JsonSchema {
         ],
         get: {
           operationId: "getSubmissionFile",
-          summary: "A 60-second link to download a clean file attached to a response (requires responses.read)",
+          summary: "A 60-second link to download a clean file attached to a response (requires responses.read and access to the field's data class)",
           security: [{ consoleSession: [] }],
           responses: {
             "200": json("The download link", FileDownloadResponseSchema),

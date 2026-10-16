@@ -1,4 +1,4 @@
-import type { Field, FieldSettings, FieldType, Literal, Operator } from "@workeasy/form-schema";
+import type { Field, FieldSettings, FieldType, Literal, Operator, PrivacyClass } from "@workeasy/form-schema";
 import { canonicalDecimal, compareDecimal, decimalFromLiteral } from "./decimal";
 
 /**
@@ -16,7 +16,12 @@ export type DecodeResult =
   | { ok: false; code: string; message: string };
 
 export type ValueKind = "string" | "integer" | "decimal" | "date" | "time" | "choice" | "multi_choice" | "boolean" | "files";
-export type PrivacyClass = "ordinary" | "personal";
+export type { PrivacyClass };
+
+/** A field's classification: its own setting, or its type's default. */
+export function privacyOf(field: Field): PrivacyClass {
+  return field.privacy ?? FIELD_REGISTRY[field.type].privacy;
+}
 
 export interface FieldTypeSpec {
   kind: ValueKind;

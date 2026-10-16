@@ -3,7 +3,7 @@
   "info": {
     "title": "Workeasy Forms API",
     "version": "0.1.0",
-    "description": "Routes implemented through FIL-01. Organization routes derive the tenant from the authenticated membership; resources outside the caller's organizations return 404. Every response carries an X-Request-Id header, and every error is application/problem+json with the same requestId."
+    "description": "Routes implemented through RES-01. Organization routes derive the tenant from the authenticated membership; resources outside the caller's organizations return 404. Every response carries an X-Request-Id header, and every error is application/problem+json with the same requestId."
   },
   "servers": [
     {
@@ -493,6 +493,8 @@
                               "forms.delete",
                               "forms.manage_access",
                               "responses.read",
+                              "responses.read_personal",
+                              "responses.read_sensitive",
                               "responses.export",
                               "responses.edit",
                               "responses.delete",
@@ -997,6 +999,8 @@
                               "forms.delete",
                               "forms.manage_access",
                               "responses.read",
+                              "responses.read_personal",
+                              "responses.read_sensitive",
                               "responses.export",
                               "responses.edit",
                               "responses.delete",
@@ -1186,6 +1190,8 @@
                               "forms.delete",
                               "forms.manage_access",
                               "responses.read",
+                              "responses.read_personal",
+                              "responses.read_sensitive",
                               "responses.export",
                               "responses.edit",
                               "responses.delete",
@@ -1375,6 +1381,8 @@
                               "forms.delete",
                               "forms.manage_access",
                               "responses.read",
+                              "responses.read_personal",
+                              "responses.read_sensitive",
                               "responses.export",
                               "responses.edit",
                               "responses.delete",
@@ -1583,6 +1591,8 @@
                               "forms.delete",
                               "forms.manage_access",
                               "responses.read",
+                              "responses.read_personal",
+                              "responses.read_sensitive",
                               "responses.export",
                               "responses.edit",
                               "responses.delete",
@@ -1807,6 +1817,8 @@
                                 "forms.delete",
                                 "forms.manage_access",
                                 "responses.read",
+                                "responses.read_personal",
+                                "responses.read_sensitive",
                                 "responses.export",
                                 "responses.edit",
                                 "responses.delete",
@@ -2130,6 +2142,8 @@
                               "forms.delete",
                               "forms.manage_access",
                               "responses.read",
+                              "responses.read_personal",
+                              "responses.read_sensitive",
                               "responses.export",
                               "responses.edit",
                               "responses.delete",
@@ -2297,6 +2311,8 @@
                               "forms.delete",
                               "forms.manage_access",
                               "responses.read",
+                              "responses.read_personal",
+                              "responses.read_sensitive",
                               "responses.export",
                               "responses.edit",
                               "responses.delete",
@@ -2897,6 +2913,8 @@
                               "forms.delete",
                               "forms.manage_access",
                               "responses.read",
+                              "responses.read_personal",
+                              "responses.read_sensitive",
                               "responses.export",
                               "responses.edit",
                               "responses.delete",
@@ -3265,6 +3283,8 @@
                               "forms.delete",
                               "forms.manage_access",
                               "responses.read",
+                              "responses.read_personal",
+                              "responses.read_sensitive",
                               "responses.export",
                               "responses.edit",
                               "responses.delete",
@@ -3464,6 +3484,8 @@
                               "forms.delete",
                               "forms.manage_access",
                               "responses.read",
+                              "responses.read_personal",
+                              "responses.read_sensitive",
                               "responses.export",
                               "responses.edit",
                               "responses.delete",
@@ -4749,6 +4771,624 @@
         }
       }
     },
+    "/api/v1/organizations/{orgId}/forms/{formId}/submissions": {
+      "parameters": [
+        {
+          "name": "orgId",
+          "in": "path",
+          "required": true,
+          "description": "Organization (tenant) ID",
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        {
+          "name": "formId",
+          "in": "path",
+          "required": true,
+          "description": "Form ID",
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "listResponses",
+        "summary": "Responses, newest first, with field masks applied (requires responses.read)",
+        "description": "Keyset pagination on (receivedAt, id) with a cutoff fixed by the first page and carried in nextCursor, so pages never repeat or skip a response while new ones arrive. Answers to personal and sensitive fields need responses.read_personal and responses.read_sensitive; without them they are { masked: true } and cannot be filtered on (FIELD_MASKED).",
+        "security": [
+          {
+            "consoleSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            }
+          },
+          {
+            "name": "version",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+            }
+          },
+          {
+            "name": "field",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_-]{1,79}$"
+            }
+          },
+          {
+            "name": "op",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "eq",
+                "contains",
+                "isEmpty",
+                "isNotEmpty"
+              ]
+            }
+          },
+          {
+            "name": "value",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of responses",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "columns": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "fieldId": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "type": {
+                            "type": "string"
+                          },
+                          "privacy": {
+                            "type": "string",
+                            "enum": [
+                              "ordinary",
+                              "personal",
+                              "sensitive"
+                            ]
+                          },
+                          "masked": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "fieldId",
+                          "label",
+                          "type",
+                          "privacy",
+                          "masked"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          "receiptNumber": {
+                            "type": "string"
+                          },
+                          "receivedAt": {
+                            "type": "string",
+                            "format": "date-time",
+                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                          },
+                          "versionNumber": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "answers": {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string"
+                            },
+                            "additionalProperties": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "masked": {
+                                      "type": "boolean",
+                                      "const": true
+                                    }
+                                  },
+                                  "required": [
+                                    "masked"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "masked": {
+                                      "type": "boolean",
+                                      "const": false
+                                    },
+                                    "value": {},
+                                    "display": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "masked",
+                                    "value",
+                                    "display"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              ]
+                            }
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "receiptNumber",
+                          "receivedAt",
+                          "versionNumber",
+                          "answers"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "cutoff": {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                    },
+                    "nextCursor": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "columns",
+                    "items",
+                    "total",
+                    "cutoff"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No responses.read on this form",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Organization or form not found or not visible",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid query: unknown or masked filter field, bad cursor, unknown version",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/organizations/{orgId}/forms/{formId}/submissions/{submissionId}": {
+      "parameters": [
+        {
+          "name": "orgId",
+          "in": "path",
+          "required": true,
+          "description": "Organization (tenant) ID",
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        {
+          "name": "formId",
+          "in": "path",
+          "required": true,
+          "description": "Form ID",
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        {
+          "name": "submissionId",
+          "in": "path",
+          "required": true,
+          "description": "Submission ID",
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "getResponse",
+        "summary": "One response with its own version's questions, field masks applied (requires responses.read)",
+        "security": [
+          {
+            "consoleSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "receiptNumber": {
+                      "type": "string"
+                    },
+                    "receivedAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                    },
+                    "version": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        "versionNumber": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "active": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "versionNumber",
+                        "active"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "respondent": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "const": "anonymous"
+                            }
+                          },
+                          "required": [
+                            "kind"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "const": "member"
+                            },
+                            "masked": {
+                              "type": "boolean",
+                              "const": true
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "masked"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "const": "member"
+                            },
+                            "masked": {
+                              "type": "boolean",
+                              "const": false
+                            },
+                            "userId": {
+                              "type": "string",
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                            },
+                            "displayName": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "masked",
+                            "userId",
+                            "displayName"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
+                    },
+                    "fields": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "fieldId": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "type": {
+                            "type": "string"
+                          },
+                          "privacy": {
+                            "type": "string",
+                            "enum": [
+                              "ordinary",
+                              "personal",
+                              "sensitive"
+                            ]
+                          },
+                          "masked": {
+                            "type": "boolean"
+                          },
+                          "answer": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "masked": {
+                                    "type": "boolean",
+                                    "const": true
+                                  }
+                                },
+                                "required": [
+                                  "masked"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "masked": {
+                                    "type": "boolean",
+                                    "const": false
+                                  },
+                                  "value": {},
+                                  "display": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "masked",
+                                  "value",
+                                  "display"
+                                ],
+                                "additionalProperties": false
+                              }
+                            ]
+                          },
+                          "files": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "uploadId": {
+                                  "type": "string",
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                },
+                                "fileName": {
+                                  "type": "string"
+                                },
+                                "bytes": {
+                                  "anyOf": [
+                                    {
+                                      "type": "integer",
+                                      "minimum": -9007199254740991,
+                                      "maximum": 9007199254740991
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "contentType": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "uploadId",
+                                "fileName",
+                                "bytes",
+                                "contentType"
+                              ],
+                              "additionalProperties": false
+                            }
+                          }
+                        },
+                        "required": [
+                          "fieldId",
+                          "label",
+                          "type",
+                          "privacy",
+                          "masked",
+                          "answer"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "receiptNumber",
+                    "receivedAt",
+                    "version",
+                    "respondent",
+                    "fields"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No responses.read on this form",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such response on this form, or not visible",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/organizations/{orgId}/forms/{formId}/submissions/{submissionId}/files/{uploadId}": {
       "parameters": [
         {
@@ -4794,7 +5434,7 @@
       ],
       "get": {
         "operationId": "getSubmissionFile",
-        "summary": "A 60-second link to download a clean file attached to a response (requires responses.read)",
+        "summary": "A 60-second link to download a clean file attached to a response (requires responses.read and access to the field's data class)",
         "security": [
           {
             "consoleSession": []
@@ -5298,6 +5938,8 @@
                               "forms.delete",
                               "forms.manage_access",
                               "responses.read",
+                              "responses.read_personal",
+                              "responses.read_sensitive",
                               "responses.export",
                               "responses.edit",
                               "responses.delete",
@@ -5394,6 +6036,8 @@
                             "forms.delete",
                             "forms.manage_access",
                             "responses.read",
+                            "responses.read_personal",
+                            "responses.read_sensitive",
                             "responses.export",
                             "responses.edit",
                             "responses.delete",
@@ -5448,6 +6092,8 @@
                               "forms.delete",
                               "forms.manage_access",
                               "responses.read",
+                              "responses.read_personal",
+                              "responses.read_sensitive",
                               "responses.export",
                               "responses.edit",
                               "responses.delete",
