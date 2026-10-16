@@ -318,14 +318,19 @@ The response presentation and CSV code live in `@workeasy/responses`, shared by 
   3. rejects markup and anything over 50 fields, 10 pages or 50 rules;
   4. runs the same `validateDefinition` as publishing.
 
-  An invalid reply gets **one repair attempt** with the problems listed. If that's invalid too, the generation fails with `invalid_output` and the issue paths and codes. **The draft is never changed:** a success stores a validated proposal for review, and applying it is AI-02.
+  An invalid reply gets **one repair attempt** with the problems listed. If that's invalid too, the generation fails with `invalid_output` and the issue paths and codes. **The worker never changes the draft:** a success stores a validated proposal for review.
+- **Deciding (AI-02):** the builder shows the proposal as changes to the current draft (`diffDefinitions` from `@workeasy/builder`), with the AI's warnings. Each proposal is decided once (`409 AI_PROPOSAL_DECIDED`).
+  - **Apply to draft** (`POST …/ai-jobs/:id/apply` with `expectedRevision`, needing `forms.edit`) validates the proposal again (`422 AI_PROPOSAL_INVALID`). It then saves it as an ordinary optimistic draft save against the revision the proposal was built on.
+  - If anyone saved the draft since, or the console is looking at another revision, nothing is written: the response is `412 DRAFT_CONFLICT` with `currentRevision` and `baseRevision`, and the builder offers to ask again with the current draft. **AI cannot overwrite a newer manual draft.**
+  - An applied proposal is one undoable step in the editor. Applying **never publishes**: the live version changes only when someone publishes.
+  - **Reject** (`POST …/reject`) leaves the draft alone.
 - **Limits:**
   - The prompt is at most 8000 characters.
   - Each person can have one active generation (`409 AI_GENERATION_IN_PROGRESS`), and each organization five (`429 AI_BUSY`).
   - Each provider call has 45 s.
   - The whole generation must finish within 120 s. A generation past that fails as `deadline_exceeded`, even if its worker died.
   - Transient provider failures (rate limits, 5xx, timeouts, network errors) are retried at most twice. Authentication, refusals and truncated replies fail at once with their code.
-- **Privacy:** the prompt is kept only while the generation runs, plus its SHA-256 digest. It's never returned, logged or audited. Logs and summaries hold IDs, counts and codes, never model text. Token usage is recorded per generation; budgets and tenant opt-in arrive with AI-03. Audited actions are `ai.generation_requested` and `ai.generation_cancelled`.
+- **Privacy:** the prompt is kept only while the generation runs, plus its SHA-256 digest. It's never returned, logged or audited. Logs and summaries hold IDs, counts and codes, never model text. Token usage is recorded per generation; budgets and tenant opt-in arrive with AI-03. Audited actions are `ai.generation_requested`, `ai.generation_cancelled`, `ai.proposal_applied` (with the new revision) and `ai.proposal_rejected`.
 
 ## Uploads and scanning (FIL-01)
 

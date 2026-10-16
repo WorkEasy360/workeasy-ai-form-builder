@@ -274,6 +274,7 @@ export interface JobsTable {
 
 export type AiGenerationStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
 export type AiOperation = "create" | "edit";
+export type AiDecision = "applied" | "rejected";
 
 export interface AiGenerationsTable {
   id: Generated<string>;
@@ -298,6 +299,10 @@ export interface AiGenerationsTable {
   updated_at: Generated<Date>;
   deadline_at: Date;
   finished_at: Date | null;
+  decision: AiDecision | null;
+  decided_by: string | null;
+  decided_at: Date | null;
+  applied_revision: number | null;
 }
 
 export interface Database {

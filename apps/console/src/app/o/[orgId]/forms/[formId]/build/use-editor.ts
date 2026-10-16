@@ -129,6 +129,12 @@ export function useEditor(draftPath: string, initial: DraftBody) {
     setTheirs(null);
   }, [theirs]);
 
+  /** Adopts a revision the server saved (an applied AI proposal) as one undoable step. */
+  const adoptSaved = useCallback((definition: FormDefinition, revision: number, label: string) => {
+    autosave.current?.replace(definition, revision);
+    setHistory((h) => applyStep(h, definition, label));
+  }, []);
+
   return {
     history,
     definition: history.present,
@@ -147,5 +153,6 @@ export function useEditor(draftPath: string, initial: DraftBody) {
     base: conflicted ? base : null,
     keepMine,
     acceptTheirs,
+    adoptSaved,
   };
 }

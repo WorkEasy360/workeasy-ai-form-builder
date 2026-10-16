@@ -1,5 +1,5 @@
 import { sql, type Selectable, type Transaction } from "kysely";
-import type { AiGenerationsTable, AiGenerationStatus, AiOperation, Database } from "../schema.js";
+import type { AiDecision, AiGenerationsTable, AiGenerationStatus, AiOperation, Database } from "../schema.js";
 
 /**
  * AI generations (docs/03 §4). The API creates, reads, cancels and expires
@@ -31,6 +31,8 @@ export interface AiGeneration {
   updatedAt: Date;
   deadlineAt: Date;
   finishedAt: Date | null;
+  /** How a succeeded proposal was decided (AI-02); null until then. */
+  decision: { kind: AiDecision; by: string; at: Date; appliedRevision: number | null } | null;
 }
 
 function toGeneration(r: Selectable<AiGenerationsTable>): AiGeneration {
@@ -56,6 +58,7 @@ function toGeneration(r: Selectable<AiGenerationsTable>): AiGeneration {
     updatedAt: r.updated_at,
     deadlineAt: r.deadline_at,
     finishedAt: r.finished_at,
+    decision: r.decision ? { kind: r.decision, by: r.decided_by!, at: r.decided_at!, appliedRevision: r.applied_revision } : null,
   };
 }
 
@@ -139,6 +142,39 @@ export async function cancelGeneration(trx: Trx, id: string): Promise<AiGenerati
     .set({ status: "cancelled", prompt: null, finished_at: sql<Date>`now()`, updated_at: sql<Date>`now()` })
     .where("id", "=", id)
     .where("status", "in", ACTIVE)
+    .returningAll()
+    .executeTakeFirst();
+  return row ? toGeneration(row) : undefined;
+}
+
+/** Locks a generation for the rest of the transaction (deciding a proposal). */
+export async function lockGeneration(trx: Trx, id: string): Promise<AiGeneration | undefined> {
+  const row = await trx.selectFrom("ai_generations").selectAll().where("id", "=", id).forUpdate().executeTakeFirst();
+  return row ? toGeneration(row) : undefined;
+}
+
+/**
+ * Records the decision on a succeeded, undecided proposal; returns the
+ * generation, or undefined if it was not open for a decision.
+ */
+export async function decideGeneration(
+  trx: Trx,
+  id: string,
+  decision: { kind: "applied"; revision: number } | { kind: "rejected" },
+  userId: string,
+): Promise<AiGeneration | undefined> {
+  const row = await trx
+    .updateTable("ai_generations")
+    .set({
+      decision: decision.kind,
+      decided_by: userId,
+      decided_at: sql<Date>`now()`,
+      applied_revision: decision.kind === "applied" ? decision.revision : null,
+      updated_at: sql<Date>`now()`,
+    })
+    .where("id", "=", id)
+    .where("status", "=", "succeeded")
+    .where("decision", "is", null)
     .returningAll()
     .executeTakeFirst();
   return row ? toGeneration(row) : undefined;

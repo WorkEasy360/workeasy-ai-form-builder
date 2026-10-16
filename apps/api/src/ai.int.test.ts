@@ -8,7 +8,7 @@ import type { Express } from "express";
 import { sql } from "kysely";
 import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, inject, it } from "vitest";
-import { AiJobResponseSchema, FormResponseSchema, ProblemSchema } from "./contract/schemas.js";
+import { AiApplyResponseSchema, AiJobResponseSchema, FormResponseSchema, ProblemSchema, VersionListResponseSchema } from "./contract/schemas.js";
 import { buildTestApp, TEST_CONSOLE_ORIGIN, testSettings, unusedIdentityProvider } from "./test-support.js";
 
 /** AI-01: bounded AI generation jobs. Needs `pnpm infra:up`; no AI provider account. */
@@ -292,5 +292,122 @@ describe("access", () => {
     expectProblem(await consoleReq("analystA", "post", `${jobPath(id)}/cancel`), 403, "FORBIDDEN");
     expectProblem(await consoleReq("ownerB", "get", jobPath(id, b)), 404, "NOT_FOUND");
     expectProblem(await consoleReq("ownerB", "get", jobPath(id)), 404, "NOT_FOUND");
+  });
+});
+
+describe("deciding proposals (AI-02)", () => {
+  /** A form with a finished proposal against its current draft. */
+  async function proposed(operation = "create", f?: { id: string; path: string; revision: number }) {
+    const form = f ?? (await newForm());
+    const id = AiJobResponseSchema.parse((await ask("ownerA", form, "A volunteer sign-up form", operation)).body).job.id;
+    await work();
+    return { form, id, job: AiJobResponseSchema.parse((await consoleReq("ownerA", "get", jobPath(id))).body).job };
+  }
+  const apply = (id: string, expectedRevision: number, who = "ownerA") => consoleReq(who, "post", `${jobPath(id)}/apply`).send({ expectedRevision });
+  const formOf = async (path: string) => FormResponseSchema.parse((await consoleReq("ownerA", "get", path)).body).form;
+
+  it("applies a proposal as the next draft revision, once, without publishing", async () => {
+    provider = scripted(VALID);
+    const { form, id, job } = await proposed();
+    expect(job).toMatchObject({ status: "succeeded", decision: null });
+    const res = await apply(id, form.revision);
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    const applied = AiApplyResponseSchema.parse(res.body);
+    expect(applied.draft.revision).toBe(form.revision + 1);
+    expect(applied.job.decision).toMatchObject({ kind: "applied", by: users.ownerA, appliedRevision: form.revision + 1 });
+    expect(res.headers.etag).toBe(`"draft-${form.revision + 1}"`);
+    const draft = await draftOf(form.path);
+    expect(draft.revision).toBe(form.revision + 1);
+    expect(draft.definition).toEqual(job.proposal);
+
+    // Applying is not publishing.
+    expect(await formOf(form.path)).toMatchObject({ state: "draft", activeVersionId: null });
+    expect(VersionListResponseSchema.parse((await consoleReq("ownerA", "get", `${form.path}/versions`)).body).items).toEqual([]);
+    const audit = await withTenant(owner, a.id, (trx) => trx.selectFrom("audit_events").select(["action", "metadata"]).where("resource_id", "=", form.id).execute());
+    expect(audit.map((e) => e.action)).toContain("ai.proposal_applied");
+    expect(audit.map((e) => e.action)).not.toContain("form.published");
+
+    // Decided once.
+    expectProblem(await apply(id, form.revision + 1), 409, "AI_PROPOSAL_DECIDED");
+    expectProblem(await consoleReq("ownerA", "post", `${jobPath(id)}/reject`), 409, "AI_PROPOSAL_DECIDED");
+  });
+
+  it("never overwrites a draft saved after the proposal was made", async () => {
+    const f = await newForm();
+    const id = AiJobResponseSchema.parse((await ask("ownerA", f)).body).job.id;
+    // Someone edits by hand while the AI works.
+    const manual = { ...(await draftOf(f.path)).definition, title: "Hand made", fields: [{ id: "f_hand", type: "text", label: "Name", required: true, settings: {} }], pages: [{ id: "p_1", title: "", fieldIds: ["f_hand"] }] };
+    const saved = await consoleReq("ownerA", "put", `${f.path}/draft`).set("If-Match", `"draft-${f.revision}"`).send(manual);
+    expect(saved.status).toBe(200);
+    await work();
+    const current = saved.body.revision as number;
+
+    // Neither the old revision nor the current one lets the stale proposal through.
+    for (const expected of [f.revision, current]) {
+      const res = await apply(id, expected);
+      expectProblem(res, 412, "DRAFT_CONFLICT");
+      expect(res.body).toMatchObject({ currentRevision: current, baseRevision: f.revision });
+    }
+    const draft = await draftOf(f.path);
+    expect(draft).toMatchObject({ revision: current, definition: { title: "Hand made" } });
+    expect((await generationRow(id)).decision).toBeNull();
+
+    // Asking again against the current draft works and can be applied.
+    const again = await proposed("edit", { ...f, revision: current });
+    expect((await apply(again.id, current)).status).toBe(200);
+    expect((await draftOf(f.path)).definition.fields.map((x) => x.id)[0]).toBe("f_hand");
+  });
+
+  it("lets only one of two concurrent applies through", async () => {
+    const { form, id } = await proposed();
+    const results = await Promise.all([apply(id, form.revision), apply(id, form.revision)]);
+    expect(results.map((r) => r.status).toSorted()).toEqual([200, 409]);
+    expect((await draftOf(form.path)).revision).toBe(form.revision + 1);
+  });
+
+  it("rejects a proposal without touching the draft", async () => {
+    const { form, id } = await proposed();
+    const before = await draftOf(form.path);
+    const rejected = await consoleReq("ownerA", "post", `${jobPath(id)}/reject`);
+    expect(AiJobResponseSchema.parse(rejected.body).job.decision).toMatchObject({ kind: "rejected", appliedRevision: null });
+    expect(await draftOf(form.path)).toEqual(before);
+    expectProblem(await apply(id, form.revision), 409, "AI_PROPOSAL_DECIDED");
+  });
+
+  it("validates a stored proposal again before applying it", async () => {
+    const { form, id } = await proposed();
+    await withTenant(owner, a.id, (trx) =>
+      trx.updateTable("ai_generations").set({ proposal: { title: "Tampered", fields: [] } }).where("id", "=", id).execute(),
+    );
+    const before = await draftOf(form.path);
+    expectProblem(await apply(id, form.revision), 422, "AI_PROPOSAL_INVALID");
+    expect(await draftOf(form.path)).toEqual(before);
+  });
+
+  it("does not decide unfinished generations, and needs forms.edit", async () => {
+    const f = await newForm();
+    const queued = AiJobResponseSchema.parse((await ask("ownerA", f)).body).job.id;
+    expectProblem(await apply(queued, f.revision), 409, "AI_PROPOSAL_NOT_READY");
+    expectProblem(await consoleReq("ownerA", "post", `${jobPath(queued)}/reject`), 409, "AI_PROPOSAL_NOT_READY");
+    await work();
+    await consoleReq("ownerA", "put", `${f.path}/grants`).send({ grants: [{ principalType: "user", principalId: users.analystA, permission: "forms.read" }] });
+    expectProblem(await apply(queued, f.revision, "analystA"), 403, "FORBIDDEN");
+    expectProblem(await consoleReq("analystA", "post", `${jobPath(queued)}/reject`), 403, "FORBIDDEN");
+    expectProblem(await consoleReq("ownerB", "post", `${jobPath(queued)}/apply`).send({ expectedRevision: f.revision }), 404, "NOT_FOUND");
+  });
+
+  it("changes only the draft of a published form; the live version stays until someone publishes", async () => {
+    provider = scripted(VALID);
+    const { form, id } = await proposed();
+    await apply(id, form.revision);
+    const published = await consoleReq("ownerA", "post", `${form.path}/publish`).set("If-Match", `"draft-${form.revision + 1}"`).set("Idempotency-Key", `k-${randomUUID()}`);
+    expect(published.status, JSON.stringify(published.body)).toBe(201);
+    const live = await formOf(form.path);
+
+    provider = stubProvider();
+    const edit = await proposed("edit", { ...form, revision: form.revision + 1 });
+    expect((await apply(edit.id, form.revision + 1)).status).toBe(200);
+    expect(await formOf(form.path)).toMatchObject({ state: "published", activeVersionId: live.activeVersionId });
+    expect(VersionListResponseSchema.parse((await consoleReq("ownerA", "get", `${form.path}/versions`)).body).items).toHaveLength(1);
   });
 });

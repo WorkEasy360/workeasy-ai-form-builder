@@ -564,8 +564,20 @@ export const AiGenerationSchema = z.object({
   createdAt: Timestamp,
   deadlineAt: Timestamp,
   finishedAt: Timestamp.nullable(),
+  /** How the proposal was decided (AI-02): applied to the draft at a revision, or rejected. */
+  decision: z
+    .object({ kind: z.enum(["applied", "rejected"]), by: Uuid, at: Timestamp, appliedRevision: z.number().int().nullable() })
+    .nullable(),
 });
 export type AiGenerationBody = z.infer<typeof AiGenerationSchema>;
 
 export const AiJobResponseSchema = z.object({ job: AiGenerationSchema });
 export type AiJobResponse = z.infer<typeof AiJobResponseSchema>;
+
+export const AiApplyBodySchema = z.object({
+  /** The draft revision the author is looking at; it must still be the proposal's base. */
+  expectedRevision: z.number().int().min(1),
+});
+
+export const AiApplyResponseSchema = z.object({ job: AiGenerationSchema, draft: z.object({ revision: z.number().int() }) });
+export type AiApplyResponse = z.infer<typeof AiApplyResponseSchema>;

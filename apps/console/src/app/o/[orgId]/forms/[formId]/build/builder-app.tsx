@@ -396,7 +396,17 @@ function Editor({
       {mode === "preview" ? (
         <PreviewPane definition={definition} openHref={previewHref} />
       ) : mode === "ai" ? (
-        <AiPanel formPath={formPath} hasFields={definition.fields.length > 0} readOnly={readOnly} saveForPublish={editor.saveForPublish} />
+        <AiPanel
+          formPath={formPath}
+          definition={definition}
+          readOnly={readOnly}
+          saveForPublish={editor.saveForPublish}
+          onApplied={(next, revision) => {
+            editor.adoptSaved(next, revision, "Apply AI suggestion");
+            setNotice("Applied the AI suggestion to your draft. Undo brings your previous version back.");
+            setMode("edit");
+          }}
+        />
       ) : mode === "share" ? (
         <SharePanel formPath={formPath} form={form} readOnly={readOnly} onFormChange={setForm} announce={setNotice} />
       ) : mode === "publish" ? (

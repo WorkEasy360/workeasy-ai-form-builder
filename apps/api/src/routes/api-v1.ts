@@ -50,6 +50,7 @@ import type { AppDependencies } from "../app.js";
 import {
   AccessPolicyBodySchema,
   ActivateVersionBodySchema,
+  AiApplyBodySchema,
   AiJobCreateBodySchema,
   AuditQuerySchema,
   CloseFormBodySchema,
@@ -66,6 +67,7 @@ import {
   type FormGrantsResponse,
   type FormListResponse,
   type AccessPolicyResponse,
+  type AiApplyResponse,
   type AiGenerationBody,
   type AiJobResponse,
   type AuditListResponse,
@@ -1236,6 +1238,7 @@ export function apiV1Router({ db, settings, objectStore }: AppDependencies): Rou
       createdAt: g.createdAt.toISOString(),
       deadlineAt: g.deadlineAt.toISOString(),
       finishedAt: g.finishedAt?.toISOString() ?? null,
+      decision: g.decision ? { ...g.decision, at: g.decision.at.toISOString() } : null,
     };
   }
 
@@ -1344,6 +1347,87 @@ export function apiV1Router({ db, settings, objectStore }: AppDependencies): Rou
         if (!cancelled) return { kind: "ok", body: { job: aiBody(generation) } };
         await audit(trx, res, orgId, "ai.generation_cancelled", "form", generation.formId, { generationId: jobId });
         return { kind: "ok", body: { job: aiBody(cancelled) } };
+      }),
+    );
+  });
+
+  // Deciding AI proposals (AI-02, docs/03 §4) ---------------------------------
+
+  /** Why a proposal cannot be decided now, or undefined if it can. */
+  function undecidable(generation: AiGeneration): Outcome<never> | undefined {
+    if (generation.status !== "succeeded") return { kind: "conflict", code: "AI_PROPOSAL_NOT_READY", title: "This AI request has no proposal to decide on" };
+    if (generation.decision) return { kind: "conflict", code: "AI_PROPOSAL_DECIDED", title: `This proposal was already ${generation.decision.kind}` };
+    return undefined;
+  }
+
+  /**
+   * Applies a proposal to the draft: an ordinary optimistic draft save
+   * against the revision the proposal was built on, after validating it
+   * again. If anyone saved the draft since, nothing is written and the
+   * author is told to ask again against the current draft. Never publishes.
+   */
+  router.post("/organizations/:orgId/ai-jobs/:jobId/apply", async (req, res) => {
+    const body = AiApplyBodySchema.safeParse(req.body ?? {});
+    if (!body.success) {
+      problems.validation(res, issuesToErrors(body.error));
+      return;
+    }
+    const { orgId, jobId } = req.params;
+    const userId = sessionOf(res).userId;
+    respond(
+      res,
+      await onGeneration(res, orgId, jobId, async (trx, found, permissions): Promise<Outcome<AiApplyResponse>> => {
+        if (!permissions.has("forms.edit")) return { kind: "forbidden" };
+        // Serializes concurrent decisions on the same proposal.
+        const generation = (await aiRepo.lockGeneration(trx, found.id))!;
+        const blocked = undecidable(generation);
+        if (blocked) return blocked;
+        const form = (await orgRepo.getFormSummary(trx, generation.formId))!;
+        if (form.state === "archived") return { kind: "conflict", code: "FORM_ARCHIVED", title: "Restore the form before editing it" };
+        const draft = await orgRepo.getDraft(trx, generation.formId);
+        if (!draft) return { kind: "not_found" };
+        const stale = {
+          kind: "problem",
+          status: 412,
+          code: "DRAFT_CONFLICT",
+          title: "The draft changed after this proposal was made; ask again to build on the current draft",
+          extra: { currentRevision: draft.revision, baseRevision: generation.baseRevision },
+        } as const;
+        if (draft.revision !== generation.baseRevision || body.data.expectedRevision !== draft.revision) return stale;
+        // Validated again: the proposal is stored data, and the rules may have moved on since.
+        const checked = validateDefinition(generation.proposal);
+        if (!checked.ok) {
+          return {
+            kind: "problem",
+            status: 422,
+            code: "AI_PROPOSAL_INVALID",
+            title: "This proposal is no longer a valid form; ask again",
+            extra: { errors: checked.issues.slice(0, 50).map((i) => ({ field: i.path || "/", code: i.code, message: i.message })) },
+          };
+        }
+        const revision = await orgRepo.saveDraft(trx, generation.formId, generation.baseRevision, checked.definition as unknown as Record<string, unknown>, userId);
+        if (revision === undefined) return stale;
+        const decided = (await aiRepo.decideGeneration(trx, generation.id, { kind: "applied", revision }, userId))!;
+        await audit(trx, res, orgId, "ai.proposal_applied", "form", generation.formId, { generationId: generation.id, revision });
+        return { kind: "ok", body: { job: aiBody(decided), draft: { revision } }, headers: { ETag: draftEtag(revision) } };
+      }),
+    );
+  });
+
+  /** Rejects a proposal; the draft is untouched. */
+  router.post("/organizations/:orgId/ai-jobs/:jobId/reject", async (req, res) => {
+    const { orgId, jobId } = req.params;
+    const userId = sessionOf(res).userId;
+    respond(
+      res,
+      await onGeneration(res, orgId, jobId, async (trx, found, permissions): Promise<Outcome<AiJobResponse>> => {
+        if (!permissions.has("forms.edit")) return { kind: "forbidden" };
+        const generation = (await aiRepo.lockGeneration(trx, found.id))!;
+        const blocked = undecidable(generation);
+        if (blocked) return blocked;
+        const decided = (await aiRepo.decideGeneration(trx, generation.id, { kind: "rejected" }, userId))!;
+        await audit(trx, res, orgId, "ai.proposal_rejected", "form", generation.formId, { generationId: generation.id });
+        return { kind: "ok", body: { job: aiBody(decided) } };
       }),
     );
   });

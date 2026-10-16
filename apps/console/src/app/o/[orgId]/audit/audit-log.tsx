@@ -35,6 +35,8 @@ const ACTIONS: Record<string, string> = {
   "job.replayed": "Retried a failed background job",
   "ai.generation_requested": "Asked AI for a form suggestion",
   "ai.generation_cancelled": "Cancelled an AI request",
+  "ai.proposal_applied": "Applied an AI suggestion to a draft",
+  "ai.proposal_rejected": "Rejected an AI suggestion",
 };
 
 function details(metadata: Record<string, unknown>): string {
