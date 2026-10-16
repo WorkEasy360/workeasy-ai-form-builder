@@ -32,6 +32,7 @@ const ACTIONS: Record<string, string> = {
   "responses.retention_deleted": "Deleted responses past retention",
   "responses.export_requested": "Requested an export",
   "responses.export_downloaded": "Downloaded an export",
+  "job.replayed": "Retried a failed background job",
 };
 
 function details(metadata: Record<string, unknown>): string {

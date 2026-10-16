@@ -14,6 +14,7 @@ import {
   orgRepo,
   exportsRepo,
   governanceRepo,
+  jobsRepo,
   publishRepo,
   responsesRepo,
   uploadsRepo,
@@ -21,6 +22,7 @@ import {
   type Database,
   type AccessPolicy,
   type ExportRecord,
+  type Job,
   type FormListCursor,
   type ReadableClass,
   type FormSummary,
@@ -47,6 +49,7 @@ import {
   ActivateVersionBodySchema,
   AuditQuerySchema,
   CloseFormBodySchema,
+  JobQuerySchema,
   DeletionBodySchema,
   ExportCreateBodySchema,
   RetentionBodySchema,
@@ -60,6 +63,9 @@ import {
   type FormListResponse,
   type AccessPolicyResponse,
   type AuditListResponse,
+  type JobBody,
+  type JobListResponse,
+  type JobResponse,
   type RetentionResponse,
   type DraftResponse,
   type ExportBody,
@@ -1191,6 +1197,76 @@ export function apiV1Router({ db, settings, objectStore }: AppDependencies): Rou
           ...(page.more && last ? { nextCursor: encodeAuditCursor(last.occurredAtKey, last.id) } : {}),
         },
       };
+    });
+    respond(res, outcome);
+  });
+
+  // Durable jobs (JOB-01, docs/04 §6) ---------------------------------------
+
+  function jobBody(job: Job): JobBody {
+    return {
+      id: job.id,
+      type: job.type,
+      status: job.status,
+      sourceEventId: job.sourceEventId,
+      attempt: job.attempt,
+      maxAttempts: job.maxAttempts,
+      lastError: job.lastError,
+      createdAt: job.createdAt.toISOString(),
+      updatedAt: job.updatedAt.toISOString(),
+      nextAttemptAt: job.nextAttemptAt.toISOString(),
+      finishedAt: job.finishedAt?.toISOString() ?? null,
+    };
+  }
+
+  /** The organization's background jobs, newest first (owners and admins: organization.audit.read). */
+  router.get("/organizations/:orgId/jobs", async (req, res) => {
+    const query = JobQuerySchema.safeParse(req.query);
+    if (!query.success) {
+      problems.validation(res, issuesToErrors(query.error));
+      return;
+    }
+    const cursor = query.data.cursor === undefined ? undefined : decodeAuditCursor(query.data.cursor);
+    if (query.data.cursor !== undefined && !cursor) {
+      problems.validation(res, [{ field: "cursor", code: "INVALID_CURSOR", message: "Cursor is not valid" }]);
+      return;
+    }
+    const outcome = await inOrganization(req.params.orgId, sessionOf(res).userId, async (trx, membership): Promise<Outcome<JobListResponse>> => {
+      if (!orgPermissions(membership).has("organization.audit.read")) return { kind: "forbidden" };
+      const page = await jobsRepo.listJobs(trx, {
+        limit: query.data.limit,
+        after: cursor ? { createdAt: cursor.occurredAt, id: cursor.id } : undefined,
+        status: query.data.status,
+        type: query.data.type,
+      });
+      const last = page.jobs.at(-1);
+      return {
+        kind: "ok",
+        body: { items: page.jobs.map(jobBody), ...(page.more && last ? { nextCursor: encodeAuditCursor(last.createdAtKey, last.id) } : {}) },
+      };
+    });
+    respond(res, outcome);
+  });
+
+  /**
+   * Requeues a dead job with a few more attempts (integrations.manage). It
+   * keeps its dedupe key, so a destination that already took the action
+   * recognizes the repeat.
+   */
+  router.post("/organizations/:orgId/jobs/:jobId/replay", async (req, res) => {
+    const { orgId, jobId } = req.params;
+    if (!UUID_PATTERN.test(jobId)) {
+      problems.notFound(res);
+      return;
+    }
+    const outcome = await inOrganization(orgId, sessionOf(res).userId, async (trx, membership): Promise<Outcome<JobResponse>> => {
+      if (!orgPermissions(membership).has("integrations.manage")) return { kind: "forbidden" };
+      const current = await jobsRepo.getJob(trx, jobId);
+      if (!current) return { kind: "not_found" };
+      const job = await jobsRepo.replayJob(trx, jobId);
+      if (!job) return { kind: "conflict", code: "JOB_NOT_DEAD", title: "Only dead-lettered jobs can be replayed" };
+      await audit(trx, res, orgId, "job.replayed", "job", jobId, { type: job.type, attempts: current.attempt, lastError: current.lastError });
+      return { kind: "ok", body: { job: jobBody(job) } };
     });
     respond(res, outcome);
   });

@@ -8,7 +8,7 @@
  *
  * PUB-01 defines the envelope and `form.published.v1`, written to the outbox
  * with each publication; RUN-02 adds `submission.accepted.v1`, written with
- * each stored response. Dispatching arrives with JOB-01.
+ * each stored response. JOB-01 dispatches them into durable jobs (@workeasy/jobs).
  */
 
 export interface EventEnvelope<Type extends string, Data extends object> {

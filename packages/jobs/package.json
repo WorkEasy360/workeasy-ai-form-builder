@@ -1,0 +1,16 @@
+{
+  "name": "@workeasy/jobs",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Outbox dispatch and durable job execution with leases, retries and dead letters (server only).",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@workeasy/database": "workspace:*"
+  }
+}

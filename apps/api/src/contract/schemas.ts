@@ -497,3 +497,37 @@ export const AuditListResponseSchema = z.object({
   nextCursor: z.string().optional(),
 });
 export type AuditListResponse = z.infer<typeof AuditListResponseSchema>;
+
+// Durable jobs (JOB-01) -------------------------------------------------------
+
+export const JOB_STATUSES = ["queued", "running", "succeeded", "dead"] as const;
+
+export const JobQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  cursor: z.string().min(1).max(500).optional(),
+  status: z.enum(JOB_STATUSES).optional(),
+  type: z.string().regex(/^[a-z][a-z_]*(\.[a-z][a-z_]*)*$/).max(100).optional(),
+});
+
+/** A job as operators see it: state and attempts, never its payload. */
+export const JobSchema = z.object({
+  id: Uuid,
+  type: z.string(),
+  status: z.enum(JOB_STATUSES),
+  sourceEventId: Uuid.nullable(),
+  attempt: z.number().int(),
+  maxAttempts: z.number().int(),
+  /** A sanitized error code from the last failed attempt. */
+  lastError: z.string().nullable(),
+  createdAt: Timestamp,
+  updatedAt: Timestamp,
+  nextAttemptAt: Timestamp,
+  finishedAt: Timestamp.nullable(),
+});
+export type JobBody = z.infer<typeof JobSchema>;
+
+export const JobListResponseSchema = z.object({ items: z.array(JobSchema), nextCursor: z.string().optional() });
+export type JobListResponse = z.infer<typeof JobListResponseSchema>;
+
+export const JobResponseSchema = z.object({ job: JobSchema });
+export type JobResponse = z.infer<typeof JobResponseSchema>;

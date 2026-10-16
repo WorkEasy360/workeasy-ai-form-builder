@@ -90,7 +90,7 @@ Everything lives in the `app` schema. Each process connects as its own role (`pa
 |---|---|---|---|
 | `workeasy_owner` | `DATABASE_MIGRATION_URL` | Migrations only | Owns every object in `app` |
 | `workeasy_api` | `DATABASE_URL` | API | `SELECT/INSERT/UPDATE` on tenant tables; no `DELETE`. Published versions: `SELECT/INSERT` only. Audit and outbox: `INSERT` only |
-| `workeasy_worker` | `DATABASE_WORKER_URL` | Worker | `SELECT` until job types need more |
+| `workeasy_worker` | `DATABASE_WORKER_URL` | Worker | `SELECT` under row security, plus narrow cross-tenant queue functions (uploads, exports, purges, `dispatch_outbox`, `claim_jobs`, `complete_job`) |
 | `workeasy_public` | `DATABASE_PUBLIC_URL` | API `/public/v1` routes | Narrow lookups (`resolve_public_form`, `resolve_respondent_session`, `resolve_session`, `is_active_member`) plus, under row security: `SELECT` on a few `forms` and access-policy columns and on `form_versions.public_projection`, `SELECT/INSERT` on `respondent_sessions`, and the intake writes: `INSERT` on `submissions` and `outbox_events`, `SELECT/INSERT` on `submission_requests`, `UPDATE (accepted_submission_id)` on sessions. It can never read stored answers |
 
 None of the runtime roles is a superuser, has `BYPASSRLS`, or owns a table. Every table holding tenant or user data has row-level security enabled and **forced**. `DATABASE_ADMIN_URL` (the local superuser) is used only by `pnpm db:setup` and the integration-test setup.
@@ -284,6 +284,22 @@ The response presentation and CSV code live in `@workeasy/responses`, shared by 
   - export requests and downloads.
 
   Entries hold identifiers and counts, never answers. Deletion reasons stay on the deletion record and are not copied into the audit log. Purge and retention entries use the `system` actor.
+
+## Outbox and background jobs (JOB-01)
+
+- **Dispatch:** the worker's `dispatch-outbox` task turns committed outbox events into jobs. In one transaction, `app.dispatch_outbox` claims events (`FOR UPDATE SKIP LOCKED`), inserts one job per job type subscribed to the event and marks the event dispatched.
+  - A job's `(tenant, type, dedupe key)` is unique, and an event's jobs use the event ID as the key. Concurrent dispatchers, or an event dispatched again, never make a second job.
+  - If the API commits and the process dies before anything is delivered, the event waits in the outbox until a worker is back.
+- **Job types** live in `apps/worker/src/jobs.ts`. Each one has a handler and, optionally, the events it subscribes to. The registry is empty until email and webhooks (AUT-01) and AI generation (AI-01) add their types; until then, events are marked dispatched with no jobs. The API can also enqueue a job directly (`jobsRepo.enqueueJob`); the same dedupe key returns the existing job.
+- **Running:** the `run-jobs` task claims due jobs under a lease (60 seconds by default, per type) with a fresh lease token, counts the attempt, and runs the handler outside any transaction, under the job's recorded tenant.
+  - Completion is compare-and-set on the token. A worker whose lease ran out, and whose job was reclaimed, cannot overwrite the newer attempt.
+  - The handler's `AbortSignal` fires shortly before the lease ends.
+- **Retries:** a failed attempt retries with exponential backoff and jitter (5 seconds doubling, capped at an hour) until `max_attempts` (8 by default). Then the job is **dead**.
+  - `PermanentJobError` dead-letters at once.
+  - A job abandoned on its last attempt dead-letters as `lease_expired`.
+  - Only a sanitized error code is stored, never the error message.
+- **At least once:** a handler can run again after a crash, so it must pass `ctx.dedupeKey` to the destination as its idempotency key.
+- **Operators:** owners and admins see jobs at **Background jobs** on the forms page (`GET /api/v1/organizations/:orgId/jobs`, `organization.audit.read`): state, attempts and error code, never payloads. **Retry** on a dead job (`POST …/jobs/:id/replay`, `integrations.manage`) gives it three more attempts with the same dedupe key, and is audited as `job.replayed`.
 
 ## Uploads and scanning (FIL-01)
 

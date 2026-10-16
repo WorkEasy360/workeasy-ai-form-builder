@@ -239,6 +239,9 @@ importers:
       '@workeasy/form-schema':
         specifier: workspace:*
         version: link:../../packages/form-schema
+      '@workeasy/jobs':
+        specifier: workspace:*
+        version: link:../../packages/jobs
       '@workeasy/test-fixtures':
         specifier: workspace:*
         version: link:../../packages/test-fixtures
@@ -328,6 +331,9 @@ importers:
       '@workeasy/files':
         specifier: workspace:*
         version: link:../../packages/files
+      '@workeasy/jobs':
+        specifier: workspace:*
+        version: link:../../packages/jobs
       '@workeasy/observability':
         specifier: workspace:*
         version: link:../../packages/observability
@@ -443,6 +449,12 @@ importers:
         version: 4.23.15
 
   packages/integrations: {}
+
+  packages/jobs:
+    dependencies:
+      '@workeasy/database':
+        specifier: workspace:*
+        version: link:../database
 
   packages/observability:
     dependencies:

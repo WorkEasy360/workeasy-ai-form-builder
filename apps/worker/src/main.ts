@@ -1,9 +1,11 @@
 import { createDb } from "@workeasy/database";
+import { dispatchOutbox, runJobs, type JobDeps } from "@workeasy/jobs";
 import { createObjectStore, expireStaleUploads, scanPendingUploads, type ScanDeps } from "@workeasy/files";
 import { createLogger } from "@workeasy/observability";
 import { applyRetention, expireOldExports, processExports, purgeDeletedResponses } from "@workeasy/responses";
 import { loadConfig } from "./config.js";
 import { createHealthServer } from "./health.js";
+import { registry } from "./jobs.js";
 import { startRunner, type PollingTask } from "./runner.js";
 
 const config = loadConfig();
@@ -26,8 +28,22 @@ const scanDeps: ScanDeps = {
   log: (level, message, fields) => logger[level](fields, message),
 };
 
-// Outbox dispatch and job handlers join these from JOB-01 onwards.
+const jobDeps: JobDeps = { workerDb, log: (level, message, fields) => logger[level](fields, message) };
+
 const tasks: PollingTask[] = [
+  {
+    // Committed outbox events become jobs; a crash before this runs only delays them.
+    name: "dispatch-outbox",
+    async run() {
+      while ((await dispatchOutbox(jobDeps, registry, 100)).events === 100);
+    },
+  },
+  {
+    name: "run-jobs",
+    async run() {
+      await runJobs(jobDeps, registry, 10);
+    },
+  },
   {
     name: "scan-uploads",
     async run() {

@@ -250,6 +250,28 @@ export interface ExportsTable {
   expires_at: Generated<Date | null>;
 }
 
+export type JobStatus = "queued" | "running" | "succeeded" | "dead";
+
+export interface JobsTable {
+  id: Generated<string>;
+  tenant_id: string;
+  type: string;
+  source_event_id: string | null;
+  dedupe_key: string;
+  payload: Record<string, unknown>;
+  trace_id: string | null;
+  status: Generated<JobStatus>;
+  attempt: Generated<number>;
+  max_attempts: Generated<number>;
+  next_attempt_at: Generated<Date>;
+  lease_until: Date | null;
+  lease_token: string | null;
+  last_error: string | null;
+  created_at: ColumnType<Date, never, never>;
+  updated_at: Generated<Date>;
+  finished_at: Date | null;
+}
+
 export interface Database {
   tenants: TenantsTable;
   users: UsersTable;
@@ -261,6 +283,7 @@ export interface Database {
   form_versions: FormVersionsTable;
   audit_events: AuditEventsTable;
   outbox_events: OutboxEventsTable;
+  jobs: JobsTable;
   form_access_policies: FormAccessPoliciesTable;
   respondent_sessions: RespondentSessionsTable;
   submissions: SubmissionsTable;
