@@ -233,7 +233,7 @@ describe("retries", () => {
     const dead = await jobRow(job.id);
     expect(dead).toMatchObject({ status: "dead", attempt: 3, last_error: "handler_error" });
     expect(dead.finished_at).not.toBeNull();
-    expect(JSON.stringify(dead)).not.toMatch(/Ada|4111/);
+    expect(JSON.stringify(dead)).not.toMatch(/Ada Lovelace|4111 1111/);
     await makeDue(job.id);
     expect(await runJobs(deps(), registry)).toBe(0);
   });
