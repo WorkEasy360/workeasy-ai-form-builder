@@ -10,6 +10,10 @@ const ConfigSchema = z.object({
   WORKER_POLL_INTERVAL_MS: z.coerce.number().int().min(100).max(60_000).default(5000),
   WORKER_HEALTH_PORT: z.coerce.number().int().min(1).max(65535).default(4001),
   /** Longest a single loop iteration may run before liveness reports the worker as stalled. */
+  /** Jobs run at once (OPS-02: one at a time could not keep up with deliveries). */
+  WORKER_JOB_CONCURRENCY: z.coerce.number().int().min(1).max(64).default(8),
+  /** How long each iteration may keep draining due jobs before the other tasks get a turn. */
+  WORKER_JOB_BUDGET_MS: z.coerce.number().int().min(1000).max(600_000).default(20_000),
   WORKER_MAX_ITERATION_MS: z.coerce.number().int().min(1000).max(3_600_000).default(300_000),
   /** The worker database role (docs/02 §3). */
   DATABASE_WORKER_URL: z.url(),

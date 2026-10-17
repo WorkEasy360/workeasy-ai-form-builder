@@ -139,11 +139,11 @@ async function runOne(deps: JobDeps, def: JobDefinition, job: ClaimedJob): Promi
 }
 
 /**
- * Claims and runs up to `limit` due jobs per lease length, one at a time;
- * returns how many were claimed. A crash at any point leaves the job leased,
+ * Claims and runs up to `limit` due jobs per lease length, `concurrency` at
+ * a time; returns how many were claimed. A crash at any point leaves the job leased,
  * and it is claimed again once the lease runs out.
  */
-export async function runJobs(deps: JobDeps, registry: JobRegistry, limit = 10): Promise<number> {
+export async function runJobs(deps: JobDeps, registry: JobRegistry, limit = 10, concurrency = 1): Promise<number> {
   const byLease = new Map<number, string[]>();
   for (const [type, def] of Object.entries(registry)) {
     const lease = def.leaseSeconds ?? DEFAULT_LEASE_SECONDS;
@@ -153,7 +153,15 @@ export async function runJobs(deps: JobDeps, registry: JobRegistry, limit = 10):
   for (const [lease, types] of byLease) {
     const jobs = await jobsRepo.claimJobs(deps.workerDb, types, limit, lease, deps.tenantId);
     claimed += jobs.length;
-    for (const job of jobs) await runOne(deps, registry[job.type]!, job);
+    // Up to `concurrency` jobs at once, so one slow job (an AI generation) does not hold up the rest.
+    let next = 0;
+    const lane = async () => {
+      while (next < jobs.length) {
+        const job = jobs[next++]!;
+        await runOne(deps, registry[job.type]!, job);
+      }
+    };
+    await Promise.all(Array.from({ length: Math.max(1, Math.min(concurrency, jobs.length)) }, lane));
   }
   return claimed;
 }

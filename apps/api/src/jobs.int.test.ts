@@ -246,6 +246,32 @@ describe("retries", () => {
   });
 });
 
+describe("concurrency (OPS-02)", () => {
+  it("runs claimed jobs up to the given number at once, and one at a time by default", async () => {
+    let running = 0;
+    let peak = 0;
+    behavior["test_jobs.direct"] = async () => {
+      peak = Math.max(peak, ++running);
+      await new Promise((r) => setTimeout(r, 150));
+      running--;
+    };
+    const only = { "test_jobs.direct": registry["test_jobs.direct"]! };
+    try {
+      const parallel = await Promise.all([1, 2, 3, 4].map(() => enqueue("test_jobs.direct")));
+      expect(await runJobs(deps(), only, 10, 4)).toBe(4);
+      expect(peak).toBe(4);
+      for (const { job } of parallel) expect((await jobRow(job.id)).status).toBe("succeeded");
+
+      peak = 0;
+      await Promise.all([1, 2, 3].map(() => enqueue("test_jobs.direct")));
+      expect(await runJobs(deps(), only)).toBe(3);
+      expect(peak).toBe(1);
+    } finally {
+      delete behavior["test_jobs.direct"];
+    }
+  });
+});
+
 describe("operators", () => {
   it("list jobs without payloads and replay dead ones with the same dedupe key; audited and tenant-bound", async () => {
     behavior["test_jobs.direct"] = () => Promise.reject(new PermanentJobError("destination_rejected"));

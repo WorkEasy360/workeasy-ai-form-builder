@@ -88,6 +88,11 @@ export async function lockForm(trx: Trx, formId: string): Promise<FormGate | und
   };
 }
 
+/** Creates the form's and tenant's counter rows if missing; call before inserting the submission. */
+export async function prepareResponseCounters(trx: Trx, formId: string): Promise<void> {
+  await sql`SELECT app.prepare_response_counters(${formId}::uuid)`.execute(trx);
+}
+
 /**
  * Reserves one response against the form's limit and the tenant's monthly
  * quota (docs/04 §5 step 7). Counters are locked in a fixed order and both

@@ -9,7 +9,8 @@
     "build": "tsup",
     "start": "node --env-file-if-exists=../../.env dist/server.js",
     "typecheck": "tsc -p tsconfig.json",
-    "openapi:write": "tsx scripts/write-openapi.ts"
+    "openapi:write": "tsx scripts/write-openapi.ts",
+    "load-test": "tsx --env-file-if-exists=../../.env scripts/load-test.ts"
   },
   "dependencies": {
     "@workeasy/ai": "workspace:*",

@@ -13,7 +13,8 @@ import { startRunner, type PollingTask } from "./runner.js";
 const config = loadConfig();
 const logger = createLogger({ service: "worker", level: config.LOG_LEVEL });
 
-const workerDb = createDb({ connectionString: config.DATABASE_WORKER_URL, applicationName: "workeasy-worker" });
+// Enough connections for the concurrent jobs plus the other tasks.
+const workerDb = createDb({ connectionString: config.DATABASE_WORKER_URL, maxConnections: config.WORKER_JOB_CONCURRENCY + 4, applicationName: "workeasy-worker" });
 const scanDeps: ScanDeps = {
   workerDb,
   store: createObjectStore({
@@ -63,8 +64,10 @@ const tasks: PollingTask[] = [
   },
   {
     name: "run-jobs",
-    async run() {
-      await runJobs(jobDeps, registry, 10);
+    async run(signal) {
+      // Drain everything that is due, a batch at a time, within the iteration's budget.
+      const deadline = Date.now() + config.WORKER_JOB_BUDGET_MS;
+      while (!signal.aborted && Date.now() < deadline && (await runJobs(jobDeps, registry, 50, config.WORKER_JOB_CONCURRENCY)) > 0);
     },
   },
   {

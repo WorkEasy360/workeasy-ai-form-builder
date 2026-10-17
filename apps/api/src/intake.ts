@@ -75,6 +75,13 @@ function uploadProblem(upload: Upload | undefined, fieldId: string): FieldError 
   return { field, code: "FILE_PENDING", message: "A file is still being checked. Try again in a moment." };
 }
 
+/** Thrown to roll the intake transaction back when the form is full or the tenant's quota is used up. */
+class ReservationRefused extends Error {
+  constructor(readonly reason: "full" | "quota") {
+    super(`Response not reserved: ${reason}`);
+  }
+}
+
 /** Raised by app.claim_uploads when a file was claimed or changed after it was checked. */
 const isClaimRace = (err: unknown) => err instanceof Error && /UPLOAD_NOT_CLAIMABLE/.test(err.message);
 
@@ -82,6 +89,7 @@ export async function intake(publicDb: Db, request: IntakeRequest): Promise<Inta
   try {
     return await intakeTransaction(publicDb, request);
   } catch (err) {
+    if (err instanceof ReservationRefused) return { kind: "unavailable", reason: err.reason };
     if (!isClaimRace(err)) throw err;
     // Nothing was stored: the transaction rolled back. The respondent can retry.
     return { kind: "invalid", errors: [{ field: "answers", code: "FILE_NOT_FOUND", message: "One of the files changed while sending. Try again." }] };
@@ -148,11 +156,9 @@ function intakeTransaction(publicDb: Db, request: IntakeRequest): Promise<Intake
       if (problems.length > 0) return { kind: "invalid", errors: problems };
     }
 
-    // 7. Reserve against the form's limit and the tenant's quota; only valid answers count (docs/04 §5).
-    const reserved = await intakeRepo.reserveResponse(trx, locked.formId);
-    if (reserved !== "ok") return { kind: "unavailable", reason: reserved === "form_full" ? "full" : "quota" };
-
-    // 8. Store the response, its receipt, the session's accepted marker and the event together.
+    // 7. Store the response, its receipt, the session's accepted marker and the event together.
+    // The counters are created first if missing: seeded later, they would count this response twice.
+    await intakeRepo.prepareResponseCounters(trx, locked.formId);
     const receivedAt = await intakeRepo.transactionTime(trx);
     const submissionId = randomUUID();
     const consents = definition.fields
@@ -199,6 +205,13 @@ function intakeTransaction(publicDb: Db, request: IntakeRequest): Promise<Intake
       payload: { ...event.data },
       traceId: request.requestId,
     });
+
+    // 8. Reserve against the form's limit and the tenant's quota; only valid answers count (docs/04 §5).
+    // Last, just before commit: the counters are single rows every submission to the form (or
+    // tenant) updates, so their lock is held for as short a time as possible. A refusal rolls
+    // back everything above.
+    const reserved = await intakeRepo.reserveResponse(trx, locked.formId);
+    if (reserved !== "ok") throw new ReservationRefused(reserved === "form_full" ? "full" : "quota");
     return { kind: "accepted", receipt };
   });
 }
