@@ -152,3 +152,29 @@ export async function applyRetention(db: Db, limit: number): Promise<number> {
   const { rows } = await sql<{ n: number }>`SELECT app.apply_retention(${limit}::integer) AS n`.execute(db);
   return rows[0]?.n ?? 0;
 }
+
+// Deletion ledger (REC-01) ------------------------------------------------------------
+
+export interface LedgerEntry {
+  kind: "form" | "response";
+  id: string;
+  tenant_id: string;
+  form_id: string;
+  /** ISO time with microseconds, as the database stores it. */
+  deleted_at: string;
+}
+
+/** Forms and responses deleted after `since`, oldest first. Owner connection only. */
+export async function exportDeletionLedger(db: Db, since: string): Promise<LedgerEntry[]> {
+  const { rows } = await sql<LedgerEntry>`
+    SELECT kind, id, tenant_id, form_id, to_char(deleted_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS deleted_at
+      FROM app.deletion_ledger(${since}::timestamptz)`.execute(db);
+  return rows;
+}
+
+/** Deletes again what the ledger lists; idempotent. Owner connection only. */
+export async function replayDeletions(db: Db, entries: readonly LedgerEntry[]): Promise<{ forms: number; responses: number }> {
+  const { rows } = await sql<{ forms_deleted: number; responses_deleted: number }>`
+    SELECT * FROM app.replay_deletions(${JSON.stringify(entries)}::jsonb)`.execute(db);
+  return { forms: rows[0]?.forms_deleted ?? 0, responses: rows[0]?.responses_deleted ?? 0 };
+}

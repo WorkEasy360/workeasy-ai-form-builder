@@ -118,13 +118,18 @@ jobs:
           ssh_ "mkdir -p '$path'"
           scp -i ~/.ssh/deploy -o StrictHostKeyChecking=yes \
             infra/production/docker-compose.yml infra/production/Caddyfile infra/production/deploy.sh \
-            infra/production/new-env.sh infra/production/env.example "$target:$path/"
+            infra/production/new-env.sh infra/production/env.example infra/production/backup.sh \
+            infra/production/restore-drill.sh "$target:$path/"
           if [ -n "$ENV_FILE" ]; then
-            printf '%s\n' "$ENV_FILE" | ssh_ "umask 077 && cat > '$path/.env.upload' && grep -q '^WORKEASY_IMAGE=' '$path/.env.upload' || echo 'WORKEASY_IMAGE=' >> '$path/.env.upload'; mv '$path/.env.upload' '$path/.env'"
+            # The server's WORKEASY_IMAGE line is kept: it names the running release, which deploy.sh restores on failure.
+            printf '%s\n' "$ENV_FILE" | ssh_ "cd '$path' && umask 077 && cat > .env.upload \
+              && current=\$(sed -n 's/^WORKEASY_IMAGE=//p' .env 2>/dev/null) \
+              && { grep -v '^WORKEASY_IMAGE=' .env.upload; echo \"WORKEASY_IMAGE=\$current\"; } > .env.new \
+              && mv .env.new .env && rm -f .env.upload"
           fi
           # The registry token is valid only for this job; it is used for the pull and then removed.
           echo "$TOKEN" | ssh_ "docker login ghcr.io -u '$GITHUB_ACTOR' --password-stdin > /dev/null"
           status=0
-          ssh_ "cd '$path' && chmod +x deploy.sh new-env.sh && ./deploy.sh '$IMAGE'" || status=$?
+          ssh_ "cd '$path' && chmod +x deploy.sh new-env.sh restore-drill.sh && ./deploy.sh '$IMAGE'" || status=$?
           ssh_ "docker logout ghcr.io > /dev/null" || true
           exit $status

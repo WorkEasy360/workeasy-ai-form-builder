@@ -103,8 +103,21 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    # Continuous WAL archiving (REC-01): a segment is archived at least every
+    # 5 minutes, which bounds how much a restore can lose.
+    command:
+      - postgres
+      - -c
+      - wal_level=replica
+      - -c
+      - archive_mode=on
+      - -c
+      - archive_command=test ! -f /backups/wal/%f && cp %p /backups/wal/%f
+      - -c
+      - archive_timeout=300
     volumes:
       - postgres-data:/var/lib/postgresql
+      - backups:/backups
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
       interval: 5s
@@ -150,6 +163,45 @@ services:
           "{\"CORSRules\":[{\"AllowedOrigins\":[\"$$RESPONDENT_ORIGIN\"],\"AllowedMethods\":[\"PUT\"],\"AllowedHeaders\":[\"*\"],\"MaxAgeSeconds\":600}]}"
         echo "buckets ready"
 
+  # Base backups and the deletion ledger (REC-01). Shares the database's
+  # network so replication connections come from 127.0.0.1.
+  backup:
+    image: postgres:18.6-alpine
+    restart: unless-stopped
+    network_mode: service:postgres
+    entrypoint: ["/bin/sh", "/backup.sh"]
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_DB: ${POSTGRES_DB}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      BASE_BACKUP_HOUR: ${BASE_BACKUP_HOUR:-2}
+      BASE_BACKUPS_KEPT: ${BASE_BACKUPS_KEPT:-7}
+    volumes:
+      - ./backup.sh:/backup.sh:ro
+      - backups:/backups
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  # Nightly copy of stored files (REC-01). Exports are temporary and not copied.
+  file-backup:
+    image: amazon/aws-cli:2.38.0
+    restart: unless-stopped
+    depends_on: [object-storage]
+    environment:
+      AWS_ACCESS_KEY_ID: ${OBJECT_STORAGE_ACCESS_KEY}
+      AWS_SECRET_ACCESS_KEY: ${OBJECT_STORAGE_SECRET_KEY}
+      AWS_DEFAULT_REGION: ${OBJECT_STORAGE_REGION:-us-east-1}
+      BUCKET: ${OBJECT_STORAGE_BUCKET_CLEAN}
+    volumes:
+      - backups:/backups
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        while :; do
+          aws --endpoint-url http://object-storage:9000 s3 sync --only-show-errors --delete "s3://$$BUCKET" "/backups/files/$$BUCKET"             && date -u +%FT%TZ > /backups/files/.last-sync || echo "file backup failed"
+          sleep 86400
+        done
+
   # Malware scanner. Unlike local development, signatures update automatically.
   scanner:
     image: clamav/clamav:1.5.1
@@ -166,6 +218,7 @@ services:
       start_period: 180s
 
 volumes:
+  backups:
   postgres-data:
   object-storage-data:
   clamav-data:

@@ -21,6 +21,7 @@ Only Caddy publishes ports. The database, storage, scanner, API and worker are r
 | `infra/production/env.example` | Every setting, documented |
 | `infra/production/new-env.sh` | Creates `.env` with fresh random secrets (refuses to overwrite) |
 | `infra/production/deploy.sh` | Pull, migrate, start, wait for health, roll back on failure |
+| `infra/production/backup.sh`, `restore-drill.sh` | Backups, deletion ledger and restore drills ([backup-and-restore.md](backup-and-restore.md)) |
 | `.github/workflows/deploy.yml` | Builds the image and deploys over SSH |
 
 ## Preparing a server (once per environment)
@@ -75,7 +76,7 @@ Migrations run before the new version starts and are never reversed. Every migra
 | Failed background jobs | Console → Background jobs, or [operations runbook](operations.md) |
 | Restart one service | `docker compose restart worker` |
 
-Backups and restore drills are covered by REC-01.
+Backups, restore drills and deletion replay: [backup-and-restore.md](backup-and-restore.md).
 
 ## Not included
 

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { bootstrapDatabase } from "./bootstrap.js";
 import { createDb } from "./client.js";
 import { migrate } from "./migrate.js";
+import { exportDeletionLedger, replayDeletions, type LedgerEntry } from "./repositories/governance.js";
 import { seedTenantFixture } from "./testing/index.js";
 
 const Url = z.string().url();
@@ -58,7 +59,38 @@ async function runSeed(env: Env): Promise<void> {
   }
 }
 
+/** `db ledger-export <since>`: prints deletions after <since> (ISO time) as JSON lines (REC-01). */
+async function runLedgerExport(env: Env): Promise<void> {
+  const since = process.argv[3] ?? "";
+  if (Number.isNaN(Date.parse(since))) throw new Error("Usage: db ledger-export <ISO time>");
+  const db = createDb({ connectionString: env.DATABASE_MIGRATION_URL, maxConnections: 1, applicationName: "workeasy-ledger" });
+  try {
+    for (const entry of await exportDeletionLedger(db, since)) process.stdout.write(`${JSON.stringify(entry)}\n`);
+  } finally {
+    await db.destroy();
+  }
+}
+
+/** `db ledger-replay < ledger.jsonl`: deletes again everything the ledger lists (REC-01). */
+async function runLedgerReplay(env: Env): Promise<void> {
+  let text = "";
+  for await (const chunk of process.stdin) text += String(chunk);
+  const entries = text
+    .split("\n")
+    .filter((line) => line.trim() !== "")
+    .map((line) => JSON.parse(line) as LedgerEntry);
+  const db = createDb({ connectionString: env.DATABASE_MIGRATION_URL, maxConnections: 1, applicationName: "workeasy-ledger" });
+  try {
+    const result = await replayDeletions(db, entries);
+    console.log(`ledger-replay: ${entries.length} entries read; deleted again ${result.forms} forms and ${result.responses} responses`);
+  } finally {
+    await db.destroy();
+  }
+}
+
 const commands: Record<string, (env: Env) => Promise<void>> = {
+  "ledger-export": runLedgerExport,
+  "ledger-replay": runLedgerReplay,
   bootstrap: runBootstrap,
   migrate: runMigrate,
   setup: async (env) => {
