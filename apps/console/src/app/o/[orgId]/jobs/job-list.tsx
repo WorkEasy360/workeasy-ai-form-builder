@@ -122,7 +122,8 @@ export function JobList({ orgId }: { orgId: string }) {
       {!items && !error && <p>Loading…</p>}
       {items && items.length === 0 && <p>No jobs yet.</p>}
       {items && items.length > 0 && (
-        <div style={{ overflowX: "auto" }}>
+        // Focusable so keyboard users can scroll the table sideways on narrow screens.
+        <div style={{ overflowX: "auto", position: "relative" }} tabIndex={0} role="region" aria-label="Background jobs">
           <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 14 }}>
             <thead>
               <tr style={{ textAlign: "left", borderBottom: "1px solid var(--we-color-border)" }}>
@@ -131,7 +132,11 @@ export function JobList({ orgId }: { orgId: string }) {
                 <th scope="col" style={{ padding: 8 }}>Status</th>
                 <th scope="col" style={{ padding: 8 }}>Attempts</th>
                 <th scope="col" style={{ padding: 8 }}>Last error</th>
-                {canReplay && <th scope="col" style={{ padding: 8 }} aria-label="Actions" />}
+                {canReplay && (
+                  <th scope="col" style={{ padding: 8 }}>
+                    <span className="c-visually-hidden">Actions</span>
+                  </th>
+                )}
               </tr>
             </thead>
             <tbody>

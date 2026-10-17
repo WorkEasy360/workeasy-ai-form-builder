@@ -134,12 +134,12 @@ export function BuilderApp({ orgId, formId, aiJob }: { orgId: string; formId: st
           ? "You can see this form but you don't have permission to edit it."
           : load.message;
     return (
-      <main style={{ padding: 16 }}>
+      <div style={{ padding: 16 }}>
         <p role={load.kind === "error" ? "alert" : undefined}>{text}</p>
         <p>
           <a href={listHref}>Back to forms</a>
         </p>
-      </main>
+      </div>
     );
   }
   return (
@@ -585,7 +585,7 @@ function Editor({
 
           </nav>
 
-          <main
+          <div
             className="b-canvas"
             aria-label="Form canvas"
             style={themeStyle(definition.theme)}
@@ -737,7 +737,7 @@ function Editor({
               );
             })}
             {drop?.pageId === page.id && page.fieldIds.length > 0 && drop.index === page.fieldIds.length && <div className="b-drop-line" aria-hidden="true" />}
-          </main>
+          </div>
 
           <aside className="b-panel" aria-label="Properties">
             <fieldset disabled={readOnly} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>

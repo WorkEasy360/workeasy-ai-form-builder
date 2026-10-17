@@ -111,7 +111,8 @@ export function AuditLog({ orgId }: { orgId: string }) {
       {!items && !error && <p role="status">Loading…</p>}
       {items && items.length === 0 && <p>Nothing recorded yet.</p>}
       {items && items.length > 0 && (
-        <div style={{ overflowX: "auto" }}>
+        // Focusable so keyboard users can scroll the table sideways on narrow screens.
+        <div style={{ overflowX: "auto", position: "relative" }} tabIndex={0} role="region" aria-label="Audit entries">
           <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 14 }}>
             <thead>
               <tr style={{ textAlign: "left", borderBottom: "1px solid var(--we-color-border)" }}>

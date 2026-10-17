@@ -47,12 +47,12 @@ export function PreviewApp({ orgId, formId }: { orgId: string; formId: string })
   }
   if (load.kind === "unavailable") {
     return (
-      <main style={{ padding: 16 }}>
+      <div style={{ padding: 16 }}>
         <p role="alert">{load.message}</p>
         <p>
           <a href={`/o/${orgId}/forms`}>Back to forms</a>
         </p>
-      </main>
+      </div>
     );
   }
   return (
@@ -65,9 +65,9 @@ export function PreviewApp({ orgId, formId }: { orgId: string; formId: string })
         </div>
         <span className="b-muted">Last saved draft (revision {load.draft.revision})</span>
       </header>
-      <main>
+      <div>
         <PreviewPane definition={load.draft.definition} />
-      </main>
+      </div>
     </div>
   );
 }

@@ -107,6 +107,9 @@ export function OrgShell({ orgId, children }: { orgId: string; children: ReactNo
 
   return (
     <div className="c-app">
+      <a className="c-skip" href="#main">
+        Skip to main content
+      </a>
       <header className="c-topbar">
         <a className="c-brand" href={`${base}/forms`}>
           <span className="c-brand-mark" aria-hidden="true">
@@ -167,9 +170,9 @@ export function OrgShell({ orgId, children }: { orgId: string; children: ReactNo
             ))}
         </ul>
       </nav>
-      <div className="c-main">
+      <main className="c-main" id="main" tabIndex={-1}>
         <OrgContext.Provider value={org}>{children}</OrgContext.Provider>
-      </div>
+      </main>
     </div>
   );
 }

@@ -178,10 +178,9 @@ export function CreateForm({ orgId }: { orgId: string }) {
                 aria-checked={start === o.id}
                 className="c-card c-choice"
                 onClick={() => setStart(o.id)}
-                style={o.id === "ai" && ai?.ready === false ? { opacity: 0.75 } : undefined}
               >
                 <span className="c-icon-tile">{o.icon}</span>
-                <h3>{o.title}</h3>
+                <h2>{o.title}</h2>
                 <p>{o.text}</p>
               </button>
             ))}
@@ -201,7 +200,7 @@ export function CreateForm({ orgId }: { orgId: string }) {
                   onClick={() => chooseTemplate(t)}
                   aria-label={`${t.name}: ${t.description}`}
                 >
-                  <h3>{t.name}</h3>
+                  <h2>{t.name}</h2>
                   <p>{t.description}</p>
                   <p>
                     {t.fields.length} questions{t.pages > 1 ? ` · ${t.pages} pages` : ""}

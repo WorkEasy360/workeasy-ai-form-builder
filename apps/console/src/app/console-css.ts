@@ -6,7 +6,7 @@
  */
 export const CONSOLE_CSS = `
 :root { --c-sidebar: 232px; --c-topbar: 56px; --c-shadow: 0 1px 2px rgb(16 24 40 / .06), 0 1px 3px rgb(16 24 40 / .1);
-  --we-color-success: #15803D; --we-color-warning: #B45309; }
+  --we-color-success: #166534; --we-color-warning: #92400E; }
 @media (prefers-color-scheme: dark) { :root { --c-shadow: 0 1px 3px rgb(0 0 0 / .5); --we-color-success: #4ADE80; --we-color-warning: #FBBF24; } }
 a { color: var(--we-color-accent); }
 h1, h2, h3 { line-height: 1.25; }
@@ -30,6 +30,10 @@ h1, h2, h3 { line-height: 1.25; }
 .c-nav a[aria-current="page"] { background: color-mix(in srgb, var(--we-color-accent) 14%, transparent); color: var(--we-color-accent); font-weight: 600; }
 .c-nav svg { flex: none; }
 .c-main { min-width: 0; }
+.c-main:focus { outline: none; }
+.c-skip { position: absolute; left: 8px; top: -48px; z-index: 100; padding: 8px 12px; border-radius: var(--we-radius-md);
+  background: var(--we-color-accent); color: var(--we-color-accentText); font-weight: 600; }
+.c-skip:focus { top: 8px; }
 .c-page { max-width: 1120px; margin: 0 auto; padding: 24px; }
 .c-page-wide { max-width: none; }
 .c-page-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 16px; margin-bottom: 20px; }
@@ -89,13 +93,13 @@ h1, h2, h3 { line-height: 1.25; }
 .c-choice { text-align: left; display: grid; gap: 8px; align-content: start; cursor: pointer; font: inherit; color: inherit; }
 .c-choice:hover { border-color: color-mix(in srgb, var(--we-color-accent) 50%, var(--we-color-border)); }
 .c-choice[aria-pressed="true"], .c-choice[aria-checked="true"] { border-color: var(--we-color-accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--we-color-accent) 35%, transparent); }
-.c-choice h3 { margin: 0; font-size: 16px; }
+.c-choice h2, .c-choice h3 { margin: 0; font-size: 16px; }
 .c-choice p { margin: 0; color: var(--we-color-textMuted); font-size: 14px; }
 .c-icon-tile { width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center;
   background: color-mix(in srgb, var(--we-color-accent) 12%, transparent); color: var(--we-color-accent); }
 
 /* Tables */
-.c-table-wrap { overflow-x: auto; border: 1px solid var(--we-color-border); border-radius: var(--we-radius-lg); background: var(--we-color-background); }
+.c-table-wrap { position: relative; overflow-x: auto; border: 1px solid var(--we-color-border); border-radius: var(--we-radius-lg); background: var(--we-color-background); }
 .c-table { width: 100%; border-collapse: collapse; font-size: 15px; }
 .c-table th { text-align: left; font-size: 13px; font-weight: 600; color: var(--we-color-textMuted); background: var(--we-color-surface);
   padding: 10px 14px; border-bottom: 1px solid var(--we-color-border); white-space: nowrap; }
