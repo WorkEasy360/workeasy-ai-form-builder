@@ -1,6 +1,6 @@
 # workeasy-AI-Form-builder — build blueprint
 
-Architecture specification, prepared 14 October 2026. This repository currently contains design artifacts, not an implemented application.
+A working multi-tenant form builder: the first usable release (backlog P0 to P1D, docs/07) is implemented, tested and deployable. The design documents below remain the specification; later phases (P2, P3) are not built yet.
 
 Build a multi-tenant platform where organizations create forms manually or with AI, publish and share them, collect responses, and automate actions across Workeasy Helpdesk, HRMS, and AI Agent Platform. Zoho Forms is a capability reference; Workeasy uses its own identity, interface, and implementation.
 
@@ -28,7 +28,16 @@ Machine-readable starting contracts:
 - [Form definition JSON Schema](contracts/form-definition.schema.json)
 - [Example support form](contracts/support-request.example.json)
 
-These contracts describe the first release's form engine. APIs in the design must be expanded into executable OpenAPI before their implementation. The data dictionary must become reviewed SQL migrations. Neither the JSON examples nor the design documents imply a working deployment.
+- [OpenAPI contract for the console and public APIs](contracts/openapi.json), generated from the code and checked in CI
+
+## Guides
+
+| For | Read |
+|---|---|
+| People building forms | **Help** in the console sidebar |
+| Developers | [Local development](docs/local-development.md), [API guide](docs/api.md) |
+| Operators | [Deployment](docs/deployment.md), [Operations runbook](docs/operations.md), [Backup and restore](docs/backup-and-restore.md) |
+| Release readiness | [Security review](docs/security-review.md), [Accessibility](docs/accessibility.md), [Performance](docs/performance.md) |
 
 ## Recommended deployment shape
 

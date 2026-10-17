@@ -18,11 +18,11 @@ node scripts/a11y-audit.mjs --out ./a11y-report
 
 It signs in with the local Dex fixture account (or `A11Y_EMAIL` and `A11Y_PASSWORD`), creates and publishes a form, audits each page, archives the form, and writes screenshots and `report.json` to the output folder. It exits 1 on any serious or critical issue.
 
-Pages covered: organizations, forms list, create form, builder, preview, responses, response detail, analytics, integrations, form settings, members, AI settings, audit log, background jobs, invitation, and the public form with its confirmation.
+Pages covered: organizations, forms list, create form, builder, preview, responses, response detail, analytics, integrations, form settings, members, AI settings, audit log, background jobs, invitation, help, and the public form with its confirmation.
 
 ## Results, 17 October 2026
 
-49 page views, 2 keyboard journeys: no WCAG violations, no advisories, no sideways scrolling.
+52 page views, 2 keyboard journeys: no WCAG violations, no advisories, no sideways scrolling (rerun with the Help page added, DOC-01).
 
 Fixed while verifying:
 

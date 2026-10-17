@@ -3,7 +3,7 @@
 import { usePathname } from "next/navigation";
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { api, ApiError, type Me } from "../../../lib/api";
-import { AuditIcon, FormsIcon, JobsIcon, LogoutIcon, SparkleIcon, UsersIcon } from "../../icons";
+import { AuditIcon, FormsIcon, HelpIcon, JobsIcon, LogoutIcon, SparkleIcon, UsersIcon } from "../../icons";
 
 export interface OrgContextValue {
   orgId: string;
@@ -102,6 +102,7 @@ export function OrgShell({ orgId, children }: { orgId: string; children: ReactNo
     { href: `${base}/ai`, label: "AI settings", icon: <SparkleIcon />, show: can("organization.audit.read"), match: `${base}/ai` },
     { href: `${base}/audit`, label: "Audit log", icon: <AuditIcon />, show: can("organization.audit.read"), match: `${base}/audit` },
     { href: `${base}/jobs`, label: "Background jobs", icon: <JobsIcon />, show: can("organization.audit.read"), match: `${base}/jobs` },
+    { href: `${base}/help`, label: "Help", icon: <HelpIcon />, show: true, match: `${base}/help` },
   ];
   const others = state.kind === "ready" ? state.me.organizations.filter((o) => o.id !== orgId) : [];
 

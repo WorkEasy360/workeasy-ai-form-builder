@@ -156,6 +156,7 @@ try {
     ["audit log", `${CONSOLE}/o/${orgId}/audit`, "main"],
     ["background jobs", `${CONSOLE}/o/${orgId}/jobs`, "main"],
     ["invitation", `${CONSOLE}/invite/${"x".repeat(43)}`, ".c-card"],
+    ["help", `${CONSOLE}/o/${orgId}/help`, "#create"],
   ];
   for (const [viewport, size] of Object.entries(VIEWPORTS)) {
     await page.setViewportSize(size);

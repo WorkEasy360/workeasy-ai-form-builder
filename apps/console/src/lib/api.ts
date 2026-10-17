@@ -45,6 +45,8 @@ export async function api<T>(
   } catch {
     // Non-JSON error body; keep the generic problem.
   }
+  // Server faults carry a reference support can look up in the logs (docs/operations.md).
+  if (problem.status >= 500 && problem.requestId) problem = { ...problem, title: `${problem.title} (reference ${problem.requestId})` };
   throw new ApiError(problem);
 }
 

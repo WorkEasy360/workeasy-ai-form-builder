@@ -43,6 +43,13 @@ export const UsersIcon = (p: P) => (
     <path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14.5a6.5 6.5 0 0 1 3.5 5.5" />
   </Icon>
 );
+export const HelpIcon = (p: P) => (
+  <Icon {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M9.5 9.5a2.5 2.5 0 0 1 4.9.7c0 1.7-2.4 2.3-2.4 3.8" />
+    <path d="M12 17h.01" />
+  </Icon>
+);
 export const JobsIcon = (p: P) => (
   <Icon {...p}>
     <path d="M4 12a8 8 0 0 1 13.7-5.7L20 8.5" />
