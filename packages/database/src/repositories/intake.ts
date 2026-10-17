@@ -124,6 +124,16 @@ export interface NewSubmission {
 }
 
 /**
+ * The transaction's start time on the database clock. Responses are stamped
+ * with it so that listings, whose cutoff is also the database clock, always
+ * include a response once it is committed, whatever the API server's clock says.
+ */
+export async function transactionTime(trx: Trx): Promise<Date> {
+  const { rows } = await sql<{ now: Date }>`SELECT now() AS now`.execute(trx);
+  return rows[0]!.now;
+}
+
+/**
  * Stores the response, its idempotency record and marks the session
  * accepted. The unique (tenant, session) constraint is the last line of
  * defense against a second response for the same session.

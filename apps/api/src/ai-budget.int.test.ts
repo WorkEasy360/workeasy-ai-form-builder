@@ -42,7 +42,17 @@ const provider: JsonCompletionProvider = {
 };
 const work = async () => {
   const registry = { [AI_GENERATE_JOB]: aiGenerationJob({ workerDb, provider, log: (level, message, fields) => logs.push(JSON.stringify({ level, message, ...fields })) }) };
-  while ((await runJobs({ workerDb, tenantId: t.id }, registry)) > 0);
+  // A busy machine can make an attempt fail transiently and retry a moment later, so run until the generations are done.
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    if ((await runJobs({ workerDb, tenantId: t.id }, registry)) > 0) continue;
+    const unfinished = await withTenant(owner, t.id, (trx) =>
+      trx.selectFrom("jobs").select("id").where("type", "=", AI_GENERATE_JOB).where("status", "in", ["queued", "running"]).execute(),
+    );
+    if (unfinished.length === 0) return;
+    await new Promise((r) => setTimeout(r, 20));
+  }
+  throw new Error("Generations were still unfinished after 10 seconds");
 };
 
 const consoleReq = (who: string, method: "get" | "post" | "put", path: string) =>

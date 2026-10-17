@@ -153,7 +153,7 @@ function intakeTransaction(publicDb: Db, request: IntakeRequest): Promise<Intake
     if (reserved !== "ok") return { kind: "unavailable", reason: reserved === "form_full" ? "full" : "quota" };
 
     // 8. Store the response, its receipt, the session's accepted marker and the event together.
-    const receivedAt = new Date();
+    const receivedAt = await intakeRepo.transactionTime(trx);
     const submissionId = randomUUID();
     const consents = definition.fields
       .filter((f) => f.type === "consent" && evaluation.answers[f.id] === true)

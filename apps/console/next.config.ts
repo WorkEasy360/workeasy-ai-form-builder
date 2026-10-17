@@ -21,6 +21,23 @@ const nextConfig: NextConfig = {
       { source: "/auth/:path*", destination: `${apiInternalUrl}/auth/:path*` },
     ];
   },
+  async headers() {
+    // The console is never framed (clickjacking), and never sends its URLs,
+    // which can hold invitation tokens, to other sites. HSTS is set by the
+    // TLS-terminating proxy in production.
+    return [
+      {
+        source: "/:path*",
+        headers: [
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Content-Security-Policy", value: "frame-ancestors 'none'" },
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "Referrer-Policy", value: "no-referrer" },
+          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), payment=()" },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;

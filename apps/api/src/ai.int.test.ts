@@ -56,14 +56,21 @@ const VALID = JSON.stringify({
 
 const deps = (): JobDeps => ({ workerDb, tenantId: a.id, backoff: { baseMs: 1, maxMs: 5 } });
 const registry = () => ({ [AI_GENERATE_JOB]: aiGenerationJob({ workerDb, provider }) });
-/** Runs the worker until nothing is due (retries included). */
+/** Tenant A's generation jobs that will still run: queued (due or waiting to retry) or running. */
+const unfinishedJobs = async () =>
+  (await withTenant(owner, a.id, (trx) => trx.selectFrom("jobs").select("id").where("type", "=", AI_GENERATE_JOB).where("status", "in", ["queued", "running"]).execute())).length;
+
+/** Runs the worker until none of tenant A's jobs is left to run (retries included). */
 async function work() {
-  for (let i = 0; i < 10; i++) {
+  // Retries are due a few milliseconds later; on a busy machine that can take longer, so wait for the jobs rather than a fixed time.
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
     if ((await runJobs(deps(), registry())) === 0) {
+      if ((await unfinishedJobs()) === 0) return;
       await new Promise((r) => setTimeout(r, 20));
-      if ((await runJobs(deps(), registry())) === 0) return;
     }
   }
+  throw new Error("Jobs were still unfinished after 10 seconds");
 }
 
 async function newForm(who = "ownerA", tenant = a) {
