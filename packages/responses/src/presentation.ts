@@ -1,6 +1,6 @@
 import type { FormPermission } from "@workeasy/auth";
 import type { AttachedFile, VersionDefinition } from "@workeasy/database";
-import { privacyOf } from "@workeasy/form-engine";
+import { FIELD_REGISTRY, isLayoutType, privacyOf } from "@workeasy/form-engine";
 import type { Field, FormDefinition, PrivacyClass } from "@workeasy/form-schema";
 
 /**
@@ -44,7 +44,8 @@ export function indexVersions(versions: readonly VersionDefinition[]): VersionIn
     for (const page of def.pages) {
       for (const id of page.fieldIds) {
         const field = byIdInDef.get(id);
-        if (field && !latestField.has(id)) {
+        // Headings and descriptions take no answer, so they are never columns.
+        if (field && !latestField.has(id) && !isLayoutType(field.type)) {
           latestField.set(id, field);
           order.push(id);
         }
@@ -70,6 +71,11 @@ export function displayAnswer(field: Field, value: unknown, files: readonly Atta
     case "checkbox":
     case "consent":
       return value === true ? "Yes" : "No";
+    case "name":
+    case "address":
+      return FIELD_REGISTRY[field.type].exportValue(value as Record<string, string>, field);
+    case "date_time":
+      return String(value).replace("T", " ");
     case "file":
       return (value as string[])
         .map((id) => {

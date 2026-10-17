@@ -14,7 +14,7 @@ import {
   updateFormDetails,
   type SettingsInput,
 } from "@workeasy/builder";
-import { FIELD_REGISTRY } from "@workeasy/form-engine";
+import { FIELD_REGISTRY, isLayoutType } from "@workeasy/form-engine";
 import type { DefinitionIssue, Field, FieldSettings, FormDefinition, PrivacyClass } from "@workeasy/form-schema";
 
 const PRIVACY_LABELS: Record<PrivacyClass, string> = { ordinary: "Ordinary", personal: "Personal data", sensitive: "Sensitive data" };
@@ -150,7 +150,7 @@ export function FieldInspector({
   );
 
   /** A text-valued bound (decimal, date, time); empty clears it. */
-  const textBound = (key: "min" | "max", label: string, type: "text" | "date" | "time" = "text") => (
+  const textBound = (key: "min" | "max", label: string, type: "text" | "date" | "time" | "datetime-local" = "text") => (
     <CommitInput
       key={`${field.id}-${key}`}
       label={label}
@@ -161,28 +161,32 @@ export function FieldInspector({
   );
 
   const isText = ["text", "textarea", "email", "phone", "url"].includes(field.type);
+  // Headings and descriptions show text and take no answer.
+  const isLayout = isLayoutType(field.type);
   const isChoice = ["dropdown", "radio", "multi_select"].includes(field.type);
 
   return (
     <section aria-labelledby="inspector-heading">
-      <h2 id="inspector-heading">Question</h2>
+      <h2 id="inspector-heading">{isLayout ? "Layout item" : "Question"}</h2>
       <p className="b-muted" style={{ marginTop: 0 }}>
         {FIELD_TYPE_INFO[field.type].label}
       </p>
 
       <CommitInput
         key={`${field.id}-label`}
-        label="Question"
+        label={field.type === "section" ? "Heading" : field.type === "description" ? "Text" : "Question"}
+        multiline={field.type === "description"}
         value={field.label}
-        onCommit={(t) => (t.trim() === "" ? "A question needs a label." : tryApply(updateField(definition, field.id, { label: t })))}
+        onCommit={(t) => (t.trim() === "" ? (isLayout ? "Enter some text." : "A question needs a label.") : tryApply(updateField(definition, field.id, { label: t })))}
       />
       <CommitInput
         key={`${field.id}-help`}
-        label="Help text"
+        label={isLayout ? "Smaller text below (optional)" : "Help text"}
         multiline
         value={field.helpText ?? ""}
         onCommit={(t) => tryApply(updateField(definition, field.id, { helpText: t }))}
       />
+      {!isLayout && (
       <div className="b-field">
         <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <input
@@ -200,7 +204,9 @@ export function FieldInspector({
           </p>
         )}
       </div>
+      )}
 
+      {!isLayout && (
       <div className="b-field">
         <label htmlFor={`${field.id}-privacy`}>Data classification</label>
         <select
@@ -220,6 +226,7 @@ export function FieldInspector({
           Reviewers need permission to see personal or sensitive answers; otherwise they are hidden.
         </p>
       </div>
+      )}
 
       {definition.pages.length > 1 && page && (
         <div className="b-field">
@@ -282,6 +289,26 @@ export function FieldInspector({
           {textBound("min", "Earliest time", "time")}
           {textBound("max", "Latest time", "time")}
         </>
+      )}
+      {field.type === "date_time" && (
+        <>
+          {textBound("min", "Earliest date and time", "datetime-local")}
+          {textBound("max", "Latest date and time", "datetime-local")}
+        </>
+      )}
+      {field.type === "slider" && (
+        <>
+          {wholeSetting("min", "Lowest value")}
+          {wholeSetting("max", "Highest value")}
+          {wholeSetting("step", "Step", "Respondents move in steps of this size, starting from the lowest value.", 1, 1000000)}
+        </>
+      )}
+      {(field.type === "name" || field.type === "address") && (
+        <p className="b-muted">
+          {field.type === "name"
+            ? "Respondents fill in first and last name separately; both are needed when the question is required."
+            : "Respondents fill in street, city and country (needed when required), plus an optional second line, region and postal code."}
+        </p>
       )}
 
       {isChoice && <OptionsEditor definition={definition} field={field} tryApply={tryApply} />}

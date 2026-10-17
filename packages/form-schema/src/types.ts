@@ -23,6 +23,12 @@ export const FIELD_TYPES = [
   "consent",
   "rating",
   "file",
+  "name",
+  "address",
+  "date_time",
+  "slider",
+  "section",
+  "description",
 ] as const;
 export type FieldType = (typeof FIELD_TYPES)[number];
 
@@ -44,6 +50,8 @@ export interface FieldSettings {
   maxFileBytes?: number;
   maxFiles?: number;
   consentTextVersion?: string;
+  /** Slider increments, counted from min. */
+  step?: number;
 }
 
 /**

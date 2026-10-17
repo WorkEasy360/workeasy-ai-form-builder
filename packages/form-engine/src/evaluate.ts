@@ -76,7 +76,8 @@ export function evaluate(definition: FormDefinition, rawAnswers: unknown): Evalu
       if (!outcome(visibilityRules.get(fieldId), true)) continue;
       result.visibleFieldIds.push(fieldId);
 
-      const required = outcome(requiredRules.get(fieldId), field.required);
+      // Layout items are shown but never answered, so they are never required.
+      const required = FIELD_REGISTRY[field.type].kind !== "none" && outcome(requiredRules.get(fieldId), field.required);
       if (required) result.requiredFieldIds.push(fieldId);
 
       let value: AnswerValue | undefined;

@@ -27,6 +27,12 @@ const GLYPHS: Record<FieldType, string> = {
   checkbox: "☑",
   consent: "✓",
   file: "⇪",
+  name: "Ab",
+  address: "⌂",
+  date_time: "31:",
+  slider: "⊸",
+  section: "H",
+  description: "≡",
 };
 
 /**
@@ -57,8 +63,9 @@ export function Palette({
   const [query, setQuery] = useState("");
   const q = query.trim().toLowerCase();
   const matches = (type: FieldType) => !q || FIELD_TYPE_INFO[type].label.toLowerCase().includes(q) || FIELD_TYPE_INFO[type].description.toLowerCase().includes(q);
-  const groups = PALETTE_GROUPS.map((g) => ({ ...g, types: g.types.filter(matches) })).filter((g) => g.types.length > 0);
   const showBreak = !q || "page break new page".includes(q);
+  // The Layout group also holds "Page break", which is a builder action rather than a field type.
+  const groups = PALETTE_GROUPS.map((g) => ({ ...g, types: g.types.filter(matches) })).filter((g) => g.types.length > 0 || (g.group === "Layout" && showBreak));
 
   return (
     <div className="b-palette-panel">
@@ -97,13 +104,7 @@ export function Palette({
                 <span>{FIELD_TYPE_INFO[type].label}</span>
               </button>
             ))}
-          </div>
-        </div>
-      ))}
-      {showBreak && (
-        <div role="group" aria-label="Layout" className="b-tile-group">
-          <h3 className="b-tile-heading">Layout</h3>
-          <div className="b-tiles">
+            {group === "Layout" && showBreak && (
             <button
               type="button"
               className="b-tile"
@@ -124,10 +125,11 @@ export function Palette({
               </span>
               <span>Page break</span>
             </button>
+            )}
           </div>
         </div>
-      )}
-      {groups.length === 0 && !showBreak && <p className="b-muted">No fields match “{query}”.</p>}
+      ))}
+      {groups.length === 0 && <p className="b-muted">No fields match “{query}”.</p>}
     </div>
   );
 }

@@ -92,6 +92,8 @@ export async function listResponses(trx: Trx, formId: string, options: ListRespo
           (jsonb_typeof(answers -> ${fieldId}) = 'string' AND (answers ->> ${fieldId}) ILIKE ${pattern} ESCAPE '\\')
           OR (jsonb_typeof(answers -> ${fieldId}) = 'array' AND EXISTS (
                 SELECT 1 FROM jsonb_array_elements_text(answers -> ${fieldId}) AS e(v) WHERE e.v ILIKE ${pattern} ESCAPE '\\'))
+          OR (jsonb_typeof(answers -> ${fieldId}) = 'object' AND EXISTS (
+                SELECT 1 FROM jsonb_each_text(answers -> ${fieldId}) AS p(k, v) WHERE p.v ILIKE ${pattern} ESCAPE '\\'))
         )`,
       );
     } else {

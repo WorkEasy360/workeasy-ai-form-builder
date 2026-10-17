@@ -4,7 +4,7 @@ import { FIELD_TYPES, type Field, type FieldSettings, type FieldType } from "@wo
 export interface FieldTypeInfo {
   label: string;
   description: string;
-  group: "Text" | "Numbers" | "Date and time" | "Choices" | "Agreement and files";
+  group: "Text" | "Numbers" | "Date and time" | "Choices" | "Agreement and files" | "Layout";
 }
 
 export const FIELD_TYPE_INFO: Readonly<Record<FieldType, FieldTypeInfo>> = {
@@ -24,10 +24,16 @@ export const FIELD_TYPE_INFO: Readonly<Record<FieldType, FieldTypeInfo>> = {
   checkbox: { label: "Checkbox", description: "A yes/no tick box", group: "Agreement and files" },
   consent: { label: "Consent", description: "Agreement that must be given to submit", group: "Agreement and files" },
   file: { label: "File upload", description: "Attach documents or images", group: "Agreement and files" },
+  name: { label: "Name", description: "First and last name", group: "Text" },
+  address: { label: "Address", description: "Street, city, region, postal code and country", group: "Text" },
+  slider: { label: "Slider", description: "A number picked on a scale", group: "Numbers" },
+  date_time: { label: "Date and time", description: "A calendar date with a time", group: "Date and time" },
+  section: { label: "Section heading", description: "A heading that groups the questions after it", group: "Layout" },
+  description: { label: "Description", description: "Text for respondents to read; takes no answer", group: "Layout" },
 };
 
 export const PALETTE_GROUPS: ReadonlyArray<{ group: FieldTypeInfo["group"]; types: FieldType[] }> = (
-  ["Text", "Numbers", "Date and time", "Choices", "Agreement and files"] as const
+  ["Text", "Numbers", "Date and time", "Choices", "Agreement and files", "Layout"] as const
 ).map((group) => ({ group, types: FIELD_TYPES.filter((t) => FIELD_TYPE_INFO[t].group === group) }));
 
 const ID_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789";
@@ -61,6 +67,8 @@ export function defaultSettings(type: FieldType, taken: Set<string>): FieldSetti
       return { options: [option("Option 1"), option("Option 2")] };
     case "rating":
       return { min: 1, max: 5 };
+    case "slider":
+      return { min: 0, max: 10, step: 1 };
     case "consent":
       return { consentTextVersion: "v1" };
     case "file":
@@ -74,6 +82,13 @@ export function defaultSettings(type: FieldType, taken: Set<string>): FieldSetti
 export function newField(type: FieldType, taken: Set<string>): Field {
   const id = newId("f", taken);
   taken.add(id);
-  const label = type === "consent" ? "I agree to the terms" : FIELD_TYPE_INFO[type].label;
+  const label =
+    type === "consent"
+      ? "I agree to the terms"
+      : type === "section"
+        ? "New section"
+        : type === "description"
+          ? "Add text for respondents here."
+          : FIELD_TYPE_INFO[type].label;
   return { id, type, label, required: false, settings: defaultSettings(type, taken) };
 }

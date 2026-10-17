@@ -49,7 +49,7 @@ import {
   validateDraft,
 } from "@workeasy/form-engine";
 import type { DefinitionIssue, FormDefinition } from "@workeasy/form-schema";
-import { privacyOf } from "@workeasy/form-engine";
+import { isLayoutType, privacyOf } from "@workeasy/form-engine";
 import type { z } from "zod";
 import type { AppDependencies } from "../app.js";
 import {
@@ -1029,7 +1029,9 @@ export function apiV1Router({ db, settings, objectStore }: AppDependencies): Rou
                 receivedAt: row.receivedAt.toISOString(),
                 versionNumber: version.versionNumber,
                 answers: Object.fromEntries(
-                  version.definition.fields.map((f) => [f.id, presentAnswer(f, row.answers[f.id], files.get(row.id) ?? [], readable)]),
+                  version.definition.fields
+                    .filter((f) => !isLayoutType(f.type))
+                    .map((f) => [f.id, presentAnswer(f, row.answers[f.id], files.get(row.id) ?? [], readable)]),
                 ),
               };
             }),
@@ -1058,7 +1060,8 @@ export function apiV1Router({ db, settings, objectStore }: AppDependencies): Rou
         const version = versions.byId.get(row.formVersionId)!;
         const files = (await responsesRepo.filesFor(trx, [row.id])).get(row.id) ?? [];
         const definition = version.definition;
-        const byId = new Map(definition.fields.map((f) => [f.id, f]));
+        // Headings and descriptions take no answer, so a response never lists them.
+        const byId = new Map(definition.fields.filter((f) => !isLayoutType(f.type)).map((f) => [f.id, f]));
         const ordered = definition.pages.flatMap((p) => p.fieldIds.flatMap((id) => byId.get(id) ?? []));
         return {
           kind: "ok",
@@ -1633,8 +1636,8 @@ export function apiV1Router({ db, settings, objectStore }: AppDependencies): Rou
     const errors: FieldError[] = [];
     fieldIds.forEach((id, i) => {
       const field = fields.get(id);
-      if (!field) {
-        errors.push({ field: `fieldIds[${i}]`, code: "UNKNOWN_FIELD", message: "This question is not on the form" });
+      if (!field || isLayoutType(field.type)) {
+        errors.push({ field: `fieldIds[${i}]`, code: "UNKNOWN_FIELD", message: field ? "Headings and descriptions have no answer to send" : "This question is not on the form" });
         return;
       }
       const privacy = privacyOf(field);

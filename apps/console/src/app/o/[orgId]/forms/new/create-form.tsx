@@ -37,6 +37,12 @@ const TYPE_NAMES: Record<string, string> = {
   consent: "Consent",
   rating: "Rating",
   file: "File upload",
+  name: "Name",
+  address: "Address",
+  date_time: "Date and time",
+  slider: "Slider",
+  section: "Section heading",
+  description: "Description",
 };
 
 function problemText(err: unknown): string {

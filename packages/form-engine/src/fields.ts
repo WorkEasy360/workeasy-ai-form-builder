@@ -7,15 +7,40 @@ import { canonicalDecimal, compareDecimal, decimalFromLiteral } from "./decimal"
  * and export serializer. The React component lives in @workeasy/form-renderer.
  */
 
+/** An answer made of named text parts, such as a name or an address. */
+export type PartsValue = Readonly<Record<string, string>>;
+
 /** Canonical answer values. Absent answers are never represented. */
-export type AnswerValue = string | number | boolean | string[];
+export type AnswerValue = string | number | boolean | string[] | PartsValue;
 
 export type DecodeResult =
   | { ok: true; value: AnswerValue }
   | { ok: true; empty: true }
   | { ok: false; code: string; message: string };
 
-export type ValueKind = "string" | "integer" | "decimal" | "date" | "time" | "choice" | "multi_choice" | "boolean" | "files";
+export type ValueKind =
+  | "string"
+  | "integer"
+  | "decimal"
+  | "date"
+  | "time"
+  | "datetime"
+  | "choice"
+  | "multi_choice"
+  | "boolean"
+  | "files"
+  | "parts"
+  /** Layout items (section headings, descriptions): they show text and take no answer. */
+  | "none";
+
+/** One part of a parts answer, in display order. */
+export interface AnswerPart {
+  key: string;
+  label: string;
+  /** Respondents may leave it blank even when the field is required. */
+  optional?: boolean;
+  autocomplete: string;
+}
 export type { PrivacyClass };
 
 /** A field's classification: its own setting, or its type's default. */
@@ -34,6 +59,8 @@ export interface FieldTypeSpec {
   literal(value: Literal, field: Field): AnswerValue | undefined;
   /** Plain-text export value (CSV escaping is the exporter's job). */
   exportValue(value: AnswerValue, field: Field): string;
+  /** For "parts" answers: the parts, in order. */
+  parts?: readonly AnswerPart[];
 }
 
 const ORDERED = ["eq", "neq", "gt", "gte", "lt", "lte", "isEmpty", "isNotEmpty"] as const;
@@ -42,6 +69,7 @@ const TEXT_OPS = ["eq", "neq", "contains", "isEmpty", "isNotEmpty"] as const;
 const PRESENCE = ["isEmpty", "isNotEmpty"] as const;
 
 const DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
+const DATE_TIME_PATTERN = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})$/;
 const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@.]+(\.[^\s@.]+)+$/;
@@ -81,6 +109,12 @@ export function isValidDate(text: string): boolean {
 
 export function isValidTime(text: string): boolean {
   return TIME_PATTERN.test(text);
+}
+
+/** A local date and time, "YYYY-MM-DDTHH:mm", with no timezone (like date and time fields). */
+export function isValidDateTime(text: string): boolean {
+  const match = DATE_TIME_PATTERN.exec(text);
+  return !!match && isValidDate(match[1]!) && isValidTime(match[2]!);
 }
 
 function decodeString(raw: unknown, field: Field, singleLine: boolean): DecodeResult | { ok: true; text: string } {
@@ -165,8 +199,14 @@ const decimalType: FieldTypeSpec = {
   exportValue: (value) => String(value),
 };
 
-function calendarType(kind: "date" | "time"): FieldTypeSpec {
-  const valid = kind === "date" ? isValidDate : isValidTime;
+const CALENDAR = {
+  date: { valid: isValidDate, error: fail("INVALID_DATE", "Enter a date as YYYY-MM-DD.") },
+  time: { valid: isValidTime, error: fail("INVALID_TIME", "Enter a time as HH:mm.") },
+  datetime: { valid: isValidDateTime, error: fail("INVALID_DATE_TIME", "Enter a date and time.") },
+} as const;
+
+function calendarType(kind: "date" | "time" | "datetime"): FieldTypeSpec {
+  const { valid, error } = CALENDAR[kind];
   return {
     kind,
     operators: ORDERED,
@@ -174,9 +214,7 @@ function calendarType(kind: "date" | "time"): FieldTypeSpec {
     privacy: "ordinary",
     decode(raw, field) {
       if (raw === null || raw === undefined || raw === "") return empty;
-      if (typeof raw !== "string" || !valid(raw)) {
-        return kind === "date" ? fail("INVALID_DATE", "Enter a date as YYYY-MM-DD.") : fail("INVALID_TIME", "Enter a time as HH:mm.");
-      }
+      if (typeof raw !== "string" || !valid(raw)) return error;
       // Canonical date/time strings compare correctly as text; no timezone conversion.
       return boundsCheck(raw, field, textCompare);
     },
@@ -270,6 +308,104 @@ const fileType: FieldTypeSpec = {
   exportValue: (value) => (value as string[]).join("; "),
 };
 
+/** A whole number on a slider: within min and max, on a step counted from min. */
+const sliderType: FieldTypeSpec = {
+  kind: "integer",
+  operators: ORDERED,
+  settings: ["min", "max", "step"],
+  privacy: "ordinary",
+  decode(raw, field) {
+    if (raw === null || raw === undefined) return empty;
+    if (typeof raw !== "number" || !Number.isSafeInteger(raw)) return fail("INVALID_TYPE", "Choose a value on the slider.");
+    const min = Number(field.settings.min ?? 0);
+    const max = Number(field.settings.max ?? 10);
+    const step = field.settings.step ?? 1;
+    if (raw < min || raw > max) return fail("OUT_OF_RANGE", `Choose a value from ${min} to ${max}.`);
+    if ((raw - min) % step !== 0) return fail("OFF_STEP", `Choose a value in steps of ${step} from ${min}.`);
+    return { ok: true, value: raw };
+  },
+  literal: (value) => (typeof value === "number" && Number.isSafeInteger(value) ? value : undefined),
+  exportValue: (value) => String(value),
+};
+
+/** Longest text in one part of a name or address. */
+export const MAX_PART_LENGTH = 200;
+
+/**
+ * Answers made of named text parts (name, address). Each part is a single
+ * line; unknown parts are refused; blank parts are left out, and an answer
+ * with no parts is empty. Required means at least the non-optional parts.
+ */
+function partsType(parts: readonly AnswerPart[], separator: string, privacy: PrivacyClass): FieldTypeSpec {
+  const keys = new Set(parts.map((p) => p.key));
+  return {
+    kind: "parts",
+    operators: PRESENCE,
+    settings: [],
+    privacy,
+    parts,
+    decode(raw) {
+      if (raw === null || raw === undefined) return empty;
+      if (typeof raw !== "object" || Array.isArray(raw)) return fail("INVALID_TYPE", "Fill in the parts of this answer.");
+      const value: Record<string, string> = {};
+      for (const [key, part] of Object.entries(raw as Record<string, unknown>)) {
+        if (!keys.has(key)) return fail("UNKNOWN_PART", "This answer has a part the question doesn't ask for.");
+        if (part === null || part === undefined) continue;
+        if (typeof part !== "string") return fail("INVALID_TYPE", "Enter text.");
+        if (part.includes("\u0000") || /[\r\n]/.test(part)) return fail("INVALID_VALUE", "Enter each part on a single line.");
+        const text = part.trim();
+        if (text === "") continue;
+        if (codePointLength(text) > MAX_PART_LENGTH) return fail("TOO_LONG", `Use at most ${MAX_PART_LENGTH} characters in each part.`);
+        value[key] = text;
+      }
+      if (Object.keys(value).length === 0) return empty;
+      const missing = parts.find((p) => !p.optional && !(p.key in value));
+      if (missing) return fail("INCOMPLETE", `Fill in ${missing.label.toLowerCase()}.`);
+      // Canonical order is the order of the parts.
+      return { ok: true, value: Object.fromEntries(parts.filter((p) => p.key in value).map((p) => [p.key, value[p.key]!])) };
+    },
+    literal: () => undefined,
+    exportValue: (value) =>
+      parts
+        .map((p) => (value as PartsValue)[p.key])
+        .filter((v): v is string => !!v)
+        .join(separator),
+  };
+}
+
+export const NAME_PARTS: readonly AnswerPart[] = [
+  { key: "first", label: "First name", autocomplete: "given-name" },
+  { key: "last", label: "Last name", autocomplete: "family-name" },
+];
+
+export const ADDRESS_PARTS: readonly AnswerPart[] = [
+  { key: "line1", label: "Street address", autocomplete: "address-line1" },
+  { key: "line2", label: "Address line 2", optional: true, autocomplete: "address-line2" },
+  { key: "city", label: "City", autocomplete: "address-level2" },
+  { key: "region", label: "State or region", optional: true, autocomplete: "address-level1" },
+  { key: "postalCode", label: "Postal code", optional: true, autocomplete: "postal-code" },
+  { key: "country", label: "Country", autocomplete: "country-name" },
+];
+
+/** Section headings and descriptions: shown to respondents, never answered. */
+const layoutType: FieldTypeSpec = {
+  kind: "none",
+  operators: [],
+  settings: [],
+  privacy: "ordinary",
+  decode(raw) {
+    if (raw === null || raw === undefined) return empty;
+    return fail("NOT_AN_INPUT", "This item doesn't take an answer.");
+  },
+  literal: () => undefined,
+  exportValue: () => "",
+};
+
+/** True for items that collect no answer (section headings, descriptions). */
+export function isLayoutType(type: FieldType): boolean {
+  return FIELD_REGISTRY[type].kind === "none";
+}
+
 function validUrl(text: string): DecodeResult | undefined {
   try {
     const url = new URL(text);
@@ -303,9 +439,18 @@ export const FIELD_REGISTRY: Readonly<Record<FieldType, FieldTypeSpec>> = {
   consent: booleanType(["consentTextVersion"], "personal"),
   rating: integerType(true),
   file: fileType,
+  name: partsType(NAME_PARTS, " ", "personal"),
+  address: partsType(ADDRESS_PARTS, ", ", "personal"),
+  date_time: calendarType("datetime"),
+  slider: sliderType,
+  section: layoutType,
+  description: layoutType,
 };
 
 /** Empty per docs/03 §3: absent, null, blank string or empty array. `false` and `0` are not empty. */
 export function isEmptyValue(value: unknown): boolean {
+  if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+    return Object.values(value).every((part) => typeof part !== "string" || part.trim() === "");
+  }
   return value === undefined || value === null || (typeof value === "string" && value.trim() === "") || (Array.isArray(value) && value.length === 0);
 }

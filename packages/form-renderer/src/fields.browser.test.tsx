@@ -1,5 +1,5 @@
 import { newField } from "@workeasy/builder";
-import { FIELD_REGISTRY, type AnswerValue } from "@workeasy/form-engine";
+import { FIELD_REGISTRY, isLayoutType, type AnswerValue } from "@workeasy/form-engine";
 import { FIELD_TYPES, type Field, type FieldType } from "@workeasy/form-schema";
 import { act, useState } from "react";
 import { createRoot } from "react-dom/client";
@@ -79,13 +79,19 @@ function sampleAnswer(field: Field): unknown {
     consent: true,
     rating: 3,
     file: [SAMPLE_UUID],
+    name: { first: "Asha", last: "Rao" },
+    address: { line1: "1 Main Street", city: "Pune", country: "India" },
+    date_time: "2026-10-14T09:30",
+    slider: 4,
+    section: undefined,
+    description: undefined,
   };
   return samples[field.type];
 }
 
 describe("field registry (BLD-02 acceptance)", () => {
   it("gives every P1 field type a renderer, codec, validator and export serializer", () => {
-    for (const type of FIELD_TYPES) {
+    for (const type of FIELD_TYPES.filter((t) => !isLayoutType(t))) {
       expect(typeof FIELD_COMPONENTS[type], type).toBe("function");
       const spec = FIELD_REGISTRY[type];
       expect(spec.operators.length, type).toBeGreaterThan(0);
@@ -102,8 +108,20 @@ describe("field registry (BLD-02 acceptance)", () => {
     }
   });
 
+  it("gives layout items a renderer that shows their text and takes no answer", () => {
+    for (const type of FIELD_TYPES.filter(isLayoutType)) {
+      const spec = FIELD_REGISTRY[type];
+      expect(spec.operators, type).toEqual([]);
+      expect(spec.decode(undefined, fieldOf(type)), type).toEqual({ ok: true, empty: true });
+      expect(spec.decode("an answer", fieldOf(type)).ok, type).toBe(false);
+      const container = mount(<FormField field={fieldOf(type, { label: `Text of ${type}`, helpText: "More" })} value={undefined} required={false} onChange={() => undefined} />);
+      expect(container.textContent, type).toContain(`Text of ${type}`);
+      expect(container.querySelector("input, textarea, select"), type).toBeNull();
+    }
+  });
+
   it("renders every field type with its label as the control's accessible name", () => {
-    for (const type of FIELD_TYPES) {
+    for (const type of FIELD_TYPES.filter((t) => !isLayoutType(t))) {
       const field = fieldOf(type, { label: `Label for ${type}` });
       const container = mount(<FormField field={field} value={undefined} required={false} onChange={() => undefined} />);
       expect(visibleName(control(container, field)), type).toContain(`Label for ${type}`);
@@ -244,5 +262,60 @@ describe("accessibility wiring", () => {
     expect(container.querySelector("img, script")).toBeNull();
     expect(container.textContent).toContain('<img src=x onerror="window.pwnedByLabel=1">');
     expect((window as { pwnedByLabel?: number }).pwnedByLabel).toBeUndefined();
+  });
+});
+
+describe("name, address, date and time, and slider", () => {
+  it("returns name parts as an object, labels each part, and clears to absent", async () => {
+    const field = fieldOf("name", { label: "Your name" });
+    const values: Array<AnswerValue | undefined> = [];
+    const container = mount(<Harness field={field} values={values} />);
+    const first = container.querySelector<HTMLInputElement>(`#we-${field.id}-control-first`)!;
+    const last = container.querySelector<HTMLInputElement>(`#we-${field.id}-control-last`)!;
+    expect(first.labels?.[0]?.textContent).toBe("First name");
+    expect(first.autocomplete).toBe("given-name");
+    await userEvent.type(first, "Asha");
+    await userEvent.type(last, "Rao");
+    expect(values.at(-1)).toEqual({ first: "Asha", last: "Rao" });
+    await userEvent.clear(first);
+    await userEvent.clear(last);
+    expect(values.at(-1)).toBeUndefined();
+  });
+
+  it("marks optional address parts and decodes a partial address only when the needed parts are there", async () => {
+    const field = fieldOf("address");
+    const container = mount(<FormField field={field} value={undefined} required onChange={() => undefined} />);
+    const line2 = container.querySelector<HTMLInputElement>(`#we-${field.id}-control-line2`)!;
+    expect(line2.required).toBe(false);
+    expect(container.querySelector<HTMLInputElement>(`#we-${field.id}-control-city`)!.required).toBe(true);
+    const spec = FIELD_REGISTRY.address;
+    expect(spec.decode({ line1: "1 Main Street", city: "Pune" }, field)).toMatchObject({ ok: false, code: "INCOMPLETE" });
+    expect(spec.decode({ line1: " 1 Main Street ", city: "Pune", country: "India", line2: "" }, field)).toEqual({
+      ok: true,
+      value: { line1: "1 Main Street", city: "Pune", country: "India" },
+    });
+    expect(spec.decode({ city: "Pune", planet: "Earth" }, field)).toMatchObject({ ok: false, code: "UNKNOWN_PART" });
+    expect(spec.exportValue({ line1: "1 Main Street", city: "Pune", country: "India" }, field)).toBe("1 Main Street, Pune, India");
+  });
+
+  it("returns a local date and time, and refuses impossible ones", async () => {
+    const field = fieldOf("date_time");
+    expect(FIELD_REGISTRY.date_time.decode("2026-02-30T10:00", field)).toMatchObject({ ok: false, code: "INVALID_DATE_TIME" });
+    expect(FIELD_REGISTRY.date_time.decode("2026-02-28T24:00", field).ok).toBe(false);
+    const container = mount(<FormField field={field} value="2026-10-14T09:30" required={false} onChange={() => undefined} />);
+    expect((control(container, field) as HTMLInputElement).type).toBe("datetime-local");
+  });
+
+  it("keeps a slider unanswered until moved, then returns numbers on its steps", async () => {
+    const field = fieldOf("slider", { settings: { min: 0, max: 10, step: 2 } });
+    const values: Array<AnswerValue | undefined> = [];
+    const container = mount(<Harness field={field} values={values} />);
+    const range = control(container, field) as HTMLInputElement;
+    expect(range.getAttribute("aria-valuetext")).toBe("No answer yet");
+    range.focus();
+    await userEvent.keyboard("{ArrowRight}");
+    expect(values.at(-1)).toBe(2);
+    expect(FIELD_REGISTRY.slider.decode(3, field)).toMatchObject({ ok: false, code: "OFF_STEP" });
+    expect(FIELD_REGISTRY.slider.decode(12, field)).toMatchObject({ ok: false, code: "OUT_OF_RANGE" });
   });
 });

@@ -12,7 +12,7 @@ interface CommitInputProps {
   /** Returns an error message to keep the typed text and show the problem, or undefined when applied. */
   onCommit: (text: string) => string | undefined;
   multiline?: boolean;
-  type?: "text" | "number" | "date" | "time";
+  type?: "text" | "number" | "date" | "time" | "datetime-local";
   hint?: string | undefined;
   min?: number | undefined;
   max?: number | undefined;

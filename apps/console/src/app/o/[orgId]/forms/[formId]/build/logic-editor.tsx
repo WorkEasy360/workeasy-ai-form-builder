@@ -21,7 +21,7 @@ import {
   type SimpleCondition,
   type SimpleLeaf,
 } from "@workeasy/builder";
-import { canonicalDecimal, FIELD_REGISTRY } from "@workeasy/form-engine";
+import { canonicalDecimal, FIELD_REGISTRY, isLayoutType } from "@workeasy/form-engine";
 import type { Condition, Field, FormDefinition, Literal, Operator } from "@workeasy/form-schema";
 import { useId, useState } from "react";
 import { CommitInput, type TryApply } from "./controls";
@@ -296,7 +296,7 @@ export function FieldLogic({ definition, field, tryApply }: { definition: FormDe
       {candidates.length === 0 && !fieldRuleOf(definition, field.id, "visibility") && !fieldRuleOf(definition, field.id, "required") ? (
         <p className="b-muted">Only questions before this one can control it. Add a question above it to use conditions.</p>
       ) : (
-        (["visibility", "required"] as const).map((property) => (
+        (isLayoutType(field.type) ? (["visibility"] as const) : (["visibility", "required"] as const)).map((property) => (
           <FieldRuleEditor key={property} definition={definition} field={field} property={property} candidates={candidates} tryApply={tryApply} />
         ))
       )}

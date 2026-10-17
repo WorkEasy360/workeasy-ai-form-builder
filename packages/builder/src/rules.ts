@@ -79,12 +79,14 @@ function traversal(def: FormDefinition): Array<{ field: Field; pageIndex: number
  */
 export function conditionFieldsFor(def: FormDefinition, target: { kind: "field" | "page"; id: string }): Field[] {
   const order = traversal(def);
+  // Headings and descriptions take no answer, so conditions can't use them.
+  const answerable = (e: { field: Field }) => FIELD_REGISTRY[e.field.type].operators.length > 0;
   if (target.kind === "field") {
     const index = order.findIndex((e) => e.field.id === target.id);
-    return index < 0 ? [] : order.slice(0, index).map((e) => e.field);
+    return index < 0 ? [] : order.slice(0, index).filter(answerable).map((e) => e.field);
   }
   const pageIndex = def.pages.findIndex((p) => p.id === target.id);
-  return order.filter((e) => e.pageIndex <= pageIndex).map((e) => e.field);
+  return order.filter((e) => e.pageIndex <= pageIndex && answerable(e)).map((e) => e.field);
 }
 
 export function operatorsFor(field: Field): readonly Operator[] {
@@ -116,6 +118,8 @@ export function defaultLiteral(field: Field): Literal {
       return typeof field.settings.min === "string" ? field.settings.min : "2026-01-01";
     case "time":
       return typeof field.settings.min === "string" ? field.settings.min : "09:00";
+    case "datetime":
+      return typeof field.settings.min === "string" ? field.settings.min : "2026-01-01T09:00";
     default:
       return "";
   }

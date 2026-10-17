@@ -1,7 +1,7 @@
 import { formPermissions, isFormPermission } from "@workeasy/auth";
 import { exportsRepo, orgRepo, responsesRepo, withContext, type AttachedFile, type Db, type ExportJob, type ExportOutcome, type ResponseRow } from "@workeasy/database";
 import type { ObjectStore } from "@workeasy/files";
-import { privacyOf } from "@workeasy/form-engine";
+import { FIELD_REGISTRY, privacyOf } from "@workeasy/form-engine";
 import { sql } from "kysely";
 import type { Field } from "@workeasy/form-schema";
 import { csvRow, UTF8_BOM } from "./csv.js";
@@ -23,8 +23,20 @@ export interface ExportDeps {
 export const EXPORT_LEASE_SECONDS = 300;
 const BATCH = 500;
 
-const rawValue = (value: unknown): string =>
-  value === undefined || value === null ? "" : Array.isArray(value) ? value.join(";") : String(value);
+/**
+ * Raw values for machines: lists joined with ";", name and address parts as
+ * JSON in the question's part order (the database does not keep key order).
+ */
+function rawValue(value: unknown, field: Field): string {
+  if (value === undefined || value === null) return "";
+  if (Array.isArray(value)) return value.join(";");
+  if (typeof value === "object") {
+    const parts = FIELD_REGISTRY[field.type].parts ?? [];
+    const record = value as Record<string, string>;
+    return JSON.stringify(Object.fromEntries(parts.filter((p) => p.key in record).map((p) => [p.key, record[p.key]])));
+  }
+  return String(value);
+}
 
 function header(columns: readonly Field[], raw: boolean): string[] {
   return raw ? ["submission_id", "received_at", "version", ...columns.map((f) => f.id)] : ["Receipt no.", "Received (UTC)", "Version", ...columns.map((f) => f.label)];
@@ -37,7 +49,7 @@ function row(record: ResponseRow, versions: VersionIndex, columns: readonly Fiel
     const field = own.get(column.id);
     const value = record.answers[column.id];
     if (!field || value === undefined) return "";
-    return raw ? rawValue(value) : displayAnswer(field, value, files.get(record.id) ?? []);
+    return raw ? rawValue(value, field) : displayAnswer(field, value, files.get(record.id) ?? []);
   });
   return raw
     ? [record.id, record.receivedAt.toISOString(), String(version.versionNumber), ...cells]

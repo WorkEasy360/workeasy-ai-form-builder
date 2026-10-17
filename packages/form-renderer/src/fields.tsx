@@ -1,5 +1,5 @@
 import type { Field, FieldType } from "@workeasy/form-schema";
-import { DEFAULT_RATING_RANGE, type AnswerValue } from "@workeasy/form-engine";
+import { ADDRESS_PARTS, DEFAULT_RATING_RANGE, MAX_PART_LENGTH, NAME_PARTS, type AnswerPart, type AnswerValue, type PartsValue } from "@workeasy/form-engine";
 import type { ComponentType, ReactNode } from "react";
 
 /**
@@ -195,7 +195,7 @@ function DecimalInput(props: FieldControlProps) {
   );
 }
 
-function calendarInput(type: "date" | "time"): ComponentType<FieldControlProps> {
+function calendarInput(type: "date" | "time" | "datetime-local"): ComponentType<FieldControlProps> {
   return function CalendarInput(props) {
     const ids = idsFor(props);
     const { min, max } = props.field.settings;
@@ -392,6 +392,108 @@ function FileInput(props: FieldControlProps) {
   );
 }
 
+/**
+ * A slider: unanswered until the respondent moves it (so "no answer" stays
+ * possible), then shows the chosen value. Arrow keys move it by one step.
+ */
+function Slider(props: FieldControlProps) {
+  const ids = idsFor(props);
+  const min = Number(props.field.settings.min ?? 0);
+  const max = Number(props.field.settings.max ?? 10);
+  const step = props.field.settings.step ?? 1;
+  const value = typeof props.value === "number" ? props.value : undefined;
+  return (
+    <Labelled props={props} ids={ids}>
+      <div className="we-slider">
+        <span aria-hidden="true">{min}</span>
+        <input
+          {...commonInputProps(props, ids)}
+          className="we-range"
+          type="range"
+          min={min}
+          max={max}
+          step={step}
+          value={value ?? min}
+          data-unset={value === undefined ? "true" : undefined}
+          aria-valuetext={value === undefined ? "No answer yet" : String(value)}
+          onChange={(e) => props.onChange(Number(e.target.value))}
+        />
+        <span aria-hidden="true">{max}</span>
+        <output className="we-slider-value" htmlFor={ids.control}>
+          {value ?? "—"}
+        </output>
+      </div>
+      {value !== undefined && !props.disabled && !props.required && (
+        <button type="button" className="we-button we-slider-clear" onClick={() => props.onChange(undefined)}>
+          Clear
+        </button>
+      )}
+    </Labelled>
+  );
+}
+
+/** Name and address: one labelled input per part, grouped under the question, with autofill hints. */
+function partsInput(parts: readonly AnswerPart[]): ComponentType<FieldControlProps> {
+  return function PartsInput(props) {
+    const ids = idsFor(props);
+    const current: PartsValue = props.value !== undefined && typeof props.value === "object" && !Array.isArray(props.value) ? props.value : {};
+    const change = (key: string, text: string) => {
+      const next: Record<string, string> = { ...current, [key]: text };
+      if (text === "") delete next[key];
+      props.onChange(Object.keys(next).length > 0 ? next : undefined);
+    };
+    return (
+      <Group props={props} ids={ids}>
+        <div className="we-parts" data-parts={parts.length}>
+          {parts.map((part) => {
+            const id = `${ids.control}-${part.key}`;
+            return (
+              <div key={part.key} className="we-part" data-part={part.key}>
+                <label htmlFor={id} className="we-part-label">
+                  {part.label}
+                  {part.optional && <span className="we-help"> (optional)</span>}
+                </label>
+                <input
+                  id={id}
+                  className="we-input"
+                  type="text"
+                  autoComplete={part.autocomplete}
+                  maxLength={MAX_PART_LENGTH}
+                  required={props.required && !part.optional}
+                  disabled={props.disabled}
+                  aria-invalid={props.error ? true : undefined}
+                  value={current[part.key] ?? ""}
+                  onChange={(e) => change(part.key, e.target.value)}
+                />
+              </div>
+            );
+          })}
+        </div>
+      </Group>
+    );
+  };
+}
+
+/** A heading that starts a group of questions; it takes no answer. */
+function SectionHeading(props: FieldControlProps) {
+  return (
+    <div className="we-section" data-field-type="section">
+      <h3 className="we-section-title">{props.field.label}</h3>
+      {props.field.helpText && <p className="we-help">{props.field.helpText}</p>}
+    </div>
+  );
+}
+
+/** Text for respondents to read; it takes no answer. */
+function Description(props: FieldControlProps) {
+  return (
+    <div className="we-description" data-field-type="description">
+      <p>{props.field.label}</p>
+      {props.field.helpText && <p className="we-help">{props.field.helpText}</p>}
+    </div>
+  );
+}
+
 /** The renderer for every P1 field type. */
 export const FIELD_COMPONENTS: Readonly<Record<FieldType, ComponentType<FieldControlProps>>> = {
   text: textInput("text"),
@@ -410,6 +512,12 @@ export const FIELD_COMPONENTS: Readonly<Record<FieldType, ComponentType<FieldCon
   consent: SingleCheckbox,
   rating: Rating,
   file: FileInput,
+  name: partsInput(NAME_PARTS),
+  address: partsInput(ADDRESS_PARTS),
+  date_time: calendarInput("datetime-local"),
+  slider: Slider,
+  section: SectionHeading,
+  description: Description,
 };
 
 /** Renders one field with the control registered for its type. */

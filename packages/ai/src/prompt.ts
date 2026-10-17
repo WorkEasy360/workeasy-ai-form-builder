@@ -2,7 +2,7 @@ import { FIELD_TYPES, type FormDefinition } from "@workeasy/form-schema";
 import type { DefinitionIssue } from "@workeasy/form-schema";
 
 /** Bumped whenever the instructions below change; recorded with each generation. */
-export const TEMPLATE_VERSION = "form-authoring-1";
+export const TEMPLATE_VERSION = "form-authoring-2";
 
 /** Limits for AI proposals, tighter than the definition format's own (docs/03 §4). */
 export const AI_LIMITS = { maxFields: 50, maxPages: 10, maxRules: 50 } as const;
@@ -30,7 +30,11 @@ export function systemPrompt(): string {
     "Field types: " + FIELD_TYPES.join(", ") + ".",
     'Settings by type: text/textarea {"placeholder"?, "minLength"?, "maxLength"?}; integer/decimal {"min"?, "max"?};',
     'dropdown/radio/multi_select {"options": [{"id", "label"}], "minSelections"?, "maxSelections"? (multi_select only)};',
-    'rating {"min": 1, "max": 5}; file {"allowedMimeTypes": [...], "maxFileBytes", "maxFiles"}; other types {}.',
+    'rating {"min": 1, "max": 5}; slider {"min", "max", "step"?} (whole numbers); date_time {"min"?, "max"?} as "YYYY-MM-DDTHH:mm";',
+    'file {"allowedMimeTypes": [...], "maxFileBytes", "maxFiles"}; other types {}.',
+    'Use "name" for a person\'s name and "address" for a postal address instead of separate text fields.',
+    '"section" is a heading that starts a group of questions and "description" is text to read; both take no answer,',
+    'so they must have "required": false and cannot be used in rule conditions.',
     '"privacy" is "personal" for names, contact details and addresses, "sensitive" for health, financial or identity data, else omit it.',
     "",
     'A rule\'s "when" is {"fieldId", "op", "value"} with op one of eq, neq, gt, gte, lt, lte, contains, or {"fieldId", "op"}',

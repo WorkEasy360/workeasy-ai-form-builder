@@ -9,7 +9,7 @@ import {
   type Literal,
 } from "@workeasy/form-schema";
 import { compareDecimal, decimalFromLiteral } from "./decimal";
-import { FIELD_REGISTRY, isValidDate, isValidTime, MAX_RATING } from "./fields";
+import { FIELD_REGISTRY, isValidDate, isValidDateTime, isValidTime, MAX_RATING } from "./fields";
 import { themeIssues } from "./theme";
 
 /** Condition limits (docs/03 §3), checked before any condition is evaluated. */
@@ -102,7 +102,12 @@ function semanticIssues(def: FormDefinition): DefinitionIssue[] {
   });
 
   // Field settings ------------------------------------------------------------
-  def.fields.forEach((field, i) => checkSettings(field, `/fields/${i}/settings`, add));
+  def.fields.forEach((field, i) => {
+    checkSettings(field, `/fields/${i}/settings`, add);
+    if (FIELD_REGISTRY[field.type].kind === "none" && field.required) {
+      add(`/fields/${i}/required`, "NOT_AN_INPUT", "Headings and descriptions can't be required: they take no answer.");
+    }
+  });
 
   // Rules ---------------------------------------------------------------------
   const controlled = new Set<string>();
@@ -140,6 +145,9 @@ function semanticIssues(def: FormDefinition): DefinitionIssue[] {
     if (!fields.has(target)) {
       add(`${path}/action/targetFieldId`, "UNKNOWN_FIELD", `Unknown field "${target}".`);
       return;
+    }
+    if (action.type === "setRequired" && FIELD_REGISTRY[fields.get(target)!.type].kind === "none") {
+      add(`${path}/action/targetFieldId`, "NOT_AN_INPUT", "Headings and descriptions take no answer, so they can't be made required.");
     }
     const property = action.type === "setVisibility" ? "visibility" : "required";
     const key = `${target}:${property}`;
@@ -232,6 +240,7 @@ function checkSettings(field: Field, path: string, add: Add): void {
   }
 
   if (settings.min !== undefined || settings.max !== undefined) checkBounds(field, path, add);
+  if (field.type === "slider") checkSlider(field, path, add);
 
   const options = settings.options ?? [];
   const seen = new Set<string>();
@@ -265,7 +274,7 @@ function checkBounds(field: Field, path: string, add: Add): void {
     parse = (v) => decimalFromLiteral(v);
     compare = (a, b) => compareDecimal(String(a), String(b));
   } else {
-    const valid = kind === "date" ? isValidDate : isValidTime;
+    const valid = kind === "date" ? isValidDate : kind === "datetime" ? isValidDateTime : isValidTime;
     parse = (v) => (typeof v === "string" && valid(v) ? v : undefined);
     compare = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
   }
@@ -281,4 +290,12 @@ function checkBounds(field: Field, path: string, add: Add): void {
     const cmp = compare(parsedMin, parsedMax);
     if (cmp > 0 || (field.type === "rating" && cmp === 0)) add(`${path}/min`, "INVERTED_RANGE", "min must be less than max.");
   }
+}
+
+/** A slider needs a range of at least one step, and at most 1000 positions to choose from. */
+function checkSlider(field: Field, path: string, add: Add): void {
+  const { min, max, step = 1 } = field.settings;
+  if (typeof min !== "number" || typeof max !== "number" || !Number.isSafeInteger(min) || !Number.isSafeInteger(max) || min >= max) return;
+  if (step > max - min) add(`${path}/step`, "INVALID_BOUND", "The step is larger than the slider's range.");
+  else if ((max - min) / step > 1000) add(`${path}/step`, "INVALID_BOUND", "A slider can have at most 1000 positions; use a larger step.");
 }

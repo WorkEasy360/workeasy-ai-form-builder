@@ -86,7 +86,7 @@ export function IntegrationsPanel({ orgId, formId }: { orgId: string; formId: st
   const formPath = `/api/v1/organizations/${orgId}/forms/${formId}`;
   const orgPath = `/api/v1/organizations/${orgId}`;
   const [items, setItems] = useState<Integration[] | undefined>();
-  const [fields, setFields] = useState<Array<{ id: string; label: string; privacy?: string }>>([]);
+  const [fields, setFields] = useState<Array<{ id: string; label: string; type: string; privacy?: string }>>([]);
   const [error, setError] = useState<string | undefined>();
   const [notice, setNotice] = useState("");
   const [secret, setSecret] = useState<{ name: string; value: string } | undefined>();
@@ -99,8 +99,9 @@ export function IntegrationsPanel({ orgId, formId }: { orgId: string; formId: st
 
   useEffect(() => {
     void reload();
-    api<{ definition: { fields: Array<{ id: string; label: string; privacy?: string }> } }>(`${formPath}/draft`)
-      .then((d) => setFields(d.definition.fields))
+    api<{ definition: { fields: Array<{ id: string; label: string; type: string; privacy?: string }> } }>(`${formPath}/draft`)
+      // Headings and descriptions take no answer, so there is nothing to send.
+      .then((d) => setFields(d.definition.fields.filter((f) => f.type !== "section" && f.type !== "description")))
       .catch(() => undefined);
   }, [formPath, reload]);
 

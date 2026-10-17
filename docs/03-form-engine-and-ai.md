@@ -35,7 +35,10 @@ Each type registers: definition validator, answer codec, blank predicate, access
 | text/textarea/email/phone/url | UTF-8 string | Trim outer whitespace where configured; max length; no silent truncation |
 | integer | Safe JSON integer | Range; overflow rejected |
 | decimal (P1)/currency (P2) | Canonical base-10 string | Decimal arithmetic; currency uses currency code and minor-unit rules |
-| date/time | `YYYY-MM-DD` / `HH:mm` | No implicit timezone conversion for date-only values |
+| date/time/date_time | `YYYY-MM-DD` / `HH:mm` / `YYYY-MM-DDTHH:mm` | No implicit timezone conversion; compared as local values |
+| slider | Integer | Within min and max, on a step counted from min |
+| name/address | Object of named text parts (`first`, `last`; `line1`, `line2`, `city`, `region`, `postalCode`, `country`) | Single-line parts; unknown parts rejected; blank parts dropped; required means the non-optional parts; personal by default |
+| section/description | None (layout) | Shown text only: never answered, never required, not usable in conditions; not a response or export column |
 | dropdown/radio | Option ID string | Must be a published valid option |
 | multi_select | Array of unique option IDs | Choice count bounds; no unknown IDs |
 | checkbox/consent | Boolean | Required consent means literal true; include consent-text version in receipt |
