@@ -102,6 +102,12 @@ describe("create", () => {
   it("starts from a built-in template", async () => {
     const templates = FormTemplatesResponseSchema.parse((await get("/api/v1/form-templates", "creatorA")).body).templates;
     expect(templates.map((t) => t.id)).toEqual(["contact", "support-request", "feedback"]);
+    // Previews for the template gallery: every question's label, type and whether it is required.
+    const support = definitionFromTemplate("support-request", "x")!;
+    expect(templates.find((t) => t.id === "support-request")).toMatchObject({
+      pages: support.pages.length,
+      fields: support.fields.map((f) => ({ label: f.label, type: f.type, required: f.required })),
+    });
     const body = await createAs("creatorA", "IT helpdesk", "support-request");
     const draft = await draftRow(a.id, body.form.id);
     expect(draft?.definition).toEqual(definitionFromTemplate("support-request", "IT helpdesk"));

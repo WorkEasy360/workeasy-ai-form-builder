@@ -96,7 +96,7 @@ export function ResponseDetail({ orgId, formId, submissionId }: { orgId: string;
       {!detail && !error && <p role="status">Loading the response…</p>}
       {detail && (
         <>
-          <h1 style={{ margin: "8px 0 4px", fontSize: 24 }}>Response {detail.receiptNumber}</h1>
+          <h2 style={{ margin: "8px 0 4px", fontSize: 22 }}>Response {detail.receiptNumber}</h2>
           <p style={{ marginTop: 0, color: "var(--we-color-textMuted)" }}>
             Received <time dateTime={detail.receivedAt}>{new Date(detail.receivedAt).toLocaleString()}</time> · version {detail.version.versionNumber}
             {detail.version.active ? " (live)" : " (an earlier version; questions are shown as respondents saw them)"} ·{" "}

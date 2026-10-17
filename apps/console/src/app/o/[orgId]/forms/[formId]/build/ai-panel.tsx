@@ -48,12 +48,15 @@ const ACTIVE: Status[] = ["queued", "running"];
  * leaves the draft alone. If AI is unavailable the builder works as before.
  */
 export function AiPanel({
+  initialJobId,
   formPath,
   definition,
   readOnly,
   saveForPublish,
   onApplied,
 }: {
+  /** A generation started elsewhere (the create page) to follow from the start. */
+  initialJobId?: string;
   formPath: string;
   /** The draft as the editor has it now. */
   definition: FormDefinition;
@@ -72,6 +75,20 @@ export function AiPanel({
   // Generations live under the organization, not the form.
   const jobsPath = `${formPath.replace(/\/forms\/[^/]+$/, "")}/ai-jobs`;
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  // Follow a generation that was started before the builder opened.
+  useEffect(() => {
+    if (!initialJobId) return;
+    let cancelled = false;
+    api<{ job: Generation }>(`${jobsPath}/${initialJobId}`)
+      .then((r) => {
+        if (!cancelled) setGeneration(r.job);
+      })
+      .catch(() => setError("The AI request couldn't be loaded. You can ask again below."));
+    return () => {
+      cancelled = true;
+    };
+  }, [initialJobId, jobsPath]);
 
   // Poll an active generation until it ends.
   useEffect(() => {

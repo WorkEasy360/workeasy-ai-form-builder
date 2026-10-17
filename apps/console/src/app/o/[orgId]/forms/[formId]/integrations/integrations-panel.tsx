@@ -118,10 +118,7 @@ export function IntegrationsPanel({ orgId, formId }: { orgId: string; formId: st
 
   return (
     <div>
-      <p style={{ margin: 0 }}>
-        <a href={`/o/${orgId}/forms`}>← Forms</a>
-      </p>
-      <h1 style={{ fontSize: 24, margin: "8px 0" }}>Notifications and webhooks</h1>
+      <h2 style={{ fontSize: 22, margin: "0 0 8px" }}>Notifications and webhooks</h2>
       <p style={{ color: "var(--we-color-textMuted)", marginTop: 0 }}>
         Each new response is sent to every active destination below. Failed sends are retried for about a day, and every attempt is listed.
       </p>

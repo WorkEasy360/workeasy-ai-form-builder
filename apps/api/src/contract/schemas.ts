@@ -108,11 +108,26 @@ export const FormResponseSchema = z.object({
 export type FormResponse = z.infer<typeof FormResponseSchema>;
 
 export const FormTemplatesResponseSchema = z.object({
-  templates: z.array(z.object({ id: z.string(), name: z.string(), description: z.string() })),
+  templates: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      description: z.string(),
+      /** For previews in the template gallery. */
+      pages: z.number().int(),
+      fields: z.array(z.object({ label: z.string(), type: z.string(), required: z.boolean() })),
+    }),
+  ),
+});
+
+/** A form in the list, with response figures for people who may read responses (null otherwise). */
+export const FormListItemSchema = FormSummarySchema.extend({
+  responseCount: z.number().int().nullable(),
+  lastResponseAt: Timestamp.nullable(),
 });
 
 export const FormListResponseSchema = z.object({
-  items: z.array(FormSummarySchema),
+  items: z.array(FormListItemSchema),
   nextCursor: z.string().optional(),
 });
 export type FormListResponse = z.infer<typeof FormListResponseSchema>;

@@ -55,10 +55,7 @@ export function FormAnalytics({ orgId, formId }: { orgId: string; formId: string
 
   return (
     <div>
-      <p style={{ margin: 0 }}>
-        <a href={`/o/${orgId}/forms`}>← Forms</a>
-      </p>
-      <h1 style={{ fontSize: 24, margin: "8px 0" }}>Analytics</h1>
+      <h2 style={{ fontSize: 22, margin: "0 0 8px" }}>Analytics</h2>
       <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "end", marginBottom: 16 }}>
         <label htmlFor={ids.from} style={{ display: "grid", gap: 4 }}>
           From

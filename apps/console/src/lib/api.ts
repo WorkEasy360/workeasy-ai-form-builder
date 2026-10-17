@@ -62,6 +62,12 @@ export interface FormSummary {
   permissions: string[];
 }
 
+/** A form in the list: response figures are null without permission to read responses. */
+export interface FormListItem extends FormSummary {
+  responseCount: number | null;
+  lastResponseAt: string | null;
+}
+
 export interface VersionSummary {
   id: string;
   versionNumber: number;

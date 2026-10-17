@@ -7,7 +7,7 @@ import type { Express } from "express";
 import { sql } from "kysely";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, inject, it } from "vitest";
-import { AnalyticsResponseSchema, FormResponseSchema, ProblemSchema, SessionStartResponseSchema } from "./contract/schemas.js";
+import { AnalyticsResponseSchema, FormListResponseSchema, FormResponseSchema, ProblemSchema, SessionStartResponseSchema } from "./contract/schemas.js";
 import { buildTestApp, TEST_CONSOLE_ORIGIN, TEST_RESPONDENT_ORIGIN, testSettings, unusedIdentityProvider } from "./test-support.js";
 
 /** ANA-01: views, starts and accepts from respondent sessions, with no answer telemetry. Needs `pnpm infra:up`. */
@@ -86,6 +86,32 @@ afterAll(async () => {
   await db?.destroy();
   await publicDb?.destroy();
   await owner?.destroy();
+});
+
+describe("forms list response figures", () => {
+  it("counts responses that are not deleted, with the latest time, only for people who may read them", async () => {
+    const form = await publishedForm();
+    await submit(await open(form.slug));
+    const removed = await submit(await open(form.slug));
+    const latest = await submit(await open(form.slug));
+    await consoleReq("ownerA", "delete", `${form.path}/submissions/${removed}`).send({ reason: "Test deletion" });
+    const list = async (who: string) =>
+      FormListResponseSchema.parse((await consoleReq(who, "get", `/api/v1/organizations/${a.id}/forms?limit=100`)).body).items.find((f) => f.id === form.id);
+    const mine = await list("ownerA");
+    expect(mine).toMatchObject({ responseCount: 2 });
+    const latestRow = await withTenant(owner, a.id, (trx) => trx.selectFrom("submissions").select("received_at").where("id", "=", latest).executeTakeFirstOrThrow());
+    expect(mine!.lastResponseAt).toBe(latestRow.received_at.toISOString());
+
+    // Someone who can see the form but not its responses gets no figures.
+    await consoleReq("ownerA", "put", `${form.path}/grants`).send({ grants: [{ principalType: "user", principalId: users.analystA, permission: "forms.read" }] });
+    expect(await list("analystA")).toMatchObject({ responseCount: null, lastResponseAt: null });
+    // A form without responses shows zero.
+    const empty = await publishedForm();
+    expect(FormListResponseSchema.parse((await consoleReq("ownerA", "get", `/api/v1/organizations/${a.id}/forms?limit=100`)).body).items.find((f) => f.id === empty.id)).toMatchObject({
+      responseCount: 0,
+      lastResponseAt: null,
+    });
+  });
 });
 
 describe("form analytics", () => {

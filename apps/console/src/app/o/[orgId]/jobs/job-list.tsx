@@ -102,10 +102,7 @@ export function JobList({ orgId }: { orgId: string }) {
 
   return (
     <div>
-      <p style={{ margin: 0 }}>
-        <a href={`/o/${orgId}/forms`}>← Forms</a>
-      </p>
-      <h1 style={{ fontSize: 24, margin: "8px 0" }}>Background jobs</h1>
+      <h1 style={{ fontSize: 26, margin: "0 0 8px" }}>Background jobs</h1>
       <p style={{ color: "var(--we-color-textMuted)", marginTop: 0 }}>
         Work done after a change is saved, such as deliveries. Failed attempts are retried automatically; a job that keeps failing stops and waits here.
       </p>

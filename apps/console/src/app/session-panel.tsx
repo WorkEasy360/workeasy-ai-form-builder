@@ -16,18 +16,10 @@ interface Me {
 
 type State = { kind: "loading" } | { kind: "signed-out" } | { kind: "error" } | { kind: "signed-in"; me: Me };
 
-const buttonStyle = {
-  display: "inline-block",
-  padding: "var(--we-space-1) var(--we-space-2)",
-  borderRadius: "var(--we-radius-md)",
-  border: "1px solid var(--we-color-accent)",
-  background: "var(--we-color-accent)",
-  color: "var(--we-color-accentText)",
-  font: "inherit",
-  textDecoration: "none",
-  cursor: "pointer",
-} as const;
-
+/**
+ * The landing page: sign in, then pick an organization. Someone in exactly
+ * one organization goes straight to its forms.
+ */
 export function SessionPanel({ signInFailed }: { signInFailed: boolean }) {
   const [state, setState] = useState<State>({ kind: "loading" });
 
@@ -37,8 +29,11 @@ export function SessionPanel({ signInFailed }: { signInFailed: boolean }) {
       .then(async (res) => {
         if (cancelled) return;
         if (res.status === 401) setState({ kind: "signed-out" });
-        else if (res.ok) setState({ kind: "signed-in", me: (await res.json()) as Me });
-        else setState({ kind: "error" });
+        else if (res.ok) {
+          const me = (await res.json()) as Me;
+          if (me.organizations.length === 1) window.location.replace(`/o/${me.organizations[0]!.id}/forms`);
+          else setState({ kind: "signed-in", me });
+        } else setState({ kind: "error" });
       })
       .catch(() => {
         if (!cancelled) setState({ kind: "error" });
@@ -55,48 +50,54 @@ export function SessionPanel({ signInFailed }: { signInFailed: boolean }) {
   if (state.kind === "error") {
     return (
       <p role="alert">
-        We couldn&apos;t reach Workeasy Forms. Check your connection and{" "}
-        <a href="/">try again</a>.
+        We couldn&apos;t reach Workeasy Forms. Check your connection and <a href="/">try again</a>.
       </p>
     );
   }
 
   if (state.kind === "signed-out") {
     return (
-      <div>
+      <div className="c-card" style={{ display: "grid", gap: 12 }}>
         {signInFailed && (
-          <p role="alert" style={{ color: "var(--we-color-danger)" }}>
+          <p role="alert" className="c-error">
             Sign-in didn&apos;t complete. Please try again.
           </p>
         )}
-        <p>Sign in with your Workeasy account to build and manage forms.</p>
-        <a href="/auth/login" style={buttonStyle}>
-          Sign in
-        </a>
+        <h2 style={{ margin: 0, fontSize: 20 }}>Sign in</h2>
+        <p style={{ margin: 0, color: "var(--we-color-textMuted)" }}>Use your Workeasy account to build forms, share them and review responses.</p>
+        <p style={{ margin: 0 }}>
+          <a href="/auth/login" className="c-btn c-btn-primary">
+            Sign in with Workeasy
+          </a>
+        </p>
       </div>
     );
   }
 
   const { me } = state;
   return (
-    <div>
-      <p>
+    <div style={{ display: "grid", gap: 16 }}>
+      <p style={{ margin: 0 }}>
         Signed in as <strong>{me.user.displayName ?? "your account"}</strong>.
       </p>
-      <h2 style={{ fontSize: 20, marginBottom: "var(--we-space-1)" }}>Your organizations</h2>
+      <h2 style={{ fontSize: 20, margin: 0 }}>Choose an organization</h2>
       {me.organizations.length === 0 ? (
-        <p>You aren&apos;t a member of any organization yet. Ask an organization owner to add you.</p>
+        <div className="c-empty">
+          <h2>You&apos;re not in an organization yet</h2>
+          <p>Ask an organization owner to add you.</p>
+        </div>
       ) : (
-        <ul style={{ paddingLeft: "var(--we-space-3)" }}>
+        <div style={{ display: "grid", gap: 8 }}>
           {me.organizations.map((org) => (
-            <li key={org.id}>
-              <a href={`/o/${org.id}/forms`}>{org.name}</a> <span style={{ color: "var(--we-color-textMuted)" }}>({org.role})</span>
-            </li>
+            <a key={org.id} href={`/o/${org.id}/forms`} className="c-card c-choice" style={{ textDecoration: "none" }}>
+              <h3>{org.name}</h3>
+              <p>Your role: {org.role}</p>
+            </a>
           ))}
-        </ul>
+        </div>
       )}
       <form method="post" action="/auth/logout">
-        <button type="submit" style={buttonStyle}>
+        <button type="submit" className="c-btn">
           Sign out
         </button>
       </form>

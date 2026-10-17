@@ -137,16 +137,7 @@ export function ResponsesApp({ orgId, formId }: { orgId: string; formId: string 
   return (
     <div>
       <style>{CSS}</style>
-      <p style={{ margin: 0 }}>
-        <a href={`/o/${orgId}/forms`}>← Forms</a>
-        {form?.permissions.includes("forms.edit") && (
-          <>
-            {" · "}
-            <a href={`/o/${orgId}/forms/${formId}/build`}>Edit form</a>
-          </>
-        )}
-      </p>
-      <h1 style={{ margin: "8px 0 0", fontSize: 24 }}>Responses{form ? `: ${form.name}` : ""}</h1>
+      <h2 style={{ margin: "0 0 4px", fontSize: 22 }}>Responses</h2>
 
       {error && (
         <p role="alert" style={{ color: "var(--we-color-danger)" }}>

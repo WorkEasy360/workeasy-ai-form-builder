@@ -64,10 +64,7 @@ export function AiSettingsForm({ orgId }: { orgId: string }) {
   const validLimit = Number.isInteger(n) && n >= 1000 && n <= 100_000_000;
   return (
     <div>
-      <p style={{ margin: 0 }}>
-        <a href={`/o/${orgId}/forms`}>← Forms</a>
-      </p>
-      <h1 style={{ fontSize: 24, margin: "8px 0" }}>AI settings</h1>
+      <h1 style={{ fontSize: 26, margin: "0 0 8px" }}>AI settings</h1>
       <p style={{ color: "var(--we-color-textMuted)", marginTop: 0 }}>
         AI can suggest forms for people who edit them. Suggestions never change a form until someone applies them, and prompts are not kept after a request
         ends.

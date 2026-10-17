@@ -382,7 +382,15 @@ export function apiV1Router({ db, settings, objectStore }: AppDependencies): Rou
   });
 
   router.get("/form-templates", (_req, res) => {
-    res.json({ templates: FORM_TEMPLATES.map(({ id, name, description }) => ({ id, name, description })) });
+    res.json({
+      templates: FORM_TEMPLATES.map(({ id, name, description, definition }) => ({
+        id,
+        name,
+        description,
+        pages: definition.pages.length,
+        fields: definition.fields.map((f) => ({ label: f.label, type: f.type, required: f.required })),
+      })),
+    });
   });
 
   router.get("/organizations/:orgId/forms", async (req, res) => {
@@ -407,15 +415,27 @@ export function apiV1Router({ db, settings, objectStore }: AppDependencies): Rou
         ...(q ? { search: q } : {}),
       });
       const grants = await orgRepo.userGrantsForForms(trx, page.items.map((f) => f.id), userId);
-      return { page, membership, grants };
+      // Response figures only for forms whose responses the caller may read.
+      const readable = page.items
+        .filter((f) => formPermissions(membership, (grants.get(f.id) ?? []).filter(isFormPermission)).has("responses.read"))
+        .map((f) => f.id);
+      const stats = await orgRepo.responseStats(trx, readable);
+      return { page, membership, grants, stats, readable: new Set(readable) };
     });
     if (result === NOT_VISIBLE) {
       problems.notFound(res);
       return;
     }
-    const { page, membership, grants } = result;
+    const { page, membership, grants, stats, readable } = result;
     const body: FormListResponse = {
-      items: page.items.map((f) => summaryBody(f, formPermissions(membership, (grants.get(f.id) ?? []).filter(isFormPermission)))),
+      items: page.items.map((f) => {
+        const stat = stats.get(f.id);
+        return {
+          ...summaryBody(f, formPermissions(membership, (grants.get(f.id) ?? []).filter(isFormPermission))),
+          responseCount: readable.has(f.id) ? (stat?.count ?? 0) : null,
+          lastResponseAt: readable.has(f.id) ? (stat?.lastAt?.toISOString() ?? null) : null,
+        };
+      }),
       ...(page.nextCursor ? { nextCursor: encodeCursor(page.nextCursor) } : {}),
     };
     res.json(body);

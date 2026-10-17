@@ -70,6 +70,19 @@ function escapeLike(value: string): string {
 }
 
 /** Keyset-paginated form list ordered by (updated_at, id) descending. */
+/** Responses (not deleted) per form, and the latest one's time. */
+export async function responseStats(trx: Trx, formIds: string[]): Promise<Map<string, { count: number; lastAt: Date | null }>> {
+  if (formIds.length === 0) return new Map();
+  const rows = await trx
+    .selectFrom("submissions")
+    .select(["form_id", sql<number>`count(*)::int`.as("count"), sql<Date | null>`max(received_at)`.as("last_at")])
+    .where("form_id", "in", formIds)
+    .where("deleted_at", "is", null)
+    .groupBy("form_id")
+    .execute();
+  return new Map(rows.map((r) => [r.form_id, { count: r.count, lastAt: r.last_at }]));
+}
+
 export async function listForms(trx: Trx, options: ListFormsOptions): Promise<FormPage> {
   let query = trx
     .selectFrom("forms as f")
