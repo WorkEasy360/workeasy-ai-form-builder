@@ -69,10 +69,7 @@ export function Palette({
 
   return (
     <div className="b-palette-panel">
-      <h2 style={{ marginBottom: 4 }}>Fields</h2>
-      <p className="b-muted" style={{ margin: "0 0 8px" }}>
-        Drag onto the form, or click to add {addTargetText}.
-      </p>
+      <h2 style={{ marginBottom: 8 }}>Add a field</h2>
       <label htmlFor={searchId} className="b-visually-hidden">
         Search fields
       </label>
@@ -130,6 +127,7 @@ export function Palette({
         </div>
       ))}
       {groups.length === 0 && <p className="b-muted">No fields match “{query}”.</p>}
+      <p className="b-palette-hint">Drag onto the form, or click to add {addTargetText}.</p>
     </div>
   );
 }

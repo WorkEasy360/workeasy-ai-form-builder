@@ -22,11 +22,12 @@ import { FormField, RENDERER_CSS, themeStyle } from "@workeasy/form-renderer";
 import type { FieldType, FormDefinition } from "@workeasy/form-schema";
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import { api, ApiError, type FormResponse, type FormSummary } from "../../../../../../lib/api";
+import { ArrowDownIcon, ArrowUpIcon, CopyIcon, EditIcon, EyeIcon, GripIcon, PlusIcon, RedoIcon, ShareIcon, SparkleIcon, TrashIcon, UndoIcon } from "../../../../../icons";
 import { AiPanel } from "./ai-panel";
 import { DRAG_FIELD, Palette } from "./palette";
 import { ConflictPanel } from "./conflict-panel";
 import { DesignInspector } from "./design";
-import { FieldInspector, FormInspector, PageInspector } from "./inspector";
+import { FieldInspector, FormInspector, PageInspector, type PageActions } from "./inspector";
 import { PreviewPane } from "./preview";
 import { PublishPanel } from "./publish-panel";
 import { SharePanel } from "./share-panel";
@@ -74,7 +75,7 @@ function SkipNote({ definition, pageId }: { definition: FormDefinition; pageId: 
 function statusText(state: AutosaveState): string {
   switch (state.kind) {
     case "saved":
-      return "All changes saved";
+      return "Saved";
     case "pending":
       return "Unsaved changes";
     case "saving":
@@ -401,57 +402,91 @@ function Editor({
     ? `after “${selectedField.label || FIELD_TYPE_INFO[selectedField.type].label}”`
     : `to the end of ${page.title || `page ${pageIndex + 1}`}`;
 
+  /** Moving and deleting a page, offered in the page's panel. */
+  function pageActions(pageId: string): PageActions {
+    const i = definition.pages.findIndex((p) => p.id === pageId);
+    const p = definition.pages[i]!;
+    const name = p.title || `page ${i + 1}`;
+    return {
+      canMoveUp: !readOnly && i > 0,
+      canMoveDown: !readOnly && i < definition.pages.length - 1,
+      canDelete: !readOnly && definition.pages.length > 1 && p.fieldIds.length === 0,
+      deleteHint: p.fieldIds.length > 0 ? "Move or delete this page's questions first." : definition.pages.length <= 1 ? "A form needs at least one page." : undefined,
+      moveUp: () => movePageBy(p.id, name, -1),
+      moveDown: () => movePageBy(p.id, name, 1),
+      remove: () => {
+        run(() => removePage(definition, p.id), "Page deleted.");
+        if (p.id === page.id) setCurrentPageId(undefined);
+        setSelected({ kind: "form" });
+      },
+    };
+  }
+
   return (
     <div className="b-shell">
       <style>{BUILDER_CSS + RENDERER_CSS}</style>
       <header className="b-topbar">
         {/* The form's name and tabs are in the shared form header above. */}
         <h2 className="b-visually-hidden">Editor for {formName}</h2>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+        <div className="b-bar-group">
           <button
             type="button"
-            className="b-btn"
+            className="b-icon-btn"
             disabled={readOnly || !editor.canUndo}
             aria-label={editor.undoLabel ? `Undo ${editor.undoLabel}` : "Undo"}
-            title={editor.undoLabel ? `Undo ${editor.undoLabel} (Ctrl+Z)` : undefined}
+            title={editor.undoLabel ? `Undo ${editor.undoLabel} (Ctrl+Z)` : "Undo (Ctrl+Z)"}
             onClick={editor.undo}
           >
-            Undo
+            <UndoIcon size={18} />
           </button>
           <button
             type="button"
-            className="b-btn"
+            className="b-icon-btn"
             disabled={readOnly || !editor.canRedo}
             aria-label={editor.redoLabel ? `Redo ${editor.redoLabel}` : "Redo"}
-            title={editor.redoLabel ? `Redo ${editor.redoLabel} (Ctrl+Shift+Z)` : undefined}
+            title={editor.redoLabel ? `Redo ${editor.redoLabel} (Ctrl+Shift+Z)` : "Redo (Ctrl+Shift+Z)"}
             onClick={editor.redo}
           >
-            Redo
+            <RedoIcon size={18} />
           </button>
-          <span role="status" className="b-muted">
+          <span role="status" className="b-save" data-state={editor.saveState.kind}>
             {statusText(editor.saveState)}
           </span>
-          <span className="b-muted">{publicationText(form, unpublishedChanges)}</span>
-          <span className="b-muted">{issues.length === 0 ? "Ready to publish" : `${issues.length} to fix before publishing`}</span>
-          <button type="button" className="b-btn" aria-pressed={mode === "ai"} onClick={() => setMode(mode === "ai" ? "edit" : "ai")}>
-            Ask AI…
+          {(editor.saveState.kind === "retrying" || editor.saveState.kind === "rejected") && editor.unsaved && (
+            <button type="button" className="b-link" onClick={() => void editor.saveNow()}>
+              Try again now
+            </button>
+          )}
+          {form.activeVersionId && (unpublishedChanges ?? 0) > 0 && <span className="b-chip">{publicationText(form, unpublishedChanges)}</span>}
+        </div>
+        <div className="b-bar-group">
+          {mode !== "edit" && (
+            <button type="button" className="b-btn" onClick={() => setMode("edit")}>
+              ← Back to editing
+            </button>
+          )}
+          <button type="button" className="b-btn b-quiet" aria-pressed={mode === "ai"} onClick={() => setMode(mode === "ai" ? "edit" : "ai")}>
+            <SparkleIcon size={16} /> Ask AI
           </button>
-          <button type="button" className="b-btn" aria-pressed={mode === "preview"} onClick={() => setMode(mode === "preview" ? "edit" : "preview")}>
-            Preview
+          <button type="button" className="b-btn b-quiet" aria-pressed={mode === "preview"} onClick={() => setMode(mode === "preview" ? "edit" : "preview")}>
+            <EyeIcon size={16} /> Preview
           </button>
-          <button type="button" className="b-btn" aria-pressed={mode === "publish"} onClick={() => setMode(mode === "publish" ? "edit" : "publish")}>
-            Publish…
-          </button>
-          <button type="button" className="b-btn" aria-pressed={mode === "share"} onClick={() => setMode(mode === "share" ? "edit" : "share")}>
-            Share…
+          <button type="button" className="b-btn b-quiet" aria-pressed={mode === "share"} onClick={() => setMode(mode === "share" ? "edit" : "share")}>
+            <ShareIcon size={16} /> Share
           </button>
           <button
             type="button"
             className="b-btn b-primary"
-            disabled={readOnly || !editor.unsaved || editor.saveState.kind === "saving" || editor.saveState.kind === "conflict"}
-            onClick={() => void editor.saveNow()}
+            aria-pressed={mode === "publish"}
+            aria-label={issues.length > 0 ? `Publish (${issues.length} to fix first)` : "Publish"}
+            onClick={() => setMode(mode === "publish" ? "edit" : "publish")}
           >
-            Save now
+            Publish
+            {issues.length > 0 && (
+              <span className="b-count" aria-hidden="true">
+                {issues.length}
+              </span>
+            )}
           </button>
         </div>
       </header>
@@ -507,11 +542,6 @@ function Editor({
       ) : (
         <div className="b-columns">
           <nav className="b-panel" aria-label="Pages and questions">
-            <p style={{ marginTop: 0 }}>
-              <button type="button" className="b-btn" aria-pressed={selection.kind === "form"} onClick={() => setSelected({ kind: "form" })}>
-                Form details and design
-              </button>
-            </p>
             <Palette
               disabled={readOnly}
               full={definition.fields.length >= 100}
@@ -524,67 +554,9 @@ function Editor({
               onDragStart={setDragging}
               onDragEnd={endDrag}
             />
-            <h2>Pages</h2>
-            <ol className="b-list">
-              {definition.pages.map((p, i) => (
-                <li key={p.id} className="b-row" data-page-item={p.id}>
-                  <button type="button" className="b-btn b-grow" data-primary aria-current={p.id === page.id ? "true" : undefined} onClick={() => selectPage(p.id)}>
-                    {p.title || `Page ${i + 1}`}
-                    {skipRuleOf(definition, p.id) && <span className="b-badge"> · skips ahead</span>}
-                  </button>
-                  <button
-                    type="button"
-                    className="b-btn"
-                    data-move="-1"
-                    disabled={readOnly || i === 0}
-                    aria-label={`Move ${p.title || `page ${i + 1}`} up`}
-                    onClick={() => movePageBy(p.id, p.title || `page ${i + 1}`, -1)}
-                  >
-                    ↑
-                  </button>
-                  <button
-                    type="button"
-                    className="b-btn"
-                    data-move="1"
-                    disabled={readOnly || i === definition.pages.length - 1}
-                    aria-label={`Move ${p.title || `page ${i + 1}`} down`}
-                    onClick={() => movePageBy(p.id, p.title || `page ${i + 1}`, 1)}
-                  >
-                    ↓
-                  </button>
-                  <button
-                    type="button"
-                    className="b-btn"
-                    disabled={readOnly || definition.pages.length <= 1 || p.fieldIds.length > 0}
-                    title={p.fieldIds.length > 0 ? "Move or delete this page's questions first" : undefined}
-                    aria-label={`Delete ${p.title || `page ${i + 1}`}`}
-                    onClick={() => {
-                      run(() => removePage(definition, p.id), "Page deleted.");
-                      if (p.id === page.id) setCurrentPageId(undefined);
-                      setSelected({ kind: "form" });
-                    }}
-                  >
-                    ✕
-                  </button>
-                </li>
-              ))}
-            </ol>
-            <p>
-              <button
-                type="button"
-                className="b-btn"
-                disabled={readOnly || definition.pages.length >= 20}
-                onClick={() => {
-                  const added = addPage(definition, page.id);
-                  if (!editor.apply(added.definition)) selectPage(added.pageId);
-                }}
-              >
-                Add page
-              </button>
-            </p>
-
           </nav>
 
+          <div className="b-workspace" onClick={(e) => e.target === e.currentTarget && setSelected({ kind: "form" })}>
           <div
             className="b-canvas"
             aria-label="Form canvas"
@@ -596,7 +568,7 @@ function Editor({
             }}
             onDrop={onCanvasDrop}
           >
-            {definition.pages.length > 1 && (
+            {(
               <div className="b-pagetabs" role="group" aria-label="Pages">
                 {definition.pages.map((p, i) => (
                   <button
@@ -614,11 +586,26 @@ function Editor({
                   >
                     {p.title || `Page ${i + 1}`}
                     <span className="b-muted"> · {p.fieldIds.length}</span>
+                    {skipRuleOf(definition, p.id) && <span className="b-muted"> · skips ahead</span>}
                   </button>
                 ))}
+                <button
+                  type="button"
+                  className="b-pagetab b-pagetab-add"
+                  disabled={readOnly || definition.pages.length >= 20}
+                  onClick={() => {
+                    const added = addPage(definition, page.id);
+                    if (!editor.apply(added.definition)) selectPage(added.pageId);
+                  }}
+                >
+                  <PlusIcon size={14} /> Add page
+                </button>
               </div>
             )}
-            <h2 style={{ marginTop: 0 }}>{definition.title}</h2>
+            <button type="button" className="b-sheet-title" onClick={() => setSelected({ kind: "form" })}>
+              <span className="b-visually-hidden">Edit form details: </span>
+              {definition.title}
+            </button>
             {page.title && <h3>{page.title}</h3>}
             {page.fieldIds.length === 0 && (
               <div
@@ -669,49 +656,52 @@ function Editor({
                   <div className="b-card-tools" onClick={(e) => e.stopPropagation()}>
                     {!readOnly && (
                       <span className="b-handle" title="Drag to move" aria-hidden="true">
-                        ⠿
+                        <GripIcon size={16} />
                       </span>
                     )}
-                    <button type="button" className="b-btn" data-primary aria-pressed={isSelected} aria-label={`Edit ${name}`} onClick={() => setSelected({ kind: "field", id: field.id })}>
-                      Edit
+                    <button type="button" className="b-tool" data-primary aria-pressed={isSelected} aria-label={`Edit ${name}`} title="Edit" onClick={() => setSelected({ kind: "field", id: field.id })}>
+                      <EditIcon size={16} />
                     </button>
                     <button
                       type="button"
-                      className="b-btn"
+                      className="b-tool"
                       data-move="-1"
                       disabled={readOnly || first}
                       aria-label={`Move ${name} up`}
                       aria-keyshortcuts="Alt+ArrowUp"
+                      title="Move up (Alt+↑)"
                       onClick={() => moveQuestion(field.id, name, -1)}
                     >
-                      ↑
+                      <ArrowUpIcon size={16} />
                     </button>
                     <button
                       type="button"
-                      className="b-btn"
+                      className="b-tool"
                       data-move="1"
                       disabled={readOnly || last}
                       aria-label={`Move ${name} down`}
                       aria-keyshortcuts="Alt+ArrowDown"
+                      title="Move down (Alt+↓)"
                       onClick={() => moveQuestion(field.id, name, 1)}
                     >
-                      ↓
+                      <ArrowDownIcon size={16} />
                     </button>
                     <button
                       type="button"
-                      className="b-btn"
+                      className="b-tool"
                       disabled={readOnly || definition.fields.length >= 100}
                       aria-label={`Duplicate ${name}`}
                       onClick={() => {
                         const copy = duplicateField(definition, field.id);
                         if (!editor.apply(copy.definition)) setSelected({ kind: "field", id: copy.fieldId });
                       }}
+                      title="Duplicate"
                     >
-                      Duplicate
+                      <CopyIcon size={16} />
                     </button>
                     <button
                       type="button"
-                      className="b-btn"
+                      className="b-tool"
                       disabled={readOnly}
                       aria-label={`Delete ${name}`}
                       onClick={() => {
@@ -726,8 +716,9 @@ function Editor({
                           setNotice(`Deleted ${name}${extra}. Undo brings it back.`);
                         }
                       }}
+                      title="Delete"
                     >
-                      Delete
+                      <TrashIcon size={16} />
                     </button>
                   </div>
                   <RuleBadges definition={definition} fieldId={field.id} />
@@ -738,20 +729,29 @@ function Editor({
             })}
             {drop?.pageId === page.id && page.fieldIds.length > 0 && drop.index === page.fieldIds.length && <div className="b-drop-line" aria-hidden="true" />}
           </div>
+          </div>
 
           <aside className="b-panel" aria-label="Properties">
             <fieldset disabled={readOnly} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
+              {selection.kind !== "form" && (
+                <button type="button" className="b-link b-back" onClick={() => setSelected({ kind: "form" })}>
+                  ← Form details
+                </button>
+              )}
               {selection.kind === "field" ? (
                 <FieldInspector definition={definition} fieldId={selection.id} issues={issues} tryApply={editor.apply} />
               ) : selection.kind === "page" ? (
-                <PageInspector definition={definition} pageId={selection.id} tryApply={editor.apply} />
+                <PageInspector definition={definition} pageId={selection.id} tryApply={editor.apply} actions={pageActions(selection.id)} />
               ) : (
                 <FormInspector definition={definition} tryApply={editor.apply} />
               )}
             </fieldset>
             {selection.kind === "form" && (
               <fieldset disabled={readOnly} style={{ border: 0, padding: 0, margin: "16px 0 0", minWidth: 0 }}>
-                <DesignInspector definition={definition} issues={issues} tryApply={editor.apply} />
+                <details className="b-fold">
+                  <summary>Design: colours, font and corners</summary>
+                  <DesignInspector definition={definition} issues={issues} tryApply={editor.apply} />
+                </details>
               </fieldset>
             )}
             {selection.kind !== "field" && issues.length > 0 && (

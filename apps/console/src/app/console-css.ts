@@ -30,6 +30,7 @@ h1, h2, h3 { line-height: 1.25; }
 .c-nav a[aria-current="page"] { background: color-mix(in srgb, var(--we-color-accent) 14%, transparent); color: var(--we-color-accent); font-weight: 600; }
 .c-nav svg { flex: none; }
 .c-main { min-width: 0; }
+.c-app[data-focus="true"] { grid-template-columns: minmax(0, 1fr); }
 .c-main:focus { outline: none; }
 .c-skip { position: absolute; left: 8px; top: -48px; z-index: 100; padding: 8px 12px; border-radius: var(--we-radius-md);
   background: var(--we-color-accent); color: var(--we-color-accentText); font-weight: 600; }

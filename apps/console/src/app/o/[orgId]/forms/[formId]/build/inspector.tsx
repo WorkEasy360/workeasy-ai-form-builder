@@ -42,6 +42,7 @@ function IssueList({ issues }: { issues: DefinitionIssue[] }) {
 export function FormInspector({ definition, tryApply }: { definition: FormDefinition; tryApply: TryApply }) {
   return (
     <section aria-labelledby="inspector-heading">
+      <p className="b-hint-card">Select a question on the form to edit it, or drag a field in from the left.</p>
       <h2 id="inspector-heading">Form details</h2>
       <CommitInput
         label="Title shown to respondents"
@@ -60,19 +61,41 @@ export function FormInspector({ definition, tryApply }: { definition: FormDefini
         value={definition.success.message}
         onCommit={(t) => (t.trim() === "" ? "Add a message for respondents." : tryApply(updateFormDetails(definition, { successMessage: t })))}
       />
-      <p className="b-muted">Select a question or page to edit it.</p>
     </section>
   );
 }
 
 // Page ------------------------------------------------------------------------
 
-export function PageInspector({ definition, pageId, tryApply }: { definition: FormDefinition; pageId: string; tryApply: TryApply }) {
+export interface PageActions {
+  canMoveUp: boolean;
+  canMoveDown: boolean;
+  canDelete: boolean;
+  deleteHint: string | undefined;
+  moveUp: () => void;
+  moveDown: () => void;
+  remove: () => void;
+}
+
+export function PageInspector({ definition, pageId, tryApply, actions }: { definition: FormDefinition; pageId: string; tryApply: TryApply; actions: PageActions }) {
   const page = definition.pages.find((p) => p.id === pageId);
   if (!page) return null;
+  const name = page.title || `page ${definition.pages.indexOf(page) + 1}`;
   return (
     <section aria-labelledby="inspector-heading">
       <h2 id="inspector-heading">Page</h2>
+      <p className="b-actions">
+        <button type="button" className="b-btn" disabled={!actions.canMoveUp} aria-label={`Move ${name} up`} onClick={actions.moveUp}>
+          Move up
+        </button>
+        <button type="button" className="b-btn" disabled={!actions.canMoveDown} aria-label={`Move ${name} down`} onClick={actions.moveDown}>
+          Move down
+        </button>
+        <button type="button" className="b-btn" disabled={!actions.canDelete} title={actions.deleteHint} aria-label={`Delete ${name}`} onClick={actions.remove}>
+          Delete page
+        </button>
+      </p>
+      {actions.deleteHint && <p className="b-muted" style={{ marginTop: 0 }}>{actions.deleteHint}</p>}
       <CommitInput
         key={page.id}
         label="Page title"

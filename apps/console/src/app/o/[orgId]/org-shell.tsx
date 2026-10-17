@@ -105,9 +105,11 @@ export function OrgShell({ orgId, children }: { orgId: string; children: ReactNo
     { href: `${base}/help`, label: "Help", icon: <HelpIcon />, show: true, match: `${base}/help` },
   ];
   const others = state.kind === "ready" ? state.me.organizations.filter((o) => o.id !== orgId) : [];
+  // The form builder needs the whole width: the sidebar steps aside ("← Forms" leads back).
+  const focus = /\/forms\/[^/]+\/build$/.test(pathname);
 
   return (
-    <div className="c-app">
+    <div className="c-app" data-focus={focus ? "true" : undefined}>
       <a className="c-skip" href="#main">
         Skip to main content
       </a>
@@ -156,6 +158,7 @@ export function OrgShell({ orgId, children }: { orgId: string; children: ReactNo
           )}
         </div>
       </header>
+{!focus && (
       <nav className="c-sidebar" aria-label="Organization">
         <p className="c-nav-label">Workspace</p>
         <ul className="c-nav">
@@ -171,6 +174,7 @@ export function OrgShell({ orgId, children }: { orgId: string; children: ReactNo
             ))}
         </ul>
       </nav>
+      )}
       <main className="c-main" id="main" tabIndex={-1}>
         <OrgContext.Provider value={org}>{children}</OrgContext.Provider>
       </main>

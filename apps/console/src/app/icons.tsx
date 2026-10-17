@@ -50,6 +50,64 @@ export const HelpIcon = (p: P) => (
     <path d="M12 17h.01" />
   </Icon>
 );
+export const UndoIcon = (p: P) => (
+  <Icon {...p}>
+    <path d="M9 14 4 9l5-5" />
+    <path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />
+  </Icon>
+);
+export const RedoIcon = (p: P) => (
+  <Icon {...p}>
+    <path d="m15 14 5-5-5-5" />
+    <path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13" />
+  </Icon>
+);
+export const GripIcon = (p: P) => (
+  <Icon {...p}>
+    <circle cx="9" cy="6" r="1" />
+    <circle cx="15" cy="6" r="1" />
+    <circle cx="9" cy="12" r="1" />
+    <circle cx="15" cy="12" r="1" />
+    <circle cx="9" cy="18" r="1" />
+    <circle cx="15" cy="18" r="1" />
+  </Icon>
+);
+export const ArrowUpIcon = (p: P) => (
+  <Icon {...p}>
+    <path d="M12 19V5M6 11l6-6 6 6" />
+  </Icon>
+);
+export const ArrowDownIcon = (p: P) => (
+  <Icon {...p}>
+    <path d="M12 5v14M6 13l6 6 6-6" />
+  </Icon>
+);
+export const CopyIcon = (p: P) => (
+  <Icon {...p}>
+    <rect x="8" y="8" width="12" height="12" rx="2" />
+    <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" />
+  </Icon>
+);
+export const TrashIcon = (p: P) => (
+  <Icon {...p}>
+    <path d="M4 7h16M10 11v6M14 11v6" />
+    <path d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3" />
+  </Icon>
+);
+export const EyeIcon = (p: P) => (
+  <Icon {...p}>
+    <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" />
+    <circle cx="12" cy="12" r="3" />
+  </Icon>
+);
+export const ShareIcon = (p: P) => (
+  <Icon {...p}>
+    <circle cx="18" cy="5" r="3" />
+    <circle cx="6" cy="12" r="3" />
+    <circle cx="18" cy="19" r="3" />
+    <path d="m8.6 13.5 6.8 4M15.4 6.5l-6.8 4" />
+  </Icon>
+);
 export const JobsIcon = (p: P) => (
   <Icon {...p}>
     <path d="M4 12a8 8 0 0 1 13.7-5.7L20 8.5" />
