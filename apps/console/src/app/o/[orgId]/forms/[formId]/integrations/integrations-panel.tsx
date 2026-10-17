@@ -5,12 +5,14 @@ import { api, ApiError } from "../../../../../../lib/api";
 
 interface Integration {
   id: string;
-  kind: "webhook" | "email";
+  kind: "webhook" | "email" | "confirmation";
   name: string;
   enabled: boolean;
   url: string | null;
   recipients: string[] | null;
   fieldIds: string[];
+  recipientFieldId: string | null;
+  subject: string | null;
   previousSecretExpiresAt: string | null;
 }
 
@@ -48,6 +50,9 @@ const ERRORS: Record<string, string> = {
   email_not_configured: "Email is not set up on this server.",
   response_deleted: "The response was deleted before it was sent.",
   integration_disabled: "The integration was paused or removed before it was sent.",
+  no_recipient: "The respondent didn't give an email address.",
+  recipient_limit: "This address already received 5 confirmations today; more are not sent, so the form can't be used to flood an inbox.",
+  hourly_limit: "This confirmation already sent 500 emails in the last hour.",
 };
 
 function errorText(code: string | null, status: number | null): string {
@@ -143,26 +148,33 @@ export function IntegrationsPanel({ orgId, formId }: { orgId: string; formId: st
       )}
       {items?.length === 0 && <p>No destinations yet.</p>}
       {items?.map((i) => (
-        <IntegrationCard key={i.id} integration={i} orgPath={orgPath} act={act} />
+        <IntegrationCard key={i.id} integration={i} orgPath={orgPath} act={act} fields={fields} />
       ))}
       <AddWebhook formPath={formPath} fields={fields} act={act} />
       <AddEmail formPath={formPath} act={act} />
+      <AddConfirmation formPath={formPath} emailFields={fields.filter((f) => f.type === "email")} act={act} />
     </div>
   );
 }
 
 type Act = (path: string, method: "POST" | "PATCH" | "DELETE", body: unknown, done: string) => Promise<void>;
 
-function IntegrationCard({ integration: i, orgPath, act }: { integration: Integration; orgPath: string; act: Act }) {
+const KIND_NAMES: Record<Integration["kind"], string> = { webhook: "Webhook", email: "Email", confirmation: "Confirmation to respondent" };
+
+function IntegrationCard({ integration: i, orgPath, act, fields }: { integration: Integration; orgPath: string; act: Act; fields: Array<{ id: string; label: string }> }) {
   const [open, setOpen] = useState(false);
   const path = `${orgPath}/integrations/${i.id}`;
   return (
     <section style={{ border: "1px solid var(--we-color-border)", borderRadius: 8, padding: 12, margin: "12px 0" }} aria-label={i.name}>
       <h2 style={{ fontSize: 18, margin: 0 }}>
-        {i.name} <span style={{ color: "var(--we-color-textMuted)", fontSize: 14 }}>({i.kind === "webhook" ? "Webhook" : "Email"}{i.enabled ? "" : ", paused"})</span>
+        {i.name} <span style={{ color: "var(--we-color-textMuted)", fontSize: 14 }}>({KIND_NAMES[i.kind]}{i.enabled ? "" : ", paused"})</span>
       </h2>
       <p style={{ overflowWrap: "anywhere", margin: "4px 0" }}>
-        {i.kind === "webhook" ? i.url : `To ${(i.recipients ?? []).join(", ")}`}
+        {i.kind === "webhook"
+          ? i.url
+          : i.kind === "confirmation"
+            ? `"${i.subject ?? ""}" to the address given in "${fields.find((f) => f.id === i.recipientFieldId)?.label ?? i.recipientFieldId}"`
+            : `To ${(i.recipients ?? []).join(", ")}`}
         {i.kind === "webhook" && <span style={{ color: "var(--we-color-textMuted)" }}> · {i.fieldIds.length === 0 ? "identifiers only" : `${i.fieldIds.length} answers included`}</span>}
       </p>
       <p style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "8px 0" }}>
@@ -351,6 +363,61 @@ function AddEmail({ formPath, act }: { formPath: string; act: Act }) {
           Add email notification
         </button>
       </p>
+    </form>
+  );
+}
+
+/**
+ * Confirmation email to respondents (PAR-06): your own subject and message,
+ * sent to the address each respondent gives in an email question.
+ */
+function AddConfirmation({ formPath, emailFields, act }: { formPath: string; emailFields: Array<{ id: string; label: string }>; act: Act }) {
+  const ids = { name: useId(), field: useId(), subject: useId(), message: useId() };
+  const [name, setName] = useState("Confirmation email");
+  const [fieldId, setFieldId] = useState("");
+  const [subject, setSubject] = useState("");
+  const [text, setText] = useState("");
+  const chosen = fieldId || emailFields[0]?.id || "";
+  return (
+    <form
+      style={{ border: "1px solid var(--we-color-border)", borderRadius: 8, padding: 12, margin: "12px 0", display: "grid", gap: 8 }}
+      onSubmit={(e) => {
+        e.preventDefault();
+        void act(`${formPath}/integrations`, "POST", { kind: "confirmation", name, recipientFieldId: chosen, subject, message: text }, `Added ${name}.`).then(() => {
+          setSubject("");
+          setText("");
+        });
+      }}
+    >
+      <h2 style={{ fontSize: 18, margin: 0 }}>Add a confirmation email to respondents</h2>
+      <p style={{ margin: 0, color: "var(--we-color-textMuted)" }}>
+        Sends your message to the address each respondent gives. Their answers are not included. An address gets at most 5 confirmations a day.
+      </p>
+      {emailFields.length === 0 ? (
+        <p style={{ margin: 0 }}>Add an email address question to the form first.</p>
+      ) : (
+        <>
+          <label htmlFor={ids.name}>Name</label>
+          <input id={ids.name} value={name} onChange={(e) => setName(e.target.value)} required maxLength={100} />
+          <label htmlFor={ids.field}>Send to the address given in</label>
+          <select id={ids.field} value={chosen} onChange={(e) => setFieldId(e.target.value)}>
+            {emailFields.map((f) => (
+              <option key={f.id} value={f.id}>
+                {f.label}
+              </option>
+            ))}
+          </select>
+          <label htmlFor={ids.subject}>Subject</label>
+          <input id={ids.subject} value={subject} onChange={(e) => setSubject(e.target.value)} required maxLength={150} />
+          <label htmlFor={ids.message}>Message</label>
+          <textarea id={ids.message} rows={4} value={text} onChange={(e) => setText(e.target.value)} required maxLength={4000} />
+          <p style={{ margin: 0 }}>
+            <button type="submit" disabled={!name.trim() || !chosen || !subject.trim() || !text.trim()}>
+              Add confirmation email
+            </button>
+          </p>
+        </>
+      )}
     </form>
   );
 }

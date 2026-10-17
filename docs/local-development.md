@@ -392,6 +392,12 @@ People with `analytics.read` on a form open **Analytics** next to it in the form
   - Sent through the SMTP relay in `SMTP_HOST`; locally that's Mailpit, with its inbox at <http://localhost:8025>.
   - The relay accepting a message counts as delivered; bounces are not tracked yet. SMTP 4xx and connection failures retry; 5xx fails permanently.
 
+### Confirmation email to respondents (PAR-06)
+
+- **What:** an integration of kind `confirmation`. It sends the owners' plain-text subject and message to the address the respondent gave in a chosen email question. Nothing else the respondent typed goes into it, and it never includes answers.
+- **Limits:** at most 5 confirmations per address per 24 hours across the organization, and 500 per confirmation per hour. Counting uses a SHA-256 of the normalized address (`deliveries.recipient_hash`), claimed under an advisory lock, so concurrent workers cannot both pass a limit.
+- **Skipped, never retried:** `no_recipient` (no address given), `recipient_limit`, `hourly_limit`. Mail server failures retry like other emails.
+
 ## Uploads and scanning (FIL-01)
 
 File questions accept uploads in three steps:

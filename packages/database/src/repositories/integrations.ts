@@ -17,6 +17,10 @@ export interface Integration {
   url: string | null;
   recipients: string[] | null;
   fieldIds: string[];
+  /** Confirmation emails: the email question whose answer is the recipient, and the owners' text. */
+  recipientFieldId: string | null;
+  subject: string | null;
+  message: string | null;
   /** When the previous signing secret stops being sent, after a rotation. */
   previousSecretExpiresAt: Date | null;
   createdAt: Date;
@@ -39,6 +43,9 @@ function toIntegration(r: Selectable<IntegrationsTable>): Integration {
     url: r.url,
     recipients: r.recipients,
     fieldIds: r.field_ids,
+    recipientFieldId: r.recipient_field_id,
+    subject: r.subject,
+    message: r.message,
     previousSecretExpiresAt: r.previous_secret_expires_at,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
@@ -57,7 +64,8 @@ export async function getIntegration(trx: Trx, id: string): Promise<Integration 
 
 export type NewIntegration =
   | { kind: "webhook"; name: string; url: string; fieldIds: string[]; secretCiphertext: string }
-  | { kind: "email"; name: string; recipients: string[] };
+  | { kind: "email"; name: string; recipients: string[] }
+  | { kind: "confirmation"; name: string; recipientFieldId: string; subject: string; message: string };
 
 export async function createIntegration(trx: Trx, tenantId: string, formId: string, userId: string, input: NewIntegration): Promise<Integration> {
   const row = await trx
@@ -71,6 +79,9 @@ export async function createIntegration(trx: Trx, tenantId: string, formId: stri
       recipients: input.kind === "email" ? input.recipients : null,
       field_ids: input.kind === "webhook" ? input.fieldIds : [],
       secret_ciphertext: input.kind === "webhook" ? input.secretCiphertext : null,
+      recipient_field_id: input.kind === "confirmation" ? input.recipientFieldId : null,
+      subject: input.kind === "confirmation" ? input.subject : null,
+      message: input.kind === "confirmation" ? input.message : null,
       created_by: userId,
     })
     .returningAll()
@@ -84,6 +95,9 @@ export interface IntegrationPatch {
   url?: string | undefined;
   recipients?: string[] | undefined;
   fieldIds?: string[] | undefined;
+  recipientFieldId?: string | undefined;
+  subject?: string | undefined;
+  message?: string | undefined;
 }
 
 export async function updateIntegration(trx: Trx, id: string, patch: IntegrationPatch): Promise<Integration | undefined> {
@@ -95,6 +109,9 @@ export async function updateIntegration(trx: Trx, id: string, patch: Integration
       ...(patch.url !== undefined ? { url: patch.url } : {}),
       ...(patch.recipients !== undefined ? { recipients: patch.recipients } : {}),
       ...(patch.fieldIds !== undefined ? { field_ids: patch.fieldIds } : {}),
+      ...(patch.recipientFieldId !== undefined ? { recipient_field_id: patch.recipientFieldId } : {}),
+      ...(patch.subject !== undefined ? { subject: patch.subject } : {}),
+      ...(patch.message !== undefined ? { message: patch.message } : {}),
       updated_at: sql<Date>`now()`,
     })
     .where("id", "=", id)
@@ -289,6 +306,52 @@ export async function deliveryContext(trx: Trx, deliveryId: string): Promise<Del
     formName: form.name,
     submission: { answers: submission.answers, receivedAt: submission.received_at, deleted: submission.deleted_at !== null },
   };
+}
+
+export interface ConfirmationLimits {
+  /** Confirmations one address may receive in 24 hours, across the tenant. */
+  perRecipientPerDay: number;
+  /** Confirmations one integration may send in an hour. */
+  perIntegrationPerHour: number;
+}
+
+/**
+ * Claims the right to send a confirmation to `recipientHash`, or says which
+ * limit stops it. Serialized per address with a transaction-scoped advisory
+ * lock, and the claim (the hash on the delivery) commits with the check, so
+ * concurrent workers cannot both slip under a limit. Earlier deliveries that
+ * failed or were skipped do not count.
+ */
+export async function claimConfirmation(
+  trx: Trx,
+  deliveryId: string,
+  integrationId: string,
+  recipientHash: Buffer,
+  limits: ConfirmationLimits,
+): Promise<"ok" | "recipient_limit" | "hourly_limit"> {
+  await sql`SELECT pg_advisory_xact_lock(hashtextextended(${recipientHash.toString("hex")}, 0))`.execute(trx);
+  const counted = ["pending", "retrying", "succeeded"] as const;
+  const recent = await trx
+    .selectFrom("deliveries")
+    .select((eb) => eb.fn.countAll<string>().as("n"))
+    .where("recipient_hash", "=", recipientHash)
+    .where("id", "!=", deliveryId)
+    .where("status", "in", counted)
+    .where("created_at", ">", sql<Date>`now() - interval '24 hours'`)
+    .executeTakeFirstOrThrow();
+  if (Number(recent.n) >= limits.perRecipientPerDay) return "recipient_limit";
+  const hourly = await trx
+    .selectFrom("deliveries")
+    .select((eb) => eb.fn.countAll<string>().as("n"))
+    .where("integration_id", "=", integrationId)
+    .where("recipient_hash", "is not", null)
+    .where("id", "!=", deliveryId)
+    .where("status", "in", counted)
+    .where("created_at", ">", sql<Date>`now() - interval '1 hour'`)
+    .executeTakeFirstOrThrow();
+  if (Number(hourly.n) >= limits.perIntegrationPerHour) return "hourly_limit";
+  await trx.updateTable("deliveries").set({ recipient_hash: recipientHash }).where("id", "=", deliveryId).execute();
+  return "ok";
 }
 
 export interface AttemptRecord {

@@ -94,13 +94,13 @@ async function publishedForm() {
   return { id: created.form.id, slug: created.form.slug, path };
 }
 
-async function respond(slug: string, name: string, email = "volunteer@example.test") {
+async function respond(slug: string, name: string, email: string | null = "volunteer@example.test") {
   const session = SessionStartResponseSchema.parse((await request(app).post(`/public/v1/forms/${slug}/sessions`).set("Origin", TEST_RESPONDENT_ORIGIN)).body);
   const res = await request(app)
     .post(`/public/v1/sessions/${session.sessionId}/submissions`)
     .set({ Authorization: `Bearer ${session.capability}` })
     .set("Idempotency-Key", `k-${randomUUID()}`)
-    .send({ formVersionId: session.versionId, answers: { f_name: name, f_email: email } });
+    .send({ formVersionId: session.versionId, answers: { f_name: name, ...(email === null ? {} : { f_email: email }) } });
   expect(res.status, JSON.stringify(res.body)).toBe(201);
   return res.body.submissionId as string;
 }
@@ -355,6 +355,65 @@ describe("email", () => {
     await work({ mailer: createMailer({ host: "127.0.0.1", port: 1, secure: false, from: "x@workeasy.test" }) });
     const [delivery] = await deliveriesOf(body.integration.id as string);
     expect(delivery).toMatchObject({ status: "retrying", attempts: 1, lastError: "smtp_unavailable" });
+  });
+});
+
+describe("confirmation email to respondents (PAR-06)", () => {
+  const confirmation = (formPath: string, recipientFieldId = "f_email") =>
+    consoleReq("ownerA", "post", `${formPath}/integrations`).send({
+      kind: "confirmation",
+      name: "Thank-you email",
+      recipientFieldId,
+      subject: "Thanks for volunteering",
+      message: "We received your form and will be in touch within a week.",
+    });
+  const inbox = async (to: string) =>
+    ((await (await fetch(`${MAILPIT}/api/v1/search?query=${encodeURIComponent(`to:"${to}"`)}`)).json()) as { messages: Array<{ ID: string; Subject: string }> }).messages;
+
+  it("only goes to an email question's answer", async () => {
+    const form = await publishedForm();
+    expectProblem(await confirmation(form.path, "f_name"), 422, "VALIDATION_FAILED");
+    expect(ProblemSchema.parse((await confirmation(form.path, "f_name")).body).errors?.[0]?.code).toBe("NOT_AN_EMAIL_QUESTION");
+    expect(ProblemSchema.parse((await confirmation(form.path, "f_missing")).body).errors?.[0]?.code).toBe("UNKNOWN_FIELD");
+    const created = await confirmation(form.path);
+    expect(created.status, JSON.stringify(created.body)).toBe(201);
+    const { integration } = IntegrationResponseSchema.parse(created.body);
+    expect(integration).toMatchObject({ kind: "confirmation", recipientFieldId: "f_email", subject: "Thanks for volunteering", recipients: null, url: null });
+    const wrong = await consoleReq("ownerA", "patch", `/api/v1/organizations/${a.id}/integrations/${integration.id}`).send({ url: "https://example.test/x" });
+    expect(ProblemSchema.parse(wrong.body).errors?.[0]?.code).toBe("NOT_FOR_THIS_KIND");
+  });
+
+  it("sends the owners' message to the address the respondent gave, without their answers", async () => {
+    const form = await publishedForm();
+    const { integration } = IntegrationResponseSchema.parse((await confirmation(form.path)).body);
+    const to = `respondent-${randomUUID()}@example.test`;
+    await respond(form.slug, "Unique-Answer-7731", to);
+    await work();
+    expect((await deliveriesOf(integration.id))[0]).toMatchObject({ status: "succeeded" });
+    const messages = await inbox(to);
+    expect(messages).toHaveLength(1);
+    expect(messages[0]!.Subject).toBe("Thanks for volunteering");
+    const message = (await (await fetch(`${MAILPIT}/api/v1/message/${messages[0]!.ID}`)).json()) as { Text: string; HTML: string };
+    expect(message.Text).toContain("We received your form and will be in touch within a week.");
+    expect(message.Text).toContain(`a response to "Volunteers"`);
+    expect(message.Text).not.toContain("Unique-Answer-7731");
+    expect(message.HTML).toBe("");
+  });
+
+  it("skips responses without an address, and an address past its daily limit", async () => {
+    const form = await publishedForm();
+    const { integration } = IntegrationResponseSchema.parse((await confirmation(form.path)).body);
+    await respond(form.slug, "No address", null);
+    await work();
+    expect((await deliveriesOf(integration.id))[0]).toMatchObject({ status: "skipped", lastError: "no_recipient" });
+
+    const to = `Busy-${randomUUID()}@Example.test`;
+    for (let i = 0; i < 6; i++) await respond(form.slug, `Try ${i}`, i % 2 ? to : to.toLowerCase());
+    await work();
+    const statuses = (await deliveriesOf(integration.id)).filter((d) => d.lastError !== "no_recipient").map((d) => d.status);
+    expect(statuses.filter((s) => s === "succeeded")).toHaveLength(5);
+    expect((await deliveriesOf(integration.id)).filter((d) => d.lastError === "recipient_limit")).toHaveLength(1);
+    expect(await inbox(to.toLowerCase())).toHaveLength(5);
   });
 });
 

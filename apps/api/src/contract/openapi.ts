@@ -937,9 +937,9 @@ export function buildOpenApiDocument(): JsonSchema {
         },
         post: {
           operationId: "createIntegration",
-          summary: "Add an email notification or a signed webhook",
+          summary: "Add an email notification, a signed webhook, or a confirmation email to respondents",
           description:
-            "Each accepted response is then delivered once per enabled integration, with retries at about 1m, 5m, 30m, 2h, 8h and 24h, and a history of every attempt. Webhook URLs must be HTTPS on port 443 or 8443 and resolve only to public addresses, checked now and before every delivery; redirects are not followed. Webhook payloads hold identifiers and only the chosen fields, which the requester must be allowed to read; requests are signed with HMAC-SHA256 (Workeasy-Signature over \"<Workeasy-Timestamp>.<body>\"), and receivers should reject timestamps older than five minutes and deduplicate on Workeasy-Event-Id. The signing secret is returned once. Emails go to fixed recipients and carry a link, never answers. Audited.",
+            "Each accepted response is then delivered once per enabled integration, with retries at about 1m, 5m, 30m, 2h, 8h and 24h, and a history of every attempt. Webhook URLs must be HTTPS on port 443 or 8443 and resolve only to public addresses, checked now and before every delivery; redirects are not followed. Webhook payloads hold identifiers and only the chosen fields, which the requester must be allowed to read; requests are signed with HMAC-SHA256 (Workeasy-Signature over \"<Workeasy-Timestamp>.<body>\"), and receivers should reject timestamps older than five minutes and deduplicate on Workeasy-Event-Id. The signing secret is returned once. Emails go to fixed recipients and carry a link, never answers. A confirmation sends the owners' plain-text subject and message to the address the respondent gave in the chosen email question, at most 5 times per address per day across the organization and 500 times per hour per confirmation; others are recorded as skipped. Audited.",
           security: [{ consoleSession: [] }],
           requestBody: { required: true, content: { "application/json": { schema: schemaOf(IntegrationCreateBodySchema, "input") } } },
           responses: {
@@ -947,7 +947,7 @@ export function buildOpenApiDocument(): JsonSchema {
             "401": unauthenticated,
             "403": problem("No integrations.manage"),
             "404": problem("Form not found or not visible"),
-            "422": problem("Invalid or disallowed URL, unknown or unreadable fields, or invalid recipients"),
+            "422": problem("Invalid or disallowed URL, unknown or unreadable fields, invalid recipients, or a confirmation question that is not an email question (NOT_AN_EMAIL_QUESTION)"),
           },
         },
       },

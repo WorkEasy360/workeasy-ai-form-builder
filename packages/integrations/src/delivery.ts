@@ -1,4 +1,5 @@
-import { integrationsRepo, jobsRepo, withTenant, type AttemptRecord, type Database, type Db, type DeliveryContext } from "@workeasy/database";
+import { createHash } from "node:crypto";
+import { integrationsRepo, jobsRepo, withTenant, type AttemptRecord, type ConfirmationLimits, type Database, type Db, type DeliveryContext } from "@workeasy/database";
 import { PermanentJobError, RetryLaterError, type JobDefinition } from "@workeasy/jobs";
 import type { Transaction } from "kysely";
 import { headerSafe, type Mailer } from "./email.js";
@@ -71,7 +72,9 @@ export function fanoutJob(deps: Pick<DeliveryDeps, "workerDb">): JobDefinition {
 type Outcome =
   | { kind: "succeeded"; statusCode: number | null }
   | { kind: "retry"; code: string; statusCode: number | null; retryAfterMs?: number | undefined; ambiguous?: boolean }
-  | { kind: "failed"; code: string; statusCode: number | null };
+  | { kind: "failed"; code: string; statusCode: number | null }
+  /** Not sent, by design (no address given, or a sending limit); never retried. */
+  | { kind: "skipped"; code: string };
 
 /** The webhook body: version, identifiers, timestamp, and only the configured fields. */
 export function webhookPayload(context: DeliveryContext, occurredAt: string): Record<string, unknown> {
@@ -148,6 +151,48 @@ async function deliverEmail(deps: DeliveryDeps, context: DeliveryContext, tenant
     : { kind: "failed", code: result.code, statusCode: result.statusCode ?? null };
 }
 
+/** Sending limits for confirmation emails (PAR-06). */
+export const CONFIRMATION_LIMITS: ConfirmationLimits = { perRecipientPerDay: 5, perIntegrationPerHour: 500 };
+
+/** The address a respondent gave, normalized, or undefined if there is none. */
+export function confirmationRecipient(answer: unknown): string | undefined {
+  if (typeof answer !== "string") return undefined;
+  const address = answer.trim().toLowerCase();
+  // The engine validated it; this only guards against stored data that is not an address at all.
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address) && address.length <= 254 ? address : undefined;
+}
+
+/**
+ * The respondent's confirmation: the owners' subject and message, to the
+ * address the respondent gave, at most CONFIRMATION_LIMITS often. Nothing a
+ * respondent typed, other than the address, goes into the message.
+ */
+async function deliverConfirmation(deps: DeliveryDeps, context: DeliveryContext, tenantId: string): Promise<Outcome> {
+  if (!deps.mailer) return { kind: "failed", code: "email_not_configured", statusCode: null };
+  const { delivery, integration, formName } = context;
+  const to = confirmationRecipient(context.submission.answers[integration.recipientFieldId ?? ""]);
+  if (!to) return { kind: "skipped", code: "no_recipient" };
+  const hash = createHash("sha256").update(to, "utf8").digest();
+  const claim = await withTenant(deps.workerDb, tenantId, (trx: Trx) => integrationsRepo.claimConfirmation(trx, delivery.id, integration.id, hash, CONFIRMATION_LIMITS));
+  if (claim !== "ok") return { kind: "skipped", code: claim };
+  const result = await deps.mailer.send({
+    to: [to],
+    subject: headerSafe(integration.subject ?? formName, 150),
+    text: [
+      integration.message ?? "",
+      "",
+      "--",
+      `You receive this because this address was given in a response to "${headerSafe(formName)}" on ${context.submission.receivedAt.toISOString().slice(0, 10)}.`,
+      "If that wasn't you, you can ignore this email.",
+    ].join("\n"),
+    messageId: `<${delivery.eventId}.${integration.id}@notifications.workeasy>`,
+  });
+  if (result.ok) return { kind: "succeeded", statusCode: null };
+  return result.retryable
+    ? { kind: "retry", code: result.code, statusCode: result.statusCode ?? null }
+    : { kind: "failed", code: result.code, statusCode: result.statusCode ?? null };
+}
+
 /**
  * Sends one delivery. Every attempt is recorded in the delivery history.
  * Transient failures retry on the delivery schedule (or a bounded
@@ -175,7 +220,17 @@ export function deliverJob(deps: DeliveryDeps): JobDefinition {
         return;
       }
 
-      const outcome = context.integration.kind === "webhook" ? await deliverWebhook(deps, context, ctx.tenantId) : await deliverEmail(deps, context, ctx.tenantId);
+      const outcome =
+        context.integration.kind === "webhook"
+          ? await deliverWebhook(deps, context, ctx.tenantId)
+          : context.integration.kind === "confirmation"
+            ? await deliverConfirmation(deps, context, ctx.tenantId)
+            : await deliverEmail(deps, context, ctx.tenantId);
+      if (outcome.kind === "skipped") {
+        await record({ statusCode: null, errorCode: outcome.code, outcome: "skipped" });
+        deps.log?.("info", "delivery skipped", { ...fields, reason: outcome.code });
+        return;
+      }
       if (outcome.kind === "succeeded") {
         await record({ statusCode: outcome.statusCode, errorCode: null, outcome: "succeeded" });
         deps.log?.("info", "delivery succeeded", fields);

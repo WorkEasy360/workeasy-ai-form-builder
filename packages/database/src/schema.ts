@@ -338,7 +338,7 @@ export interface AiUsageDaysTable {
   used_tokens: ColumnType<string, number | undefined, number>;
 }
 
-export type IntegrationKind = "webhook" | "email";
+export type IntegrationKind = "webhook" | "email" | "confirmation";
 export type DeliveryStatus = "pending" | "retrying" | "succeeded" | "failed" | "skipped";
 export type AttemptOutcome = "succeeded" | "retry" | "failed" | "skipped";
 
@@ -355,6 +355,9 @@ export interface IntegrationsTable {
   secret_ciphertext: string | null;
   previous_secret_ciphertext: string | null;
   previous_secret_expires_at: Date | null;
+  recipient_field_id: Generated<string | null>;
+  subject: Generated<string | null>;
+  message: Generated<string | null>;
   created_by: string;
   created_at: ColumnType<Date, never, never>;
   updated_at: Generated<Date>;
@@ -377,6 +380,7 @@ export interface DeliveriesTable {
   created_at: ColumnType<Date, never, never>;
   updated_at: Generated<Date>;
   completed_at: Date | null;
+  recipient_hash: Generated<Buffer | null>;
 }
 
 export interface DeliveryAttemptsTable {

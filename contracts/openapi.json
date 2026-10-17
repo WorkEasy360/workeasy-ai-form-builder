@@ -9083,7 +9083,8 @@
                             "type": "string",
                             "enum": [
                               "webhook",
-                              "email"
+                              "email",
+                              "confirmation"
                             ]
                           },
                           "name": {
@@ -9117,6 +9118,24 @@
                               "type": "string"
                             }
                           },
+                          "recipientFieldId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "subject": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "message": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
                           "previousSecretExpiresAt": {
                             "anyOf": [
                               {
@@ -9149,6 +9168,9 @@
                           "url",
                           "recipients",
                           "fieldIds",
+                          "recipientFieldId",
+                          "subject",
+                          "message",
                           "previousSecretExpiresAt",
                           "createdAt",
                           "updatedAt"
@@ -9199,8 +9221,8 @@
       },
       "post": {
         "operationId": "createIntegration",
-        "summary": "Add an email notification or a signed webhook",
-        "description": "Each accepted response is then delivered once per enabled integration, with retries at about 1m, 5m, 30m, 2h, 8h and 24h, and a history of every attempt. Webhook URLs must be HTTPS on port 443 or 8443 and resolve only to public addresses, checked now and before every delivery; redirects are not followed. Webhook payloads hold identifiers and only the chosen fields, which the requester must be allowed to read; requests are signed with HMAC-SHA256 (Workeasy-Signature over \"<Workeasy-Timestamp>.<body>\"), and receivers should reject timestamps older than five minutes and deduplicate on Workeasy-Event-Id. The signing secret is returned once. Emails go to fixed recipients and carry a link, never answers. Audited.",
+        "summary": "Add an email notification, a signed webhook, or a confirmation email to respondents",
+        "description": "Each accepted response is then delivered once per enabled integration, with retries at about 1m, 5m, 30m, 2h, 8h and 24h, and a history of every attempt. Webhook URLs must be HTTPS on port 443 or 8443 and resolve only to public addresses, checked now and before every delivery; redirects are not followed. Webhook payloads hold identifiers and only the chosen fields, which the requester must be allowed to read; requests are signed with HMAC-SHA256 (Workeasy-Signature over \"<Workeasy-Timestamp>.<body>\"), and receivers should reject timestamps older than five minutes and deduplicate on Workeasy-Event-Id. The signing secret is returned once. Emails go to fixed recipients and carry a link, never answers. A confirmation sends the owners' plain-text subject and message to the address the respondent gave in the chosen email question, at most 5 times per address per day across the organization and 500 times per hour per confirmation; others are recorded as skipped. Audited.",
         "security": [
           {
             "consoleSession": []
@@ -9274,6 +9296,41 @@
                       "name",
                       "recipients"
                     ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "confirmation"
+                      },
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100
+                      },
+                      "recipientFieldId": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z][A-Za-z0-9_-]{1,79}$"
+                      },
+                      "subject": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 150
+                      },
+                      "message": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 4000
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "name",
+                      "recipientFieldId",
+                      "subject",
+                      "message"
+                    ]
                   }
                 ]
               }
@@ -9305,7 +9362,8 @@
                           "type": "string",
                           "enum": [
                             "webhook",
-                            "email"
+                            "email",
+                            "confirmation"
                           ]
                         },
                         "name": {
@@ -9339,6 +9397,24 @@
                             "type": "string"
                           }
                         },
+                        "recipientFieldId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "subject": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "message": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "previousSecretExpiresAt": {
                           "anyOf": [
                             {
@@ -9371,6 +9447,9 @@
                         "url",
                         "recipients",
                         "fieldIds",
+                        "recipientFieldId",
+                        "subject",
+                        "message",
                         "previousSecretExpiresAt",
                         "createdAt",
                         "updatedAt"
@@ -9420,7 +9499,7 @@
             }
           },
           "422": {
-            "description": "Invalid or disallowed URL, unknown or unreadable fields, or invalid recipients",
+            "description": "Invalid or disallowed URL, unknown or unreadable fields, invalid recipients, or a confirmation question that is not an email question (NOT_AN_EMAIL_QUESTION)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -9501,6 +9580,20 @@
                       "type": "string",
                       "pattern": "^[A-Za-z][A-Za-z0-9_-]{1,79}$"
                     }
+                  },
+                  "recipientFieldId": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z][A-Za-z0-9_-]{1,79}$"
+                  },
+                  "subject": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 150
+                  },
+                  "message": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4000
                   }
                 }
               }
@@ -9532,7 +9625,8 @@
                           "type": "string",
                           "enum": [
                             "webhook",
-                            "email"
+                            "email",
+                            "confirmation"
                           ]
                         },
                         "name": {
@@ -9566,6 +9660,24 @@
                             "type": "string"
                           }
                         },
+                        "recipientFieldId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "subject": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "message": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "previousSecretExpiresAt": {
                           "anyOf": [
                             {
@@ -9598,6 +9710,9 @@
                         "url",
                         "recipients",
                         "fieldIds",
+                        "recipientFieldId",
+                        "subject",
+                        "message",
                         "previousSecretExpiresAt",
                         "createdAt",
                         "updatedAt"
@@ -9771,7 +9886,8 @@
                           "type": "string",
                           "enum": [
                             "webhook",
-                            "email"
+                            "email",
+                            "confirmation"
                           ]
                         },
                         "name": {
@@ -9805,6 +9921,24 @@
                             "type": "string"
                           }
                         },
+                        "recipientFieldId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "subject": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "message": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "previousSecretExpiresAt": {
                           "anyOf": [
                             {
@@ -9837,6 +9971,9 @@
                         "url",
                         "recipients",
                         "fieldIds",
+                        "recipientFieldId",
+                        "subject",
+                        "message",
                         "previousSecretExpiresAt",
                         "createdAt",
                         "updatedAt"

@@ -621,6 +621,8 @@ export type AiApplyResponse = z.infer<typeof AiApplyResponseSchema>;
 
 const FieldIdSchema = z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{1,79}$/);
 const IntegrationName = z.string().trim().min(1).max(100);
+const ConfirmationSubject = z.string().trim().min(1).max(150);
+const ConfirmationMessage = z.string().trim().min(1).max(4000);
 
 export const IntegrationCreateBodySchema = z.discriminatedUnion("kind", [
   z.object({
@@ -636,6 +638,15 @@ export const IntegrationCreateBodySchema = z.discriminatedUnion("kind", [
     /** Fixed recipients; emails carry a link to the response, never answers. */
     recipients: z.array(z.email().max(254)).min(1).max(10),
   }),
+  z.object({
+    kind: z.literal("confirmation"),
+    name: IntegrationName,
+    /** An email question on the form: its answer is where the respondent's confirmation goes. */
+    recipientFieldId: FieldIdSchema,
+    subject: ConfirmationSubject,
+    /** Plain text written by the form's owners; respondents' answers are never added to it. */
+    message: ConfirmationMessage,
+  }),
 ]);
 
 export const IntegrationPatchBodySchema = z
@@ -645,18 +656,25 @@ export const IntegrationPatchBodySchema = z
     url: z.string().trim().min(1).max(2000).optional(),
     recipients: z.array(z.email().max(254)).min(1).max(10).optional(),
     fieldIds: z.array(FieldIdSchema).max(100).optional(),
+    recipientFieldId: FieldIdSchema.optional(),
+    subject: ConfirmationSubject.optional(),
+    message: ConfirmationMessage.optional(),
   })
   .refine((v) => Object.keys(v).length > 0, { message: "Send at least one setting to change" });
 
 export const IntegrationSchema = z.object({
   id: Uuid,
   formId: Uuid,
-  kind: z.enum(["webhook", "email"]),
+  kind: z.enum(["webhook", "email", "confirmation"]),
   name: z.string(),
   enabled: z.boolean(),
   url: z.string().nullable(),
   recipients: z.array(z.string()).nullable(),
   fieldIds: z.array(z.string()),
+  /** Confirmation emails only: the email question, subject and message. */
+  recipientFieldId: z.string().nullable(),
+  subject: z.string().nullable(),
+  message: z.string().nullable(),
   /** After a secret rotation, the old secret is still sent as a second signature until then. */
   previousSecretExpiresAt: Timestamp.nullable(),
   createdAt: Timestamp,

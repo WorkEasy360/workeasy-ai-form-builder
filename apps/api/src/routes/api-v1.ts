@@ -1828,6 +1828,9 @@ export function apiV1Router({ db, settings, objectStore }: AppDependencies): Rou
       url: i.url,
       recipients: i.recipients,
       fieldIds: i.fieldIds,
+      recipientFieldId: i.recipientFieldId,
+      subject: i.subject,
+      message: i.message,
       previousSecretExpiresAt: i.previousSecretExpiresAt?.toISOString() ?? null,
       createdAt: i.createdAt.toISOString(),
       updatedAt: i.updatedAt.toISOString(),
@@ -1876,6 +1879,22 @@ export function apiV1Router({ db, settings, objectStore }: AppDependencies): Rou
     return errors;
   }
 
+  /** Why a question cannot be where confirmation emails go, or undefined if it can. */
+  async function recipientFieldError(trx: Trx, formId: string, fieldId: string): Promise<FieldError | undefined> {
+    const draft = await orgRepo.getDraft(trx, formId);
+    const field = ((draft?.definition as unknown as FormDefinition | undefined)?.fields ?? []).find((f) => f.id === fieldId);
+    if (!field) return { field: "recipientFieldId", code: "UNKNOWN_FIELD", message: "This question is not on the form" };
+    if (field.type !== "email") return { field: "recipientFieldId", code: "NOT_AN_EMAIL_QUESTION", message: "Choose an email address question" };
+    return undefined;
+  }
+
+  /** Settings each kind of integration has; others are refused on update. */
+  const KIND_SETTINGS: Record<Integration["kind"], readonly string[]> = {
+    webhook: ["name", "enabled", "url", "fieldIds"],
+    email: ["name", "enabled", "recipients"],
+    confirmation: ["name", "enabled", "recipientFieldId", "subject", "message"],
+  };
+
   /** A form's integrations for people who manage integrations and can read the form. */
   router.get("/organizations/:orgId/forms/:formId/integrations", async (req, res) => {
     const { orgId, formId } = req.params;
@@ -1922,6 +1941,10 @@ export function apiV1Router({ db, settings, objectStore }: AppDependencies): Rou
             fieldIds: [...new Set(input.fieldIds)],
             secretCiphertext: encryptSecret(secret, settings.integrationSecretKey),
           });
+        } else if (input.kind === "confirmation") {
+          const error = await recipientFieldError(trx, formId, input.recipientFieldId);
+          if (error) return { kind: "invalid", errors: [error] };
+          integration = await integrationsRepo.createIntegration(trx, orgId, formId, userId, input);
         } else {
           integration = await integrationsRepo.createIntegration(trx, orgId, formId, userId, {
             kind: "email",
@@ -1968,9 +1991,12 @@ export function apiV1Router({ db, settings, objectStore }: AppDependencies): Rou
       res,
       await onIntegration(res, orgId, integrationId, async (trx, integration, permissions): Promise<Outcome<IntegrationResponse>> => {
         const patch = body.data;
-        const wrongKind =
-          integration.kind === "webhook" ? (patch.recipients !== undefined ? "recipients" : undefined) : patch.url !== undefined ? "url" : patch.fieldIds !== undefined ? "fieldIds" : undefined;
+        const wrongKind = Object.keys(patch).find((key) => !KIND_SETTINGS[integration.kind].includes(key));
         if (wrongKind) return { kind: "invalid", errors: [{ field: wrongKind, code: "NOT_FOR_THIS_KIND", message: `A ${integration.kind} integration has no ${wrongKind}` }] };
+        if (patch.recipientFieldId !== undefined) {
+          const error = await recipientFieldError(trx, integration.formId, patch.recipientFieldId);
+          if (error) return { kind: "invalid", errors: [error] };
+        }
         if (patch.url !== undefined) {
           const problem = checkWebhookUrl(patch.url, settings.webhookPolicy);
           if (problem) return { kind: "invalid", errors: [{ field: "url", code: problem.code, message: problem.message }] };

@@ -56,6 +56,8 @@ Shown per delivery in **Integrations → Show deliveries → Details**.
 | `smtp_unavailable`, `smtp_4xx` | Yes | The SMTP relay is down or deferring. Check `SMTP_HOST` and the relay's status. |
 | `smtp_auth_failed`, `smtp_5xx` | No | Wrong SMTP credentials or a rejected sender/recipient. Fix `.env`, `dc up -d worker`, then **Send again**. |
 | `email_not_configured` | No | `SMTP_HOST` is empty. |
+| `no_recipient` | No (skipped) | Confirmation email: the respondent gave no address. Expected. |
+| `recipient_limit`, `hourly_limit` | No (skipped) | Confirmation email limits: 5 per address per day, 500 per confirmation per hour. Repeated hits on one form may be someone using it to flood an inbox; check its responses. |
 
 Bounces after the relay accepts a message are not tracked.
 

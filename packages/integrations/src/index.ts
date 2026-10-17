@@ -10,6 +10,8 @@ export {
   DELIVER_JOB,
   DELIVERY_MAX_ATTEMPTS,
   deliverJob,
+  CONFIRMATION_LIMITS,
+  confirmationRecipient,
   deliveryRetryDelayMs,
   FANOUT_JOB,
   fanoutJob,

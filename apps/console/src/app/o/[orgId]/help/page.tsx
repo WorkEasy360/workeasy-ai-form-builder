@@ -56,6 +56,7 @@ const SECTIONS: Array<{ id: string; title: string; steps: string[] }> = [
     title: "6. Get notified",
     steps: [
       "Owners and admins can add email notifications and webhooks on the Integrations tab. Emails say a response arrived and link to it, without the answers.",
+      "To send respondents a confirmation, add a confirmation email: write the subject and message, and choose the email question whose address it goes to. Their answers are not included.",
       "Show deliveries lists every attempt. Failed ones say why and can be sent again.",
     ],
   },
