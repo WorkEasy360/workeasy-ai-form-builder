@@ -24,7 +24,7 @@ export const BUILDER_CSS = `
 .b-card[data-selected="true"] { border-color: var(--we-color-accent); box-shadow: 0 0 0 1px var(--we-color-accent); }
 .b-card-tools { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; margin-bottom: 8px; }
 .b-field { display: grid; gap: 4px; margin-bottom: 12px; }
-.b-field input:not([type=checkbox]), .b-field textarea, .b-field select { font: inherit; padding: 6px; border-radius: var(--we-radius-sm);
+.b-field input:not([type=checkbox]):not([type=radio]), .b-field textarea, .b-field select { font: inherit; padding: 6px; border-radius: var(--we-radius-sm);
   border: 1px solid var(--we-color-border); background: var(--we-color-background); color: var(--we-color-text); width: 100%; box-sizing: border-box; }
 .b-field [aria-invalid="true"] { border-color: var(--we-color-danger); }
 .b-inline-error { color: var(--we-color-danger); margin: 0; font-size: 14px; }
