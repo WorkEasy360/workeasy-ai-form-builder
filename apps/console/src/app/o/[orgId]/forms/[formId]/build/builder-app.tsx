@@ -10,18 +10,20 @@ import {
   fieldRuleOf,
   moveField,
   movePage,
-  PALETTE_GROUPS,
   removeField,
   removePage,
   skipRuleOf,
   type AutosaveState,
+  placeField,
+  splitPage,
 } from "@workeasy/builder";
 import { validateDraft } from "@workeasy/form-engine";
 import { FormField, RENDERER_CSS, themeStyle } from "@workeasy/form-renderer";
 import type { FieldType, FormDefinition } from "@workeasy/form-schema";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import { api, ApiError, type FormResponse, type FormSummary } from "../../../../../../lib/api";
 import { AiPanel } from "./ai-panel";
+import { DRAG_FIELD, Palette } from "./palette";
 import { ConflictPanel } from "./conflict-panel";
 import { DesignInspector } from "./design";
 import { FieldInspector, FormInspector, PageInspector } from "./inspector";
@@ -92,7 +94,7 @@ function inTextControl(target: EventTarget | null): boolean {
 }
 
 /** Loads the form and its draft, then hands over to the editor. */
-export function BuilderApp({ orgId, formId }: { orgId: string; formId: string }) {
+export function BuilderApp({ orgId, formId, aiJob }: { orgId: string; formId: string; aiJob?: string }) {
   const [load, setLoad] = useState<Load>({ kind: "loading" });
   const formPath = `/api/v1/organizations/${orgId}/forms/${formId}`;
   const listHref = `/o/${orgId}/forms`;
@@ -142,8 +144,8 @@ export function BuilderApp({ orgId, formId }: { orgId: string; formId: string })
   }
   return (
     <Editor
+      {...(aiJob ? { aiJob } : {})}
       formPath={formPath}
-      listHref={listHref}
       previewHref={`/o/${orgId}/forms/${formId}/preview`}
       initialForm={load.form}
       initial={load.draft}
@@ -160,15 +162,18 @@ function publicationText(form: FormSummary, unpublishedChanges: number | undefin
   return `${where} · ${unpublishedChanges === 1 ? "1 unpublished change" : `${unpublishedChanges} unpublished changes`}`;
 }
 
+/** Something being dragged in the builder. */
+type DragItem = { kind: "new"; type: FieldType } | { kind: "page-break" } | { kind: "field"; id: string };
+
 function Editor({
+  aiJob,
   formPath,
-  listHref,
   previewHref,
   initialForm,
   initial,
 }: {
+  aiJob?: string;
   formPath: string;
-  listHref: string;
   previewHref: string;
   initialForm: FormSummary;
   initial: DraftBody;
@@ -181,7 +186,7 @@ function Editor({
   const [selected, setSelected] = useState<Selection>({ kind: "form" });
   const [currentPageId, setCurrentPageId] = useState<string | undefined>();
   const [notice, setNotice] = useState("");
-  const [mode, setMode] = useState<"edit" | "preview" | "publish" | "share" | "ai">("edit");
+  const [mode, setMode] = useState<"edit" | "preview" | "publish" | "share" | "ai">(aiJob ? "ai" : "edit");
   const [live, setLive] = useState<{ id: string; definition: FormDefinition } | undefined>();
   // After a move, focus returns to the moved item's controls (docs/01 §3: keyboard reordering).
   const pendingFocus = useRef<{ kind: "field" | "page"; id: string; direction: -1 | 1 } | undefined>(undefined);
@@ -308,22 +313,100 @@ function Editor({
     setSelected({ kind: "page", id });
   }
 
+  // Drag and drop (like other form builders): palette tiles and field cards are dragged onto the
+  // canvas or a page tab. The keyboard and button controls stay for everyone who can't drag.
+  const [dragging, setDragging] = useState<DragItem | undefined>();
+  const [drop, setDrop] = useState<{ pageId: string; index: number } | undefined>();
+  function endDrag() {
+    setDragging(undefined);
+    setDrop(undefined);
+  }
+  function aim(e: DragEvent, target: { pageId: string; index: number }) {
+    if (!dragging) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = dragging.kind === "field" ? "move" : "copy";
+    if (drop?.pageId !== target.pageId || drop.index !== target.index) setDrop(target);
+  }
+  const pageName = (id: string) => {
+    const at = definition.pages.findIndex((p) => p.id === id);
+    return definition.pages[at]?.title || `page ${at + 1}`;
+  };
+
+  /** Adds, splits or moves at a drop position; `index` counts the page's questions as shown. */
+  function performDrop(item: DragItem, target: { pageId: string; index: number }) {
+    if (readOnly) return;
+    if (item.kind === "new") {
+      if (definition.fields.length >= 100) {
+        setNotice("A form can have at most 100 questions.");
+        return;
+      }
+      const added = addField(definition, item.type, target.pageId, target.index);
+      const error = editor.apply(added.definition);
+      if (error) setNotice(error);
+      else {
+        setCurrentPageId(target.pageId);
+        setSelected({ kind: "field", id: added.fieldId });
+        setNotice(`Added ${FIELD_TYPE_INFO[item.type].label} at position ${target.index + 1} on ${pageName(target.pageId)}.`);
+      }
+    } else if (item.kind === "page-break") {
+      if (definition.pages.length >= 20) {
+        setNotice("A form can have at most 20 pages.");
+        return;
+      }
+      const split = splitPage(definition, target.pageId, target.index);
+      const error = editor.apply(split.definition);
+      if (error) setNotice(error);
+      else {
+        setCurrentPageId(split.pageId);
+        setSelected({ kind: "page", id: split.pageId });
+        setNotice("Added a page break: the questions after it are on a new page.");
+      }
+    } else {
+      const field = definition.fields.find((f) => f.id === item.id);
+      const from = definition.pages.find((p) => p.fieldIds.includes(item.id));
+      if (!field || !from) return;
+      // Positions on the canvas include the dragged question; placeField counts without it.
+      const fromIndex = from.fieldIds.indexOf(item.id);
+      const index = from.id === target.pageId && fromIndex < target.index ? target.index - 1 : target.index;
+      const name = field.label || FIELD_TYPE_INFO[field.type].label;
+      try {
+        const next = placeField(definition, item.id, target.pageId, index);
+        if (next === definition) return;
+        const error = editor.apply(next);
+        if (error) {
+          setNotice(error);
+          return;
+        }
+        setCurrentPageId(target.pageId);
+        setNotice(`Moved ${name} to position ${index + 1} on ${pageName(target.pageId)}.`);
+      } catch (err) {
+        setNotice(err instanceof BuilderError ? err.message : "That change isn't possible.");
+      }
+    }
+  }
+
+  function onCanvasDrop(e: DragEvent) {
+    e.preventDefault();
+    const item = dragging;
+    const target = drop;
+    endDrag();
+    if (item && target) performDrop(item, target);
+  }
+
+  /** Where a click in the palette adds: after the selected question on this page, else at the end. */
+  const selectedIndex = selection.kind === "field" ? page.fieldIds.indexOf(selection.id) : -1;
+  const clickIndex = selectedIndex >= 0 ? selectedIndex + 1 : page.fieldIds.length;
+  const selectedField = selectedIndex >= 0 ? definition.fields.find((f) => f.id === page.fieldIds[selectedIndex]) : undefined;
+  const addTargetText = selectedField
+    ? `after “${selectedField.label || FIELD_TYPE_INFO[selectedField.type].label}”`
+    : `to the end of ${page.title || `page ${pageIndex + 1}`}`;
+
   return (
     <div className="b-shell">
       <style>{BUILDER_CSS + RENDERER_CSS}</style>
       <header className="b-topbar">
-        <div style={{ display: "grid", gap: 2 }}>
-          <span>
-            <a href={listHref}>← Forms</a>
-            {form.permissions.includes("responses.read") && (
-              <>
-                {" · "}
-                <a href={`${listHref}/${form.id}/responses`}>Responses</a>
-              </>
-            )}
-          </span>
-          <h1>{formName}</h1>
-        </div>
+        {/* The form's name and tabs are in the shared form header above. */}
+        <h2 className="b-visually-hidden">Editor for {formName}</h2>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
           <button
             type="button"
@@ -397,6 +480,7 @@ function Editor({
         <PreviewPane definition={definition} openHref={previewHref} />
       ) : mode === "ai" ? (
         <AiPanel
+          {...(aiJob ? { initialJobId: aiJob } : {})}
           formPath={formPath}
           definition={definition}
           readOnly={readOnly}
@@ -428,6 +512,18 @@ function Editor({
                 Form details and design
               </button>
             </p>
+            <Palette
+              disabled={readOnly}
+              full={definition.fields.length >= 100}
+              addTargetText={addTargetText}
+              onAdd={(type) => performDrop({ kind: "new", type }, { pageId: page.id, index: clickIndex })}
+              onAddPage={() => {
+                const added = addPage(definition, page.id);
+                if (!editor.apply(added.definition)) selectPage(added.pageId);
+              }}
+              onDragStart={setDragging}
+              onDragEnd={endDrag}
+            />
             <h2>Pages</h2>
             <ol className="b-list">
               {definition.pages.map((p, i) => (
@@ -487,45 +583,53 @@ function Editor({
               </button>
             </p>
 
-            <h2>Add a question</h2>
-            <p className="b-muted" style={{ marginTop: 0 }}>
-              Adds to {page.title || `page ${pageIndex + 1}`}.
-            </p>
-            {PALETTE_GROUPS.map(({ group, types }) => (
-              <div key={group} role="group" aria-label={group} style={{ marginBottom: 12 }}>
-                <h3 style={{ fontSize: 13, margin: "0 0 4px" }} className="b-muted">
-                  {group}
-                </h3>
-                <div className="b-palette">
-                  {types.map((type: FieldType) => (
-                    <button
-                      key={type}
-                      type="button"
-                      className="b-btn"
-                      style={{ textAlign: "left" }}
-                      disabled={readOnly || definition.fields.length >= 100}
-                      onClick={() => {
-                        const added = addField(definition, type, page.id);
-                        const error = editor.apply(added.definition);
-                        if (error) setNotice(error);
-                        else {
-                          setSelected({ kind: "field", id: added.fieldId });
-                          setNotice(`Added ${FIELD_TYPE_INFO[type].label}.`);
-                        }
-                      }}
-                    >
-                      {FIELD_TYPE_INFO[type].label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ))}
           </nav>
 
-          <main className="b-canvas" aria-label="Form canvas" style={themeStyle(definition.theme)}>
+          <main
+            className="b-canvas"
+            aria-label="Form canvas"
+            style={themeStyle(definition.theme)}
+            data-dragging={dragging ? "true" : undefined}
+            onDragOver={(e) => {
+              // Empty space below the questions: drop at the end of this page.
+              if (e.target === e.currentTarget) aim(e, { pageId: page.id, index: page.fieldIds.length });
+            }}
+            onDrop={onCanvasDrop}
+          >
+            {definition.pages.length > 1 && (
+              <div className="b-pagetabs" role="group" aria-label="Pages">
+                {definition.pages.map((p, i) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    className="b-pagetab"
+                    aria-current={p.id === page.id ? "page" : undefined}
+                    data-drop={drop && dragging?.kind !== "page-break" && drop.pageId === p.id && p.id !== page.id ? "true" : undefined}
+                    onClick={() => selectPage(p.id)}
+                    onDragOver={(e) => {
+                      if (dragging?.kind === "page-break") return;
+                      aim(e, { pageId: p.id, index: p.fieldIds.length });
+                    }}
+                    onDrop={onCanvasDrop}
+                  >
+                    {p.title || `Page ${i + 1}`}
+                    <span className="b-muted"> · {p.fieldIds.length}</span>
+                  </button>
+                ))}
+              </div>
+            )}
             <h2 style={{ marginTop: 0 }}>{definition.title}</h2>
             {page.title && <h3>{page.title}</h3>}
-            {page.fieldIds.length === 0 && <p className="b-muted">This page has no questions yet. Add one from the list on the left.</p>}
+            {page.fieldIds.length === 0 && (
+              <div
+                className="b-dropzone"
+                data-active={drop?.pageId === page.id ? "true" : undefined}
+                onDragOver={(e) => aim(e, { pageId: page.id, index: 0 })}
+                onDrop={onCanvasDrop}
+              >
+                This page has no questions yet. Drag a field here, or click one in the list on the left.
+              </div>
+            )}
             <SkipNote definition={definition} pageId={page.id} />
             {page.fieldIds.map((fieldId, i) => {
               const field = definition.fields.find((f) => f.id === fieldId);
@@ -535,10 +639,24 @@ function Editor({
               const first = pageIndex === 0 && i === 0;
               const last = pageIndex === definition.pages.length - 1 && i === page.fieldIds.length - 1;
               return (
+                <Fragment key={field.id}>
+                {drop?.pageId === page.id && drop.index === i && <div className="b-drop-line" aria-hidden="true" />}
                 <div
-                  key={field.id}
                   className="b-card"
                   data-field-item={field.id}
+                  draggable={!readOnly}
+                  data-dragged={dragging?.kind === "field" && dragging.id === field.id ? "true" : undefined}
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData(DRAG_FIELD, field.id);
+                    e.dataTransfer.effectAllowed = "move";
+                    setDragging({ kind: "field", id: field.id });
+                  }}
+                  onDragEnd={endDrag}
+                  onDragOver={(e) => {
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    aim(e, { pageId: page.id, index: e.clientY > rect.top + rect.height / 2 ? i + 1 : i });
+                  }}
+                  onDrop={onCanvasDrop}
                   onKeyDown={(e) => {
                     // Alt+Arrow moves the question from any of its buttons.
                     if (!e.altKey || readOnly || (e.key !== "ArrowUp" && e.key !== "ArrowDown") || inTextControl(e.target)) return;
@@ -549,6 +667,11 @@ function Editor({
                   }}
                   data-selected={isSelected ? "true" : undefined} onClick={() => setSelected({ kind: "field", id: field.id })}>
                   <div className="b-card-tools" onClick={(e) => e.stopPropagation()}>
+                    {!readOnly && (
+                      <span className="b-handle" title="Drag to move" aria-hidden="true">
+                        ⠿
+                      </span>
+                    )}
                     <button type="button" className="b-btn" data-primary aria-pressed={isSelected} aria-label={`Edit ${name}`} onClick={() => setSelected({ kind: "field", id: field.id })}>
                       Edit
                     </button>
@@ -610,8 +733,10 @@ function Editor({
                   <RuleBadges definition={definition} fieldId={field.id} />
                   <FormField field={field} value={undefined} required={field.required} disabled onChange={() => undefined} idPrefix="canvas" />
                 </div>
+                </Fragment>
               );
             })}
+            {drop?.pageId === page.id && page.fieldIds.length > 0 && drop.index === page.fieldIds.length && <div className="b-drop-line" aria-hidden="true" />}
           </main>
 
           <aside className="b-panel" aria-label="Properties">

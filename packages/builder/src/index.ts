@@ -57,6 +57,8 @@ export {
   BuilderError,
   duplicateField,
   moveField,
+  placeField,
+  splitPage,
   moveFieldToPage,
   moveOption,
   movePage,

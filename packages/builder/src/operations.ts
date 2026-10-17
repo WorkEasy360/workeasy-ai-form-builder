@@ -198,6 +198,24 @@ export function moveFieldToPage(def: FormDefinition, fieldId: string, pageId: st
   return next;
 }
 
+/**
+ * Puts a field at a position on a page (drag and drop). `index` counts the
+ * page's fields without the one being moved, so dropping a field where it
+ * already is changes nothing. Out-of-range indexes clamp to the ends.
+ */
+export function placeField(def: FormDefinition, fieldId: string, pageId: string, index: number): FormDefinition {
+  const next = clone(def);
+  const from = pageOf(next, fieldId);
+  const to = next.pages.find((p) => p.id === pageId);
+  if (!to) throw new BuilderError(`Unknown page "${pageId}".`);
+  const before = from.fieldIds.indexOf(fieldId);
+  from.fieldIds.splice(before, 1);
+  const at = Math.max(0, Math.min(Math.trunc(index), to.fieldIds.length));
+  if (from === to && at === before) return def;
+  to.fieldIds.splice(at, 0, fieldId);
+  return next;
+}
+
 // Choice options -----------------------------------------------------------
 
 export function addOption(def: FormDefinition, fieldId: string): { definition: FormDefinition; optionId: string } {
@@ -247,6 +265,21 @@ export function addPage(def: FormDefinition, afterPageId?: string): { definition
   const index = afterPageId ? next.pages.findIndex((p) => p.id === afterPageId) + 1 : next.pages.length;
   next.pages.splice(index, 0, { id, title: `Page ${next.pages.length + 1}`, fieldIds: [] });
   return { definition: next, pageId: id };
+}
+
+/**
+ * A page break dropped inside a page: a new page right after it takes the
+ * fields from `index` on. At the end of the page it simply adds an empty page.
+ */
+export function splitPage(def: FormDefinition, pageId: string, index: number): { definition: FormDefinition; pageId: string } {
+  const added = addPage(def, pageId);
+  const next = added.definition;
+  const page = next.pages.find((p) => p.id === pageId)!;
+  const newPage = next.pages.find((p) => p.id === added.pageId)!;
+  const at = Math.max(0, Math.min(Math.trunc(index), page.fieldIds.length));
+  newPage.fieldIds = page.fieldIds.slice(at);
+  page.fieldIds = page.fieldIds.slice(0, at);
+  return { definition: next, pageId: added.pageId };
 }
 
 export function renamePage(def: FormDefinition, pageId: string, title: string): FormDefinition {

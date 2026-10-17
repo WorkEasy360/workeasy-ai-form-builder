@@ -10,6 +10,8 @@ import {
   duplicateField,
   moveField,
   moveOption,
+  placeField,
+  splitPage,
   movePage,
   removeField,
   removeOption,
@@ -167,5 +169,72 @@ describe(`builder operations (${runtime})`, () => {
     expect(diffDefinitions(def, raised)[0]).toMatchObject({ target: "question", details: ["data classification"] });
     expect(validateDefinition(raised).ok).toBe(true);
     expect(updateField(raised, "f_name", { privacy: null }).fields.find((f) => f.id === "f_name")).not.toHaveProperty("privacy");
+  });
+});
+
+describe(`placeField (${runtime})`, () => {
+  function threeOnTwoPages() {
+    let def = blankDefinition("Drag");
+    const first = def.pages[0]!.id;
+    const ids: string[] = [];
+    for (const type of ["text", "email", "phone"] as const) {
+      const added = addField(def, type, first);
+      def = added.definition;
+      ids.push(added.fieldId);
+    }
+    const page = addPage(def, first);
+    return { def: page.definition, ids, first, second: page.pageId };
+  }
+
+  it("moves a field to any position on its page, counting positions without it", () => {
+    const { def, ids, first } = threeOnTwoPages();
+    const [a, b, c] = ids as [string, string, string];
+    expect(placeField(def, a, first, 2).pages[0]!.fieldIds).toEqual([b, c, a]);
+    expect(placeField(def, c, first, 0).pages[0]!.fieldIds).toEqual([c, a, b]);
+    expect(placeField(def, a, first, 1).pages[0]!.fieldIds).toEqual([b, a, c]);
+  });
+
+  it("returns the same definition when dropped where it already is", () => {
+    const { def, ids, first } = threeOnTwoPages();
+    expect(placeField(def, ids[1]!, first, 1)).toBe(def);
+  });
+
+  it("moves a field to another page at a position, and clamps out-of-range positions", () => {
+    const { def, ids, first, second } = threeOnTwoPages();
+    const moved = placeField(def, ids[0]!, second, 0);
+    expect(moved.pages.find((p) => p.id === first)!.fieldIds).toEqual([ids[1], ids[2]]);
+    expect(moved.pages.find((p) => p.id === second)!.fieldIds).toEqual([ids[0]]);
+    const again = placeField(moved, ids[2]!, second, 99);
+    expect(again.pages.find((p) => p.id === second)!.fieldIds).toEqual([ids[0], ids[2]]);
+    expect(placeField(moved, ids[1]!, second, -5).pages.find((p) => p.id === second)!.fieldIds).toEqual([ids[1], ids[0]]);
+    expect(validateDraft(again).ok).toBe(true);
+  });
+
+  it("does not change the original and refuses unknown pages or fields", () => {
+    const { def, ids, second } = threeOnTwoPages();
+    const before = JSON.stringify(def);
+    placeField(def, ids[0]!, second, 0);
+    expect(JSON.stringify(def)).toBe(before);
+    expect(() => placeField(def, ids[0]!, "page_missing", 0)).toThrow(BuilderError);
+    expect(() => placeField(def, "f_missing", second, 0)).toThrow(BuilderError);
+  });
+});
+
+describe(`splitPage (${runtime})`, () => {
+  it("moves the fields after a page break onto a new page right after it", () => {
+    let def = blankDefinition("Split");
+    const first = def.pages[0]!.id;
+    const ids: string[] = [];
+    for (const type of ["text", "email", "phone"] as const) {
+      const added = addField(def, type, first);
+      def = added.definition;
+      ids.push(added.fieldId);
+    }
+    const split = splitPage(def, first, 1);
+    expect(split.definition.pages.map((p) => p.fieldIds)).toEqual([[ids[0]], [ids[1], ids[2]]]);
+    expect(split.definition.pages[1]!.id).toBe(split.pageId);
+    expect(validateDraft(split.definition).ok).toBe(true);
+    // At the end of the page, the new page is empty.
+    expect(splitPage(def, first, 3).definition.pages.map((p) => p.fieldIds.length)).toEqual([3, 0]);
   });
 });
