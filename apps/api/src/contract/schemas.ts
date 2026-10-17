@@ -750,3 +750,69 @@ export const AnalyticsResponseSchema = z.object({
   definitions: z.object({ view: z.string(), start: z.string(), accept: z.string(), day: z.string() }),
 });
 export type AnalyticsResponse = z.infer<typeof AnalyticsResponseSchema>;
+
+// Members and invitations (PAR-05) -------------------------------------------
+
+const OrgRole = z.enum(ORG_ROLES);
+
+export const MemberSchema = z.object({
+  userId: Uuid,
+  displayName: z.string().nullable(),
+  role: OrgRole,
+  status: z.enum(["active", "revoked"]),
+  joinedAt: Timestamp,
+});
+
+export const MemberListResponseSchema = z.object({ members: z.array(MemberSchema) });
+export type MemberListResponse = z.infer<typeof MemberListResponseSchema>;
+
+export const MemberPatchBodySchema = z
+  .object({ role: OrgRole.optional(), status: z.enum(["active", "revoked"]).optional() })
+  .strict()
+  .refine((b) => b.role !== undefined || b.status !== undefined, { message: "Change role or status" });
+
+export const MemberResponseSchema = z.object({ member: MemberSchema });
+export type MemberResponse = z.infer<typeof MemberResponseSchema>;
+
+export const InvitationSchema = z.object({
+  id: Uuid,
+  /** A label for the inviter only; anyone holding the link can accept it. */
+  email: z.string().nullable(),
+  role: OrgRole,
+  status: z.enum(["pending", "accepted", "revoked", "expired"]),
+  createdBy: Uuid,
+  createdAt: Timestamp,
+  expiresAt: Timestamp,
+  acceptedBy: Uuid.nullable(),
+  acceptedAt: Timestamp.nullable(),
+});
+export type InvitationBody = z.infer<typeof InvitationSchema>;
+
+export const InvitationCreateBodySchema = z
+  .object({
+    role: OrgRole,
+    email: z.email().max(254).optional(),
+    /** Days until the link stops working. */
+    expiresInDays: z.number().int().min(1).max(30).default(7),
+  })
+  .strict();
+
+export const InvitationCreatedResponseSchema = z.object({
+  invitation: InvitationSchema,
+  /** Shown once: only a hash of the token is stored. */
+  url: z.string(),
+});
+export type InvitationCreatedResponse = z.infer<typeof InvitationCreatedResponseSchema>;
+
+export const InvitationListResponseSchema = z.object({ invitations: z.array(InvitationSchema) });
+export type InvitationListResponse = z.infer<typeof InvitationListResponseSchema>;
+
+export const InvitationResponseSchema = z.object({ invitation: InvitationSchema });
+export type InvitationResponse = z.infer<typeof InvitationResponseSchema>;
+
+export const InvitationAcceptBodySchema = z.object({ token: z.string().min(20).max(200) }).strict();
+
+export const InvitationAcceptResponseSchema = z.object({
+  organization: z.object({ id: Uuid, role: OrgRole }),
+});
+export type InvitationAcceptResponse = z.infer<typeof InvitationAcceptResponseSchema>;

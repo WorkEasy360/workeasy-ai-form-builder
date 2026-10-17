@@ -184,6 +184,27 @@ describe("rejected sign-in callbacks", () => {
   });
 });
 
+describe("console sign-in returning to an invitation", () => {
+  const consoleLogin = (returnTo: string) => ({
+    loginPath: `/auth/login?returnTo=${encodeURIComponent(returnTo)}`,
+    loginCookieName: "we_login",
+    returnOrigin: oidc!.consoleOrigin,
+  });
+
+  it("returns to the invitation link after signing in", async () => {
+    const path = `/invite/${"a".repeat(43)}`;
+    const done = await callback(await signInAtDex(LOCAL_DEX_LOGINS.carlosAcmeCreator, undefined, consoleLogin(path)));
+    expect(done.headers.location).toBe(`${oidc!.consoleOrigin}${path}`);
+  });
+
+  it("never returns anywhere but an invitation link on the console origin", async () => {
+    for (const returnTo of ["https://evil.example/invite/aaaaaaaaaaaaaaaaaaaaaaaa", "//evil.example", "/invite/../admin", "/o/x/forms"]) {
+      const done = await callback(await signInAtDex(LOCAL_DEX_LOGINS.carlosAcmeCreator, undefined, consoleLogin(returnTo)));
+      expect(done.headers.location).toBe(`${oidc!.consoleOrigin}/`);
+    }
+  });
+});
+
 describe("respondent sign-in through the local OIDC provider", () => {
   const respondentLogin = (returnTo: string) => ({
     loginPath: `/public/v1/auth/login?returnTo=${encodeURIComponent(returnTo)}`,

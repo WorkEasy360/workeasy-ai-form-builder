@@ -38,6 +38,20 @@ export interface MembershipsTable {
   updated_at: UpdatedAt;
 }
 
+export interface InvitationsTable {
+  id: Generated<string>;
+  tenant_id: string;
+  email: string | null;
+  role: MembershipRole;
+  token_hash: Buffer;
+  created_by: string;
+  created_at: CreatedAt;
+  expires_at: Date;
+  accepted_by: Generated<string | null>;
+  accepted_at: Generated<Date | null>;
+  revoked_at: Generated<Date | null>;
+}
+
 export interface FormsTable {
   id: Generated<string>;
   tenant_id: string;
@@ -381,6 +395,7 @@ export interface Database {
   tenants: TenantsTable;
   users: UsersTable;
   memberships: MembershipsTable;
+  invitations: InvitationsTable;
   forms: FormsTable;
   form_drafts: FormDraftsTable;
   auth_sessions: AuthSessionsTable;

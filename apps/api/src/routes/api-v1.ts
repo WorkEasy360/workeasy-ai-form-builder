@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { Router, type Response } from "express";
 import type { Transaction } from "kysely";
 import {
@@ -12,6 +12,7 @@ import {
 import {
   identityRepo,
   orgRepo,
+  membersRepo,
   exportsRepo,
   aiRepo,
   analyticsRepo,
@@ -27,6 +28,8 @@ import {
   type AiGeneration,
   type Delivery,
   type Integration,
+  type Invitation,
+  type Member,
   type ExportRecord,
   type Job,
   type FormListCursor,
@@ -61,6 +64,9 @@ import {
   AiSettingsBodySchema,
   DeliveryQuerySchema,
   IntegrationCreateBodySchema,
+  InvitationAcceptBodySchema,
+  InvitationCreateBodySchema,
+  MemberPatchBodySchema,
   IntegrationPatchBodySchema,
   AiJobCreateBodySchema,
   AuditQuerySchema,
@@ -85,6 +91,13 @@ import {
   type DeliveryDetailResponse,
   type DeliveryListResponse,
   type IntegrationBody,
+  type InvitationAcceptResponse,
+  type InvitationBody,
+  type InvitationCreatedResponse,
+  type InvitationListResponse,
+  type InvitationResponse,
+  type MemberListResponse,
+  type MemberResponse,
   type IntegrationListResponse,
   type IntegrationResponse,
   type AiGenerationBody,
@@ -1251,6 +1264,217 @@ export function apiV1Router({ db, settings, objectStore }: AppDependencies): Rou
       };
     });
     respond(res, outcome);
+  });
+
+  // Members and invitations (PAR-05, docs/01 §4) -------------------------------
+
+  /** Roles ranked so a manager can only hand out roles at or below their own. */
+  const ROLE_RANK = { owner: 4, admin: 3, creator: 2, analyst: 1, approver: 1 } as const;
+  const INVITE_TOKEN_BYTES = 32;
+  const MAX_PENDING_INVITATIONS = 50;
+
+  function memberBody(m: Member): MemberResponse["member"] {
+    return { userId: m.userId, displayName: m.displayName, role: m.role, status: m.status, joinedAt: m.joinedAt.toISOString() };
+  }
+
+  function invitationBody(i: Invitation): InvitationBody {
+    return {
+      id: i.id,
+      email: i.email,
+      role: i.role,
+      status: i.status,
+      createdBy: i.createdBy,
+      createdAt: i.createdAt.toISOString(),
+      expiresAt: i.expiresAt.toISOString(),
+      acceptedBy: i.acceptedBy,
+      acceptedAt: i.acceptedAt?.toISOString() ?? null,
+    };
+  }
+
+  router.get("/organizations/:orgId/members", async (req, res) => {
+    respond(
+      res,
+      await inOrganization(req.params.orgId, sessionOf(res).userId, async (trx, membership): Promise<Outcome<MemberListResponse>> => {
+        if (!orgPermissions(membership).has("members.manage")) return { kind: "forbidden" };
+        return { kind: "ok", body: { members: (await membersRepo.listMembers(trx)).map(memberBody) } };
+      }),
+    );
+  });
+
+  /**
+   * Changes a member's role or removes (revokes) them. Only owners change
+   * owners or make new ones, and the organization always keeps one active
+   * owner. Memberships are never deleted, so removed members can come back.
+   */
+  router.patch("/organizations/:orgId/members/:userId", async (req, res) => {
+    const body = MemberPatchBodySchema.safeParse(req.body ?? {});
+    if (!body.success) {
+      problems.validation(res, issuesToErrors(body.error));
+      return;
+    }
+    const { orgId, userId: targetId } = req.params;
+    const userId = sessionOf(res).userId;
+    if (!UUID_PATTERN.test(targetId)) {
+      problems.notFound(res);
+      return;
+    }
+    respond(
+      res,
+      await inOrganization(orgId, userId, async (trx, membership): Promise<Outcome<MemberResponse>> => {
+        if (!orgPermissions(membership).has("members.manage")) return { kind: "forbidden" };
+        const owners = await membersRepo.lockActiveOwners(trx);
+        const target = await membersRepo.getMember(trx, targetId);
+        if (!target) return { kind: "not_found" };
+        const { role, status } = body.data;
+        if ((target.role === "owner" || role === "owner") && membership.role !== "owner") return { kind: "forbidden" };
+        const losesOwner = target.role === "owner" && target.status === "active" && ((role !== undefined && role !== "owner") || status === "revoked");
+        if (losesOwner && owners.length <= 1) {
+          return { kind: "conflict", code: "LAST_OWNER", title: "An organization needs at least one owner; make someone else an owner first" };
+        }
+        const change = { ...(role === undefined ? {} : { role }), ...(status === undefined ? {} : { status }) };
+        await membersRepo.updateMember(trx, targetId, change);
+        let action = "member.role_changed";
+        if (status === "revoked" && target.status === "active") action = "member.removed";
+        else if (status === "active" && target.status === "revoked") action = "member.restored";
+        await publishRepo.appendAudit(trx, {
+          tenantId: orgId,
+          actor: { type: "user", id: userId },
+          action,
+          resourceType: "member",
+          resourceId: targetId,
+          requestId: requestIdOf(res),
+          metadata: { before: { role: target.role, status: target.status }, after: change },
+        });
+        const updated = await membersRepo.getMember(trx, targetId);
+        return { kind: "ok", body: { member: memberBody(updated ?? target) } };
+      }),
+    );
+  });
+
+  router.get("/organizations/:orgId/invitations", async (req, res) => {
+    respond(
+      res,
+      await inOrganization(req.params.orgId, sessionOf(res).userId, async (trx, membership): Promise<Outcome<InvitationListResponse>> => {
+        if (!orgPermissions(membership).has("members.manage")) return { kind: "forbidden" };
+        return { kind: "ok", body: { invitations: (await membersRepo.listInvitations(trx)).map(invitationBody) } };
+      }),
+    );
+  });
+
+  /**
+   * Creates a single-use join link for a role no higher than the inviter's.
+   * The link is returned once; only a hash of its token is stored.
+   */
+  router.post("/organizations/:orgId/invitations", async (req, res) => {
+    const body = InvitationCreateBodySchema.safeParse(req.body ?? {});
+    if (!body.success) {
+      problems.validation(res, issuesToErrors(body.error));
+      return;
+    }
+    const { orgId } = req.params;
+    const userId = sessionOf(res).userId;
+    const token = randomBytes(INVITE_TOKEN_BYTES).toString("base64url");
+    respond(
+      res,
+      await inOrganization(orgId, userId, async (trx, membership): Promise<Outcome<InvitationCreatedResponse>> => {
+        if (!orgPermissions(membership).has("members.manage")) return { kind: "forbidden" };
+        if (ROLE_RANK[body.data.role] > ROLE_RANK[membership.role]) return { kind: "forbidden" };
+        const pending = (await membersRepo.listInvitations(trx)).filter((i) => i.status === "pending").length;
+        if (pending >= MAX_PENDING_INVITATIONS) {
+          return { kind: "problem", status: 429, code: "TOO_MANY_INVITATIONS", title: `At most ${MAX_PENDING_INVITATIONS} open invitations; revoke some first` };
+        }
+        const invitation = await membersRepo.createInvitation(trx, {
+          tenantId: orgId,
+          email: body.data.email ?? null,
+          role: body.data.role,
+          tokenHash: sha256(token),
+          createdBy: userId,
+          expiresAt: new Date(Date.now() + body.data.expiresInDays * 86_400_000),
+        });
+        await publishRepo.appendAudit(trx, {
+          tenantId: orgId,
+          actor: { type: "user", id: userId },
+          action: "invitation.created",
+          resourceType: "invitation",
+          resourceId: invitation.id,
+          requestId: requestIdOf(res),
+          metadata: { role: invitation.role, expiresAt: invitation.expiresAt.toISOString() },
+        });
+        return { kind: "ok", status: 201, body: { invitation: invitationBody(invitation), url: `${settings.consoleOrigin}/invite/${token}` } };
+      }),
+    );
+  });
+
+  router.post("/organizations/:orgId/invitations/:invitationId/revoke", async (req, res) => {
+    const { orgId, invitationId } = req.params;
+    const userId = sessionOf(res).userId;
+    if (!UUID_PATTERN.test(invitationId)) {
+      problems.notFound(res);
+      return;
+    }
+    respond(
+      res,
+      await inOrganization(orgId, userId, async (trx, membership): Promise<Outcome<InvitationResponse>> => {
+        if (!orgPermissions(membership).has("members.manage")) return { kind: "forbidden" };
+        const invitation = await membersRepo.revokeInvitation(trx, invitationId);
+        if (!invitation) {
+          const exists = (await membersRepo.listInvitations(trx, 1000)).some((i) => i.id === invitationId);
+          return exists ? { kind: "conflict", code: "INVITATION_CLOSED", title: "This invitation was already used or revoked" } : { kind: "not_found" };
+        }
+        await publishRepo.appendAudit(trx, {
+          tenantId: orgId,
+          actor: { type: "user", id: userId },
+          action: "invitation.revoked",
+          resourceType: "invitation",
+          resourceId: invitation.id,
+          requestId: requestIdOf(res),
+        });
+        return { kind: "ok", body: { invitation: invitationBody(invitation) } };
+      }),
+    );
+  });
+
+  /**
+   * Joins the signed-in user to the invitation's organization. An unknown,
+   * used, revoked or expired link is reported the same way, so links cannot
+   * be probed. Using the link and joining commit together.
+   */
+  router.post("/invitations/accept", async (req, res) => {
+    const body = InvitationAcceptBodySchema.safeParse(req.body ?? {});
+    if (!body.success) {
+      problems.validation(res, issuesToErrors(body.error));
+      return;
+    }
+    const userId = sessionOf(res).userId;
+    const tokenHash = sha256(body.data.token);
+    const invalid = { kind: "problem", status: 404, code: "INVITATION_INVALID", title: "This invitation link is not valid any more; ask for a new one" } as const;
+    const tenantId = await membersRepo.resolveInvitation(db, tokenHash);
+    if (!tenantId) {
+      respond(res, invalid);
+      return;
+    }
+    respond(
+      res,
+      await withContext(db, { tenantId, userId }, async (trx): Promise<Outcome<InvitationAcceptResponse>> => {
+        const existing = await orgRepo.getMembership(trx, userId);
+        if (existing?.status === "active") {
+          return { kind: "conflict", code: "ALREADY_MEMBER", title: "You are already a member of this organization" };
+        }
+        const invitation = await membersRepo.markInvitationAccepted(trx, tokenHash, userId);
+        if (!invitation) return invalid;
+        await membersRepo.upsertMember(trx, tenantId, userId, invitation.role);
+        await publishRepo.appendAudit(trx, {
+          tenantId,
+          actor: { type: "user", id: userId },
+          action: "invitation.accepted",
+          resourceType: "invitation",
+          resourceId: invitation.id,
+          requestId: requestIdOf(res),
+          metadata: { role: invitation.role },
+        });
+        return { kind: "ok", body: { organization: { id: tenantId, role: invitation.role } } };
+      }),
+    );
   });
 
   // AI generation (AI-01, docs/03 §4) ---------------------------------------

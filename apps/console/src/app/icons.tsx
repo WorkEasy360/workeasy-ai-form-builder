@@ -36,6 +36,13 @@ export const AuditIcon = (p: P) => (
     <path d="M9 12l2 2 4-4" />
   </Icon>
 );
+export const UsersIcon = (p: P) => (
+  <Icon {...p}>
+    <circle cx="9" cy="8" r="3.5" />
+    <path d="M2.5 20a6.5 6.5 0 0 1 13 0" />
+    <path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14.5a6.5 6.5 0 0 1 3.5 5.5" />
+  </Icon>
+);
 export const JobsIcon = (p: P) => (
   <Icon {...p}>
     <path d="M4 12a8 8 0 0 1 13.7-5.7L20 8.5" />

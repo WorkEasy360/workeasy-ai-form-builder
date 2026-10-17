@@ -120,6 +120,9 @@ function signInRouter(options: SignInOptions): Router {
   return router;
 }
 
+/** Console pages a user may be sent back to after signing in: only invitation links. */
+const INVITE_RETURN_PATH = /^\/invite\/[A-Za-z0-9_-]{20,200}$/;
+
 /** Console sign-in at /auth on the console origin. */
 export function authRouter({ db, identityProvider, settings, logger }: AppDependencies): Router {
   const secure = settings.secureCookies;
@@ -134,9 +137,9 @@ export function authRouter({ db, identityProvider, settings, logger }: AppDepend
     sessionCookie: sessionCookieName(secure),
     loginCookie: secure ? "__Secure-we_login" : "we_login",
     loginCookiePath: "/auth",
-    home: () => new URL("/", settings.consoleOrigin).toString(),
+    home: (returnTo) => new URL(returnTo ?? "/", settings.consoleOrigin).toString(),
     signInFailed: () => new URL("/?signin=failed", settings.consoleOrigin).toString(),
-    parseReturnTo: () => undefined,
+    parseReturnTo: (raw) => (typeof raw === "string" && INVITE_RETURN_PATH.test(raw) ? raw : undefined),
   });
 }
 

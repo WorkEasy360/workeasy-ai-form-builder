@@ -3,7 +3,7 @@
 import { usePathname } from "next/navigation";
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { api, ApiError, type Me } from "../../../lib/api";
-import { AuditIcon, FormsIcon, JobsIcon, LogoutIcon, SparkleIcon } from "../../icons";
+import { AuditIcon, FormsIcon, JobsIcon, LogoutIcon, SparkleIcon, UsersIcon } from "../../icons";
 
 export interface OrgContextValue {
   orgId: string;
@@ -12,6 +12,7 @@ export interface OrgContextValue {
   /** Organization-level permissions, e.g. forms.create, integrations.manage. */
   permissions: string[];
   userName: string;
+  userId: string;
 }
 
 const OrgContext = createContext<OrgContextValue | undefined>(undefined);
@@ -45,7 +46,7 @@ export function OrgShell({ orgId, children }: { orgId: string; children: ReactNo
         setState({
           kind: "ready",
           me,
-          org: { orgId, orgName: org.name, role: org.role, permissions: org.permissions, userName: me.user.displayName ?? "Your account" },
+          org: { orgId, orgName: org.name, role: org.role, permissions: org.permissions, userName: me.user.displayName ?? "Your account", userId: me.user.id },
         });
       })
       .catch((err: unknown) => {
@@ -97,6 +98,7 @@ export function OrgShell({ orgId, children }: { orgId: string; children: ReactNo
   const base = `/o/${orgId}`;
   const nav = [
     { href: `${base}/forms`, label: "Forms", icon: <FormsIcon />, show: true, match: `${base}/forms` },
+    { href: `${base}/members`, label: "Members", icon: <UsersIcon />, show: can("members.manage"), match: `${base}/members` },
     { href: `${base}/ai`, label: "AI settings", icon: <SparkleIcon />, show: can("organization.audit.read"), match: `${base}/ai` },
     { href: `${base}/audit`, label: "Audit log", icon: <AuditIcon />, show: can("organization.audit.read"), match: `${base}/audit` },
     { href: `${base}/jobs`, label: "Background jobs", icon: <JobsIcon />, show: can("organization.audit.read"), match: `${base}/jobs` },

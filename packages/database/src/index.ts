@@ -4,6 +4,8 @@ export { InvalidDbContextError, withContext, withTenant, type DbContext } from "
 export { DEFAULT_MIGRATIONS_DIR, migrate, type MigrateOptions, type MigrateResult } from "./migrate.js";
 export * as identityRepo from "./repositories/identity.js";
 export * as orgRepo from "./repositories/organization.js";
+export * as membersRepo from "./repositories/members.js";
+export type { Invitation, InvitationStatus, Member, NewInvitation } from "./repositories/members.js";
 export * as publishRepo from "./repositories/publishing.js";
 export * as publicFormsRepo from "./repositories/public-forms.js";
 export * as intakeRepo from "./repositories/intake.js";
