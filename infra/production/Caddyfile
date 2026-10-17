@@ -1,0 +1,40 @@
+# TLS termination for the VM deployment (OPS-01). Caddy obtains and renews
+# certificates automatically. The apps set their own framing and referrer
+# headers; HSTS is set here because only this layer knows the site is HTTPS.
+{
+	email {$ACME_EMAIL}
+}
+
+(common) {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+	log {
+		output stdout
+		format json
+	}
+}
+
+# Console, with the sign-in and API routes it proxies to the API.
+{$CONSOLE_DOMAIN} {
+	import common
+	reverse_proxy console:3000
+}
+
+# Public forms and the respondent API.
+{$FORMS_DOMAIN} {
+	import common
+	reverse_proxy respondent:3001
+}
+
+# Presigned uploads and downloads. The Host header passes through unchanged,
+# which the storage signatures depend on.
+{$FILES_DOMAIN} {
+	import common
+	request_body {
+		max_size 110MB
+	}
+	reverse_proxy object-storage:9000
+}

@@ -13,6 +13,7 @@
     "dev": "pnpm --parallel --filter \"./apps/*\" dev",
     "build": "pnpm -r build",
     "check:bundles": "node scripts/client-bundle-check.mjs",
+    "check:servers": "node scripts/server-bundle-check.mjs",
     "embed:sample": "node scripts/embed-sample.mjs",
     "typecheck": "pnpm -r typecheck",
     "lint": "oxlint",

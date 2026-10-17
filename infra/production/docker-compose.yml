@@ -1,0 +1,173 @@
+# Staging and production on one Linux VM with Docker Compose (OPS-01).
+# Deployed by scripts/ops/deploy.sh; see docs/deployment.md.
+#
+# Only Caddy publishes ports (80 and 443). Everything else talks on the
+# private compose network. Configuration and secrets come from
+# infra/production/.env (mode 600 on the server, never committed).
+name: workeasy-forms-production
+
+x-app: &app
+  image: ${WORKEASY_IMAGE:?set WORKEASY_IMAGE}
+  env_file: .env
+  restart: unless-stopped
+  environment: &app-env
+    NODE_ENV: production
+    API_INTERNAL_URL: http://api:4000
+    SCANNER_HOST: scanner
+    SCANNER_PORT: "3310"
+    OBJECT_STORAGE_ENDPOINT: http://object-storage:9000
+    SESSION_COOKIE_SECURE: "true"
+    WEBHOOK_ALLOW_PRIVATE_NETWORKS: "false"
+  logging:
+    driver: json-file
+    options: { max-size: "20m", max-file: "5" }
+
+# Health checks use Node's fetch: the image has no curl.
+x-http-check: &http-check
+  interval: 15s
+  timeout: 5s
+  retries: 5
+  start_period: 30s
+
+services:
+  caddy:
+    image: caddy:2.10.2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      CONSOLE_DOMAIN: ${CONSOLE_DOMAIN:?set CONSOLE_DOMAIN}
+      FORMS_DOMAIN: ${FORMS_DOMAIN:?set FORMS_DOMAIN}
+      FILES_DOMAIN: ${FILES_DOMAIN:?set FILES_DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on: [console, respondent, object-storage]
+
+  # One-shot: provisions database roles and applies migrations. deploy.sh runs
+  # it before starting the new version; it is safe to run repeatedly.
+  migrate:
+    <<: *app
+    profiles: ["migrate"]
+    restart: "no"
+    working_dir: /app/packages/database
+    command: ["./node_modules/.bin/tsx", "src/cli.ts", "setup"]
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  api:
+    <<: *app
+    command: ["node", "apps/api/dist/server.js"]
+    healthcheck:
+      <<: *http-check
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/health/ready').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  worker:
+    <<: *app
+    command: ["node", "apps/worker/dist/main.js"]
+    healthcheck:
+      <<: *http-check
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4001/health/live').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      scanner: { condition: service_started }
+
+  console:
+    <<: *app
+    working_dir: /app/apps/console
+    command: ["./node_modules/.bin/next", "start", "--port", "3000"]
+    healthcheck:
+      <<: *http-check
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+    depends_on: [api]
+
+  respondent:
+    <<: *app
+    working_dir: /app/apps/respondent
+    command: ["./node_modules/.bin/next", "start", "--port", "3001"]
+    healthcheck:
+      <<: *http-check
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/healthz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+    depends_on: [api]
+
+  postgres:
+    image: postgres:18.6-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  object-storage:
+    image: rustfs/rustfs:1.0.1
+    restart: unless-stopped
+    environment:
+      RUSTFS_ADDRESS: ":9000"
+      RUSTFS_CONSOLE_ENABLE: "false"
+      RUSTFS_ACCESS_KEY: ${OBJECT_STORAGE_ACCESS_KEY:?set OBJECT_STORAGE_ACCESS_KEY}
+      RUSTFS_SECRET_KEY: ${OBJECT_STORAGE_SECRET_KEY:?set OBJECT_STORAGE_SECRET_KEY}
+    volumes:
+      - object-storage-data:/data
+
+  # One-shot: creates the private buckets and the upload CORS rule. Idempotent.
+  object-storage-init:
+    image: amazon/aws-cli:2.38.0
+    profiles: ["migrate"]
+    restart: "no"
+    depends_on: [object-storage]
+    environment:
+      AWS_ACCESS_KEY_ID: ${OBJECT_STORAGE_ACCESS_KEY}
+      AWS_SECRET_ACCESS_KEY: ${OBJECT_STORAGE_SECRET_KEY}
+      AWS_DEFAULT_REGION: ${OBJECT_STORAGE_REGION:-us-east-1}
+      RESPONDENT_ORIGIN: ${RESPONDENT_PUBLIC_URL:?set RESPONDENT_PUBLIC_URL}
+      QUARANTINE_BUCKET: ${OBJECT_STORAGE_BUCKET_QUARANTINE:?set OBJECT_STORAGE_BUCKET_QUARANTINE}
+      BUCKETS: ${OBJECT_STORAGE_BUCKET_QUARANTINE} ${OBJECT_STORAGE_BUCKET_CLEAN:?set OBJECT_STORAGE_BUCKET_CLEAN} ${OBJECT_STORAGE_BUCKET_EXPORTS:?set OBJECT_STORAGE_BUCKET_EXPORTS}
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        s3="aws --endpoint-url http://object-storage:9000 s3api"
+        for attempt in $$(seq 1 30); do
+          if $$s3 list-buckets > /dev/null 2>&1; then break; fi
+          echo "waiting for object storage ($$attempt)"; sleep 2
+        done
+        for bucket in $$BUCKETS; do
+          $$s3 head-bucket --bucket "$$bucket" > /dev/null 2>&1 || $$s3 create-bucket --bucket "$$bucket" > /dev/null
+        done
+        $$s3 put-bucket-cors --bucket "$$QUARANTINE_BUCKET" --cors-configuration \
+          "{\"CORSRules\":[{\"AllowedOrigins\":[\"$$RESPONDENT_ORIGIN\"],\"AllowedMethods\":[\"PUT\"],\"AllowedHeaders\":[\"*\"],\"MaxAgeSeconds\":600}]}"
+        echo "buckets ready"
+
+  # Malware scanner. Unlike local development, signatures update automatically.
+  scanner:
+    image: clamav/clamav:1.5.1
+    restart: unless-stopped
+    environment:
+      CLAMAV_NO_MILTERD: "true"
+    volumes:
+      - clamav-data:/var/lib/clamav
+    healthcheck:
+      test: ["CMD-SHELL", "echo PING | nc -w 2 127.0.0.1 3310 | grep -q PONG"]
+      interval: 15s
+      timeout: 5s
+      retries: 30
+      start_period: 180s
+
+volumes:
+  postgres-data:
+  object-storage-data:
+  clamav-data:
+  caddy-data:
+  caddy-config:

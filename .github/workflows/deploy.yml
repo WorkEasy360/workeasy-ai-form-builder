@@ -1,0 +1,130 @@
+# Builds the release image and deploys it to a VM (OPS-01; docs/deployment.md).
+#
+# - Every push to main builds ghcr.io/<owner>/workeasy-forms:<commit> and,
+#   once CI has passed for that commit, deploys it to "staging".
+# - "production" is deployed only by running this workflow by hand for a
+#   commit that already passed staging; protect the environment with required
+#   reviewers in the repository settings.
+#
+# Each GitHub environment (staging, production) holds its own secrets:
+#   DEPLOY_HOST, DEPLOY_USER, DEPLOY_SSH_KEY, DEPLOY_KNOWN_HOSTS, DEPLOY_PATH
+#   DEPLOY_ENV_FILE (optional): the full .env; when set it replaces the
+#   server's copy on every deploy, so GitHub is the single source of secrets.
+# Automatic staging deploys start once the repository variable DEPLOY_ENABLED
+# is "true". Until DEPLOY_HOST is set for an environment, deploys to it are skipped.
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Where to deploy
+        type: choice
+        options: [staging, production]
+        default: staging
+      ref:
+        description: Commit to deploy (defaults to the selected branch's head)
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-${{ inputs.environment || 'staging' }}
+  cancel-in-progress: false
+
+jobs:
+  image:
+    name: Build release image
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && vars.DEPLOY_ENABLED == 'true')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.meta.outputs.image }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.ref || github.event.workflow_run.head_sha || github.sha }}
+      - id: meta
+        run: |
+          owner=$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')
+          echo "image=ghcr.io/${owner}/workeasy-forms:$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Build and push (skipped if this commit's image already exists)
+        env:
+          IMAGE: ${{ steps.meta.outputs.image }}
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "$TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          if docker manifest inspect "$IMAGE" > /dev/null 2>&1; then
+            echo "$IMAGE already built"
+          else
+            docker build --pull -t "$IMAGE" .
+            docker push "$IMAGE"
+          fi
+
+  deploy:
+    name: Deploy to ${{ inputs.environment || 'staging' }}
+    needs: image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: ${{ inputs.environment || 'staging' }}
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.ref || github.event.workflow_run.head_sha || github.sha }}
+      - name: Check this environment is configured
+        id: configured
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          if [ -z "$HOST" ]; then
+            echo "DEPLOY_HOST is not set for this environment; skipping the deploy."
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Deploy over SSH
+        if: steps.configured.outputs.ok == 'true'
+        env:
+          IMAGE: ${{ needs.image.outputs.image }}
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          ENV_FILE: ${{ secrets.DEPLOY_ENV_FILE }}
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy && chmod 600 ~/.ssh/deploy
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          target="${DEPLOY_USER}@${HOST}"
+          path="${DEPLOY_PATH:-/opt/workeasy-forms}"
+          ssh_() { ssh -i ~/.ssh/deploy -o StrictHostKeyChecking=yes "$target" "$@"; }
+
+          ssh_ "mkdir -p '$path'"
+          scp -i ~/.ssh/deploy -o StrictHostKeyChecking=yes \
+            infra/production/docker-compose.yml infra/production/Caddyfile infra/production/deploy.sh \
+            infra/production/new-env.sh infra/production/env.example "$target:$path/"
+          if [ -n "$ENV_FILE" ]; then
+            printf '%s\n' "$ENV_FILE" | ssh_ "umask 077 && cat > '$path/.env.upload' && grep -q '^WORKEASY_IMAGE=' '$path/.env.upload' || echo 'WORKEASY_IMAGE=' >> '$path/.env.upload'; mv '$path/.env.upload' '$path/.env'"
+          fi
+          # The registry token is valid only for this job; it is used for the pull and then removed.
+          echo "$TOKEN" | ssh_ "docker login ghcr.io -u '$GITHUB_ACTOR' --password-stdin > /dev/null"
+          status=0
+          ssh_ "cd '$path' && chmod +x deploy.sh new-env.sh && ./deploy.sh '$IMAGE'" || status=$?
+          ssh_ "docker logout ghcr.io > /dev/null" || true
+          exit $status

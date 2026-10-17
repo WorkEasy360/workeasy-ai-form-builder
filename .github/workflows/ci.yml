@@ -39,6 +39,8 @@ jobs:
       - run: pnpm build
       - name: Client bundles contain no server-only settings or secrets
         run: pnpm check:bundles
+      - name: Built servers start
+        run: pnpm check:servers
 
   browser:
     name: Shared engine tests in Chromium

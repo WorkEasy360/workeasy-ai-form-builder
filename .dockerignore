@@ -1,0 +1,14 @@
+**/node_modules
+**/.next
+**/dist
+**/coverage
+**/*.tsbuildinfo
+.git
+.github
+.claude
+.env
+.env.*
+!.env.example
+infra/production/.env
+infra/production/.env.*
+infra/production/releases.log
