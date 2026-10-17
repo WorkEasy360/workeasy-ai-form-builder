@@ -23,6 +23,8 @@ export const testSettings: AppSettings = {
   integrationSecretKey: TEST_INTEGRATION_KEY,
   // Integration tests deliver to a local receiver; the strict policy has its own unit tests.
   webhookPolicy: { allowHttp: true, allowPrivateNetworks: true, allowedPorts: [] },
+  // Tests submit as soon as a session opens; the spam protection test sets its own minimum.
+  minFillMs: 0,
 };
 
 /**

@@ -365,16 +365,24 @@ export interface AccessPolicy {
   maxResponses: number | null;
   openAt: Date | null;
   closeAt: Date | null;
+  /** Honeypot and minimum fill time checks at intake (on unless turned off). */
+  spamProtection: boolean;
 }
 
 /** Who may respond and when; forms without a policy row are open to anyone with the link, with no limits. */
 export async function getAccessPolicy(trx: Trx, formId: string): Promise<AccessPolicy> {
   const row = await trx
     .selectFrom("form_access_policies")
-    .select(["mode", "max_responses", "open_at", "close_at"])
+    .select(["mode", "max_responses", "open_at", "close_at", "spam_protection"])
     .where("form_id", "=", formId)
     .executeTakeFirst();
-  return { mode: row?.mode ?? "public", maxResponses: row?.max_responses ?? null, openAt: row?.open_at ?? null, closeAt: row?.close_at ?? null };
+  return {
+    mode: row?.mode ?? "public",
+    maxResponses: row?.max_responses ?? null,
+    openAt: row?.open_at ?? null,
+    closeAt: row?.close_at ?? null,
+    spamProtection: row?.spam_protection ?? true,
+  };
 }
 
 export async function getAccessMode(trx: Trx, formId: string): Promise<AccessMode> {
@@ -383,7 +391,14 @@ export async function getAccessMode(trx: Trx, formId: string): Promise<AccessMod
 
 /** Replaces the whole policy (callers merge a partial change into the current one first). */
 export async function setAccessPolicy(trx: Trx, tenantId: string, formId: string, policy: AccessPolicy, updatedBy: string): Promise<void> {
-  const values = { mode: policy.mode, max_responses: policy.maxResponses, open_at: policy.openAt, close_at: policy.closeAt, updated_by: updatedBy };
+  const values = {
+    mode: policy.mode,
+    max_responses: policy.maxResponses,
+    open_at: policy.openAt,
+    close_at: policy.closeAt,
+    spam_protection: policy.spamProtection,
+    updated_by: updatedBy,
+  };
   await trx
     .insertInto("form_access_policies")
     .values({ tenant_id: tenantId, form_id: formId, ...values })

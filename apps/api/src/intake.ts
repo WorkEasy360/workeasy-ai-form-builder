@@ -34,11 +34,20 @@ export type IntakeOutcome =
   /** Closed, outside its schedule, full, over the tenant's quota, or gone. */
   | { kind: "unavailable"; reason: Unavailable; opensAt?: Date | undefined }
   | { kind: "access_revoked" }
+  /** Spam checks failed (honeypot filled in, or submitted too fast). Nothing is stored. */
+  | { kind: "blocked" }
   | { kind: "invalid"; errors: FieldError[] };
+
+/** Faster than this after opening the form is not a person filling it in. */
+export const DEFAULT_MIN_FILL_MS = 2000;
 
 export interface IntakeRequest {
   session: RespondentSession;
   idempotencyKey: string;
+  /** The hidden field people never see; anything in it means a bot. */
+  honeypot?: string | undefined;
+  /** The shortest time between opening the form and submitting it, when spam checks are on. */
+  minFillMs?: number;
   formVersionId: string;
   answers: Record<string, unknown>;
   requestId?: string | undefined;
@@ -112,6 +121,12 @@ function intakeTransaction(publicDb: Db, request: IntakeRequest): Promise<Intake
     const acceptance = await publicFormsRepo.judgeAcceptance(trx, form, { tenantId: session.tenantId, actorId: locked.actorId });
     if (!acceptance.accepting) {
       return acceptance.reason === "access_revoked" ? { kind: "access_revoked" } : { kind: "unavailable", reason: acceptance.reason, opensAt: acceptance.opensAt };
+    }
+
+    // 5b. Spam checks, when the form has them on: the hidden field must be empty, and
+    // the form must have been open long enough for a person to fill it in.
+    if (await intakeRepo.spamProtection(trx, locked.formId)) {
+      if ((request.honeypot ?? "") !== "" || locked.ageMs < (request.minFillMs ?? DEFAULT_MIN_FILL_MS)) return { kind: "blocked" };
     }
 
     // 6. The same engine the browser ran, against the pinned version.

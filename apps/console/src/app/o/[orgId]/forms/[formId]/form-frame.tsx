@@ -3,7 +3,7 @@
 import { usePathname } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import { api, type FormResponse, type FormSummary } from "../../../../../lib/api";
-import { ChartIcon, EditIcon, InboxIcon, PlugIcon } from "../../../../icons";
+import { ChartIcon, EditIcon, GearIcon, InboxIcon, PlugIcon } from "../../../../icons";
 import { useOrg } from "../../org-shell";
 
 export const STATE_BADGE: Record<FormSummary["state"], { label: string; tone?: string }> = {
@@ -42,6 +42,7 @@ export function FormFrame({ orgId, formId, children }: { orgId: string; formId: 
     { href: `${base}/responses`, label: "Responses", icon: <InboxIcon size={16} />, show: can("responses.read") },
     { href: `${base}/analytics`, label: "Analytics", icon: <ChartIcon size={16} />, show: can("analytics.read") },
     { href: `${base}/integrations`, label: "Integrations", icon: <PlugIcon size={16} />, show: org?.permissions.includes("integrations.manage") ?? false },
+    { href: `${base}/settings`, label: "Settings", icon: <GearIcon size={16} />, show: can("forms.edit") || can("forms.publish") },
   ].filter((t) => t.show);
   const badge = form ? STATE_BADGE[form.state] : undefined;
 

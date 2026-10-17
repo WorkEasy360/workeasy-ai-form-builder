@@ -492,7 +492,7 @@ function Editor({
           }}
         />
       ) : mode === "share" ? (
-        <SharePanel formPath={formPath} form={form} readOnly={readOnly} onFormChange={setForm} announce={setNotice} />
+        <SharePanel formPath={formPath} form={form} announce={setNotice} />
       ) : mode === "publish" ? (
         <PublishPanel
           formPath={formPath}

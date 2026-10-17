@@ -208,6 +208,8 @@ export const AccessPolicyBodySchema = z
     openAt: Timestamp.nullable().optional(),
     /** Stop accepting responses at this time (UTC). */
     closeAt: Timestamp.nullable().optional(),
+    /** Refuse submissions that fill the hidden honeypot field or arrive within 2 seconds of opening. */
+    spamProtection: z.boolean().optional(),
   })
   .refine((b) => Object.keys(b).length > 0, { message: "Send at least one setting to change" });
 
@@ -216,6 +218,7 @@ export const AccessPolicyResponseSchema = z.object({
   maxResponses: z.number().int().nullable(),
   openAt: Timestamp.nullable(),
   closeAt: Timestamp.nullable(),
+  spamProtection: z.boolean(),
   /** Responses stored so far. */
   acceptedResponses: z.number().int().min(0),
 });
@@ -277,6 +280,8 @@ export const SubmitBodySchema = z.object({
   formVersionId: Uuid,
   /** Answers keyed by field ID; the engine decodes and validates them. */
   answers: z.record(z.string(), z.unknown()),
+  /** A hidden field in the respondent app that people never fill in (spam protection). */
+  hp: z.string().max(500).optional(),
 });
 
 export const ReceiptSchema = z.object({

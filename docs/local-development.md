@@ -338,6 +338,24 @@ The response presentation and CSV code live in `@workeasy/responses`, shared by 
   - Actual use is charged as the provider reports it, including retries and cancelled work. The reservation is released once, when the generation ends: by the worker, or by the API for a queued cancellation or an expired generation.
   - The worker logs a warning (counts only) when a day's use reaches 80% of the limit.
 
+## Form settings (PAR-04)
+
+The **Settings** tab on each form (needs `forms.edit` or `forms.publish`) gathers:
+
+- **General:** the thank-you message, plus an optional page to send respondents to afterwards (`success.redirectUrl` in the definition, so it goes live on publish).
+  - The address must be `http(s)` and can't contain a user name or password (`INVALID_REDIRECT`).
+  - The respondent app shows the thank-you message and receipt number, then goes there after about 2.5 seconds. An embedded form sends the whole page there when the host allows it, otherwise the frame.
+- **Access:** who can respond, and closing or reopening the form.
+- **Limits and schedule.**
+- **Spam protection** (`spamProtection` on the access policy, on by default, audited when changed). Intake refuses a submission with `422 SUBMISSION_BLOCKED` and stores nothing when either check fails:
+  - the respondent app's off-screen field was filled in (sent as `hp`);
+  - the session was opened less than 2 seconds earlier, measured by the database clock.
+
+  The API setting `minFillMs` overrides the 2 seconds. The shared integration-test settings use 0, because those tests submit instantly. No third-party CAPTCHA is involved.
+- **Data retention.**
+
+The Share panel keeps the link, the QR code and the embed code.
+
 ## Analytics (ANA-01)
 
 People with `analytics.read` on a form open **Analytics** next to it in the forms list (`GET …/forms/:id/analytics?from=&to=`, up to 366 UTC days, the last 30 by default). The counts come from respondent sessions only, with nothing collected on top of them, and no answers are ever read:

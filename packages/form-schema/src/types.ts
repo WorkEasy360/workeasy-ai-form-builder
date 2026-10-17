@@ -130,5 +130,6 @@ export interface FormDefinition {
   fields: Field[];
   rules: Rule[];
   theme: Theme;
-  success: { message: string };
+  /** After submitting: the message, then optionally a page respondents are sent to. */
+  success: { message: string; redirectUrl?: string };
 }

@@ -250,6 +250,8 @@ export function publicV1Router(deps: AppDependencies): Router {
     const outcome = await intake(publicDb, {
       session,
       idempotencyKey,
+      honeypot: body.data.hp,
+      ...(settings.minFillMs !== undefined ? { minFillMs: settings.minFillMs } : {}),
       formVersionId: body.data.formVersionId,
       answers: body.data.answers,
       requestId: requestIdOf(res),
@@ -280,6 +282,11 @@ export function publicV1Router(deps: AppDependencies): Router {
         return;
       case "access_revoked":
         sendProblem(res, 403, "NOT_A_MEMBER", "You no longer have access to this form");
+        return;
+      case "blocked":
+        // Deliberately vague: the reason would help a bot adapt.
+        log.info({ respondentSessionId: session.id }, "submission blocked by spam protection");
+        sendProblem(res, 422, "SUBMISSION_BLOCKED", "We couldn't accept this response. Please wait a moment and try again.");
         return;
       case "invalid":
         problems.validation(res, outcome.errors);

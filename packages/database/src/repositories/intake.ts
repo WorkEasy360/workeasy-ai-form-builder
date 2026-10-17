@@ -14,21 +14,29 @@ export interface LockedSession {
   formVersionId: string;
   actorId: string | null;
   acceptedSubmissionId: string | null;
+  /** Milliseconds since the session was opened, by the database clock. */
+  ageMs: number;
 }
 
 /** Locks the session row for the rest of the transaction, serializing every request for this session. */
 export async function lockSession(trx: Trx, sessionId: string): Promise<LockedSession | undefined> {
   const row = await trx
     .selectFrom("respondent_sessions")
-    .select(["form_id", "form_version_id", "actor_id", "accepted_submission_id"])
+    .select(["form_id", "form_version_id", "actor_id", "accepted_submission_id", sql<number>`(extract(epoch from now() - created_at) * 1000)::float8`.as("age_ms")])
     .where("id", "=", sessionId)
     .where("revoked_at", "is", null)
     .where("expires_at", ">", sql<Date>`now()`)
     .forUpdate()
     .executeTakeFirst();
   return row
-    ? { formId: row.form_id, formVersionId: row.form_version_id, actorId: row.actor_id, acceptedSubmissionId: row.accepted_submission_id }
+    ? { formId: row.form_id, formVersionId: row.form_version_id, actorId: row.actor_id, acceptedSubmissionId: row.accepted_submission_id, ageMs: Number(row.age_ms) }
     : undefined;
+}
+
+/** Whether the form's spam checks are on (the default when it has no policy row). */
+export async function spamProtection(trx: Trx, formId: string): Promise<boolean> {
+  const row = await trx.selectFrom("form_access_policies").select("spam_protection").where("form_id", "=", formId).executeTakeFirst();
+  return row?.spam_protection ?? true;
 }
 
 export interface RecordedRequest {

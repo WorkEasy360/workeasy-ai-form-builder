@@ -137,6 +137,7 @@ export interface FormAccessPoliciesTable {
   max_responses: Generated<number | null>;
   open_at: Generated<Date | null>;
   close_at: Generated<Date | null>;
+  spam_protection: Generated<boolean>;
   updated_by: string;
   created_at: CreatedAt;
   updated_at: UpdatedAt;

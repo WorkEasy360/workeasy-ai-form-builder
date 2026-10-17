@@ -178,6 +178,7 @@ function policyBody(policy: AccessPolicy, acceptedResponses: number): AccessPoli
     maxResponses: policy.maxResponses,
     openAt: policy.openAt?.toISOString() ?? null,
     closeAt: policy.closeAt?.toISOString() ?? null,
+    spamProtection: policy.spamProtection,
     acceptedResponses,
   };
 }
@@ -877,6 +878,7 @@ export function apiV1Router({ db, settings, objectStore }: AppDependencies): Rou
           maxResponses: change.maxResponses === undefined ? previous.maxResponses : change.maxResponses,
           openAt: change.openAt === undefined ? previous.openAt : change.openAt === null ? null : new Date(change.openAt),
           closeAt: change.closeAt === undefined ? previous.closeAt : change.closeAt === null ? null : new Date(change.closeAt),
+          spamProtection: change.spamProtection ?? previous.spamProtection,
         };
         if (next.openAt && next.closeAt && next.closeAt <= next.openAt) {
           return { kind: "invalid", errors: [{ field: "closeAt", code: "CLOSE_BEFORE_OPEN", message: "The closing time must be after the opening time" }] };

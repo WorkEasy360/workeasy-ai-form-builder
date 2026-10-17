@@ -121,6 +121,7 @@ export function PublicForm({ slug, versionId, definition, embed }: { slug: strin
   const started = useRef(false);
   // One Idempotency-Key per set of answers: a retry after a lost response reuses it and can never submit twice.
   const attempt = useRef<{ digest: string; key: string } | undefined>(undefined);
+  const honeypot = useRef<HTMLInputElement>(null);
 
   // One session per page load. The ref survives React's development double-mount.
   useEffect(() => {
@@ -174,13 +175,26 @@ export function PublicForm({ slug, versionId, definition, embed }: { slug: strin
         method: "POST",
         cache: "no-store",
         headers: { authorization: `Bearer ${capability}`, "content-type": "application/json", "idempotency-key": attempt.current.key },
-        body: JSON.stringify({ formVersionId: sessionVersion, answers }),
+        // The hidden field people never see; a bot that fills it in is refused (spam protection).
+        body: JSON.stringify({ formVersionId: sessionVersion, answers, ...(honeypot.current?.value ? { hp: honeypot.current.value } : {}) }),
       });
     } catch {
       return "We couldn't reach Workeasy Forms. Check your connection and try again; your answers are still here and won't be sent twice.";
     }
     if (res.ok) {
       setReceipt((await res.json()) as Receipt);
+      // A redirect set by the form's owner: after the thank-you message has been shown and announced.
+      const redirect = state.session.definition.success.redirectUrl ?? definition.success.redirectUrl;
+      if (redirect && /^https?:\/\//.test(redirect)) {
+        setTimeout(() => {
+          try {
+            // Embedded forms take the whole page there when the host allows it.
+            (embed && window.top ? window.top : window).location.assign(redirect);
+          } catch {
+            window.location.assign(redirect);
+          }
+        }, 2500);
+      }
       return undefined;
     }
     return refusal(res.status, (await res.json().catch(() => ({}))) as { code?: string; errors?: Array<{ message: string }> });
@@ -188,8 +202,16 @@ export function PublicForm({ slug, versionId, definition, embed }: { slug: strin
 
   // The session decides the version; it matches the page unless a new version went live in between.
   const shown = state.kind === "ready" && state.session.versionId !== versionId ? state.session.definition : definition;
+  const redirectNote = receipt && shown.success.redirectUrl ? " Taking you to the next page…" : "";
   return (
     <main ref={main} className={embed ? "r-embed" : "r-page"} onInputCapture={reportStart} onChangeCapture={reportStart}>
+      {/* Spam protection: off-screen and out of the tab order, so people never fill it in; bots often do. */}
+      <div aria-hidden="true" style={{ position: "absolute", left: -10000, top: "auto", width: 1, height: 1, overflow: "hidden" }}>
+        <label>
+          Leave this empty
+          <input ref={honeypot} type="text" name="website" tabIndex={-1} autoComplete="off" defaultValue="" />
+        </label>
+      </div>
       <style>{RENDERER_CSS}</style>
       {state.kind === "failed" && (
         <p role="alert" className="r-alert">
@@ -202,7 +224,7 @@ export function PublicForm({ slug, versionId, definition, embed }: { slug: strin
         idPrefix="form"
         onSubmit={submit}
         uploader={state.kind === "ready" ? uploaderFor(state.session) : undefined}
-        successDetail={receipt ? `Your receipt number is ${receipt.receiptId.slice(0, 8).toUpperCase()}. Keep it if you need to refer to this response.` : undefined}
+        successDetail={receipt ? `Your receipt number is ${receipt.receiptId.slice(0, 8).toUpperCase()}. Keep it if you need to refer to this response.${redirectNote}` : undefined}
       />
     </main>
   );

@@ -2,9 +2,7 @@
 
 import createQrCode from "qrcode-generator";
 import { useEffect, useId, useMemo, useState } from "react";
-import { api, ApiError, type FormResponse, type FormSummary } from "../../../../../../lib/api";
-import { LimitsEditor } from "./limits-editor";
-import { RetentionEditor } from "./retention-editor";
+import { api, ApiError, type FormSummary } from "../../../../../../lib/api";
 
 interface Share {
   url: string;
@@ -16,11 +14,6 @@ interface Share {
 }
 
 type AccessMode = "public" | "organization";
-
-const ACCESS_CHOICES: Array<{ mode: AccessMode; label: string; hint: string }> = [
-  { mode: "public", label: "Anyone with the link", hint: "No sign-in needed." },
-  { mode: "organization", label: "Only members of this organization", hint: "Respondents sign in with their Workeasy account; others are turned away." },
-];
 
 const QR_MARGIN = 4;
 
@@ -88,27 +81,10 @@ function CopyField({ label, value, multiline, onCopied }: { label: string; value
  * Closing takes effect at once for every respondent, including anyone with
  * the form already open.
  */
-export function SharePanel({
-  formPath,
-  form,
-  readOnly,
-  onFormChange,
-  announce,
-}: {
-  formPath: string;
-  form: FormSummary;
-  readOnly: boolean;
-  onFormChange: (form: FormSummary) => void;
-  announce: (message: string) => void;
-}) {
+export function SharePanel({ formPath, form, announce }: { formPath: string; form: FormSummary; announce: (message: string) => void }) {
   const [share, setShare] = useState<Share | undefined>();
   const [loadError, setLoadError] = useState<string | undefined>();
-  const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<string | undefined>();
-  const [reason, setReason] = useState("");
-  const reasonId = useId();
-  const accessName = useId();
-  const canPublish = form.permissions.includes("forms.publish") && !readOnly;
 
   useEffect(() => {
     let cancelled = false;
@@ -129,39 +105,6 @@ export function SharePanel({
   function copied(message: string) {
     setStatus(message);
     announce(message);
-  }
-
-  async function setAccess(mode: AccessMode) {
-    if (!share || share.accessMode === mode) return;
-    setBusy(true);
-    try {
-      const res = await api<{ mode: AccessMode }>(`${formPath}/access-policy`, { method: "PATCH", body: { mode } });
-      setShare({ ...share, accessMode: res.mode });
-      copied(
-        res.mode === "organization"
-          ? "Only signed-in members of this organization can respond now, including anyone who already has the form open."
-          : "Anyone with the link can respond now.",
-      );
-    } catch (err) {
-      setStatus(errorText(err));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function change(action: "close" | "reopen") {
-    if (action === "close" && !window.confirm("Close this form?\n\nRespondents can no longer submit, including anyone who has it open right now. You can reopen it later.")) return;
-    setBusy(true);
-    try {
-      const res = await api<FormResponse>(`${formPath}/${action}`, { method: "POST", ...(action === "close" ? { body: reason.trim() ? { reason: reason.trim() } : {} } : {}) });
-      onFormChange(res.form);
-      setReason("");
-      copied(action === "close" ? "The form is closed. Respondents see that it isn't accepting responses." : "The form is open again.");
-    } catch (err) {
-      setStatus(errorText(err));
-    } finally {
-      setBusy(false);
-    }
   }
 
   const published = form.activeVersionId !== null;
@@ -222,49 +165,10 @@ export function SharePanel({
           </>
         )}
 
-        {share && (
-          <fieldset className="b-field" style={{ border: 0, padding: 0, margin: "24px 0 0" }}>
-            <legend style={{ fontSize: 18, fontWeight: 600, marginBottom: 8, padding: 0 }}>Who can respond</legend>
-            {ACCESS_CHOICES.map((choice) => (
-              <label key={choice.mode} style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "0 8px", marginBottom: 8 }}>
-                <input
-                  type="radio"
-                  name={accessName}
-                  value={choice.mode}
-                  checked={share.accessMode === choice.mode}
-                  disabled={!canPublish || busy}
-                  onChange={() => void setAccess(choice.mode)}
-                />
-                <span>{choice.label}</span>
-                <span />
-                <span className="b-muted">{choice.hint}</span>
-              </label>
-            ))}
-          </fieldset>
-        )}
-
-        <LimitsEditor formPath={formPath} canEdit={canPublish} announce={copied} />
-        <RetentionEditor formPath={formPath} canEdit={canPublish} announce={copied} />
-
-        <h2 style={{ marginTop: 24 }}>Accepting responses</h2>
-        {form.state === "published" && (
-          <>
-            <div className="b-field">
-              <label htmlFor={reasonId}>Reason for closing (optional, kept in the audit log)</label>
-              <input id={reasonId} value={reason} maxLength={500} disabled={!canPublish || busy} onChange={(e) => setReason(e.target.value)} />
-            </div>
-            <button type="button" className="b-btn" disabled={!canPublish || busy} onClick={() => void change("close")}>
-              Close form
-            </button>
-          </>
-        )}
-        {form.state === "closed" && (
-          <button type="button" className="b-btn b-primary" disabled={!canPublish || busy} onClick={() => void change("reopen")}>
-            Reopen form
-          </button>
-        )}
-        {(form.state === "draft" || form.state === "archived") && <p className="b-muted">Only a published form can be closed or reopened.</p>}
-        {!canPublish && published && !readOnly && <p className="b-muted">Closing and reopening need the publish permission on this form.</p>}
+        <p style={{ marginTop: 24 }}>
+          Who can respond, closing the form, limits and schedule, spam protection and data retention are under{" "}
+          <a href={formPath.replace(/^\/api\/v1\/organizations\/([^/]+)\/forms\/([^/]+)$/, "/o/$1/forms/$2/settings")}>Settings</a>.
+        </p>
       </section>
     </div>
   );

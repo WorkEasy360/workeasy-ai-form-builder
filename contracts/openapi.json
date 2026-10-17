@@ -4200,6 +4200,10 @@
                       "type": "string"
                     },
                     "additionalProperties": {}
+                  },
+                  "hp": {
+                    "type": "string",
+                    "maxLength": 500
                   }
                 },
                 "required": [
@@ -10997,6 +11001,9 @@
                         }
                       ]
                     },
+                    "spamProtection": {
+                      "type": "boolean"
+                    },
                     "acceptedResponses": {
                       "type": "integer",
                       "minimum": 0,
@@ -11008,6 +11015,7 @@
                     "maxResponses",
                     "openAt",
                     "closeAt",
+                    "spamProtection",
                     "acceptedResponses"
                   ],
                   "additionalProperties": false
@@ -11095,6 +11103,9 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "spamProtection": {
+                    "type": "boolean"
                   }
                 }
               }
@@ -11152,6 +11163,9 @@
                         }
                       ]
                     },
+                    "spamProtection": {
+                      "type": "boolean"
+                    },
                     "acceptedResponses": {
                       "type": "integer",
                       "minimum": 0,
@@ -11163,6 +11177,7 @@
                     "maxResponses",
                     "openAt",
                     "closeAt",
+                    "spamProtection",
                     "acceptedResponses"
                   ],
                   "additionalProperties": false

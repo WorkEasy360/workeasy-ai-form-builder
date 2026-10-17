@@ -194,7 +194,7 @@ describe("policy changes", () => {
     const f = await publishedForm(t);
     await setPolicy(t, f.path, { mode: "organization" });
     const res = await setPolicy(t, f.path, { maxResponses: 50 });
-    expect(AccessPolicyResponseSchema.parse(res.body)).toEqual({ mode: "organization", maxResponses: 50, openAt: null, closeAt: null, acceptedResponses: 0 });
+    expect(AccessPolicyResponseSchema.parse(res.body)).toEqual({ mode: "organization", maxResponses: 50, openAt: null, closeAt: null, spamProtection: true, acceptedResponses: 0 });
 
     const open = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
     expectProblem(await setPolicy(t, f.path, { openAt: open, closeAt: new Date(Date.now() + 60 * 60 * 1000).toISOString() }), 422, "VALIDATION_FAILED");

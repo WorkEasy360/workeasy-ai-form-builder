@@ -29,6 +29,8 @@ export interface AppSettings {
   integrationSecretKey: Buffer;
   /** Which webhook URLs may be saved; the worker checks again before every delivery. */
   webhookPolicy: DestinationPolicy;
+  /** Spam protection's minimum fill time; defaults to 2 seconds (tests that submit instantly set 0). */
+  minFillMs?: number;
 }
 
 export interface AppDependencies {

@@ -165,6 +165,20 @@ function semanticIssues(def: FormDefinition): DefinitionIssue[] {
     }
   });
 
+  // After submitting ----------------------------------------------------------------
+  const redirect = def.success.redirectUrl;
+  if (redirect !== undefined) {
+    let url: URL | undefined;
+    try {
+      url = new URL(redirect);
+    } catch {
+      url = undefined;
+    }
+    if (!url || (url.protocol !== "https:" && url.protocol !== "http:") || !url.hostname || url.username || url.password) {
+      add("/success/redirectUrl", "INVALID_REDIRECT", "Enter a web address starting with https:// (no user name or password).");
+    }
+  }
+
   // Theme -----------------------------------------------------------------------
   issues.push(...themeIssues(def.theme));
 
