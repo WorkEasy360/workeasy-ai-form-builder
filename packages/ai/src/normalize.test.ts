@@ -102,6 +102,32 @@ describe("proposalFromReply", () => {
     expect(cyclic.ok).toBe(false);
   });
 
+  it("sets the consent wording version itself, whatever the model wrote (a number, null or nothing)", () => {
+    for (const written of [2, null, undefined, ""]) {
+      const consent = { id: "ok", type: "consent", label: "I agree to the waiver", required: true, settings: written === undefined ? {} : { consentTextVersion: written } };
+      const result = proposalFromReply(
+        reply({ pages: [{ id: "p1", title: "", fieldIds: ["name", "ok"] }], fields: [JSON.parse(reply()).fields[0], consent], rules: [] }),
+        base(),
+        "create",
+      );
+      expect(result.ok ? result.definition.fields[1]!.settings.consentTextVersion : result.issues, JSON.stringify(written)).toBe("v1");
+    }
+  });
+
+  it("keeps a kept consent question's version when editing", () => {
+    const draft: FormDefinition = {
+      ...base(),
+      pages: [{ id: "p_main", title: "", fieldIds: ["f_consent"] }],
+      fields: [{ id: "f_consent", type: "consent", label: "I agree", required: true, settings: { consentTextVersion: "2026-03" } }],
+    };
+    const result = proposalFromReply(
+      JSON.stringify({ title: "Same", pages: [{ id: "p_main", title: "", fieldIds: ["f_consent"] }], fields: [{ ...draft.fields[0], settings: { consentTextVersion: 7 } }], rules: [] }),
+      draft,
+      "edit",
+    );
+    expect(result.ok ? result.definition.fields[0]!.settings.consentTextVersion : result.issues).toBe("2026-03");
+  });
+
   it("accepts the form wrapped in a single key and flags consent wording for review", () => {
     const wrapped = JSON.stringify({
       form: JSON.parse(

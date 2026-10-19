@@ -106,6 +106,12 @@ export function proposalFromReply(text: string, base: FormDefinition, operation:
       );
       if (typeof f.id === "string") optionIds.set(f.id, map);
     }
+    // The consent wording's version is bookkeeping for consent records, not content: the
+    // server sets it (a kept question keeps its version, a new one starts at v1), whatever the model wrote.
+    if (f.type === "consent") {
+      const kept = typeof id === "string" ? keepFields.get(id)?.settings.consentTextVersion : undefined;
+      return { ...f, id, settings: { ...(isRecord(settings) ? settings : {}), consentTextVersion: kept ?? "v1" } };
+    }
     return { ...f, id, settings };
   });
   const outPages = pages.map((p, i) =>
