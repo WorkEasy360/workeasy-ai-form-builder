@@ -92,6 +92,18 @@ export function CreateForm({ orgId }: { orgId: string }) {
 
   const chosenTemplate = templates?.find((t) => t.id === template);
   const ready = name.trim().length > 0 && (start !== "template" || !!template) && (start !== "ai" || (ai?.ready === true && prompt.trim().length >= 3));
+  /** Why the create button is disabled, so it never is without saying why. */
+  const missing = !name.trim()
+    ? "Give the form a name first."
+    : start === "template" && !template
+      ? "Choose a template."
+      : start === "ai" && ai === undefined
+        ? "Checking whether AI is available…"
+        : start === "ai" && ai?.ready === false
+          ? (ai.reason ?? "AI isn't available.")
+          : start === "ai" && prompt.trim().length < 3
+            ? "Describe the form you want."
+            : undefined;
 
   async function create() {
     setBusy(true);
@@ -265,6 +277,11 @@ export function CreateForm({ orgId }: { orgId: string }) {
           <a className="c-btn c-btn-ghost" href={`/o/${orgId}/forms`}>
             Cancel
           </a>
+          {!busy && missing && (
+            <span className="c-hint" role="status">
+              {missing}
+            </span>
+          )}
         </div>
       </form>
     </div>
