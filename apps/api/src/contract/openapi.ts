@@ -180,6 +180,39 @@ export function buildOpenApiDocument(): JsonSchema {
           responses: { "303": { description: "Redirect to the console; sets the session cookie on success" } },
         },
       },
+      "/auth/methods": {
+        get: {
+          operationId: "signInMethods",
+          summary: "Sign-in options the console offers: email and password, and single sign-on when its provider answers",
+          responses: { "200": { description: "{ password: true, sso: boolean }" } },
+        },
+      },
+      "/auth/password/signup": {
+        post: {
+          operationId: "passwordSignUp",
+          summary: "Create an email and password account and open a session ({ email, password ≥ 10 characters, name? })",
+          responses: {
+            "200": { description: "Signed up; sets the session cookie" },
+            "403": crossOrigin,
+            "409": problem("EMAIL_TAKEN"),
+            "422": problem("VALIDATION_FAILED"),
+            "429": problem("TOO_MANY_SIGN_UPS"),
+          },
+        },
+      },
+      "/auth/password/login": {
+        post: {
+          operationId: "passwordLogin",
+          summary: "Sign in with email and password ({ email, password })",
+          responses: {
+            "200": { description: "Signed in; sets the session cookie" },
+            "401": problem("INVALID_CREDENTIALS: unknown email or wrong password (indistinguishable)"),
+            "403": crossOrigin,
+            "422": problem("VALIDATION_FAILED"),
+            "429": problem("TOO_MANY_ATTEMPTS: 10 failures for this email in 15 minutes"),
+          },
+        },
+      },
       "/auth/logout": {
         post: {
           operationId: "logout",

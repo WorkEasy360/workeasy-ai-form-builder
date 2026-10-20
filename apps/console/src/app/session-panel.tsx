@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { CreateOrganization } from "./create-organization";
+import { SignIn } from "./sign-in";
 
 interface Organization {
   id: string;
@@ -21,7 +22,7 @@ type State = { kind: "loading" } | { kind: "signed-out" } | { kind: "error" } | 
  * The landing page: sign in, then pick an organization. Someone in exactly
  * one organization goes straight to its forms.
  */
-export function SessionPanel({ signInFailed }: { signInFailed: boolean }) {
+export function SessionPanel({ signInFailed, returnTo }: { signInFailed: boolean; returnTo?: string }) {
   const [state, setState] = useState<State>({ kind: "loading" });
 
   useEffect(() => {
@@ -32,7 +33,8 @@ export function SessionPanel({ signInFailed }: { signInFailed: boolean }) {
         if (res.status === 401) setState({ kind: "signed-out" });
         else if (res.ok) {
           const me = (await res.json()) as Me;
-          if (me.organizations.length === 1) window.location.replace(`/o/${me.organizations[0]!.id}/forms`);
+          if (returnTo) window.location.replace(returnTo);
+          else if (me.organizations.length === 1) window.location.replace(`/o/${me.organizations[0]!.id}/forms`);
           else setState({ kind: "signed-in", me });
         } else setState({ kind: "error" });
       })
@@ -42,7 +44,7 @@ export function SessionPanel({ signInFailed }: { signInFailed: boolean }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [returnTo]);
 
   if (state.kind === "loading") {
     return <p role="status">Checking your session…</p>;
@@ -57,22 +59,7 @@ export function SessionPanel({ signInFailed }: { signInFailed: boolean }) {
   }
 
   if (state.kind === "signed-out") {
-    return (
-      <div className="c-card" style={{ display: "grid", gap: 12 }}>
-        {signInFailed && (
-          <p role="alert" className="c-error">
-            Sign-in didn&apos;t complete. Please try again.
-          </p>
-        )}
-        <h2 style={{ margin: 0, fontSize: 20 }}>Sign in</h2>
-        <p style={{ margin: 0, color: "var(--we-color-textMuted)" }}>Use your Workeasy account to build forms, share them and review responses.</p>
-        <p style={{ margin: 0 }}>
-          <a href="/auth/login" className="c-btn c-btn-primary">
-            Sign in or sign up
-          </a>
-        </p>
-      </div>
-    );
+    return <SignIn signInFailed={signInFailed} {...(returnTo ? { returnTo } : {})} />;
   }
 
   const { me } = state;

@@ -35,7 +35,21 @@ export function createOidcIdentityProvider(options: OidcProviderOptions): Identi
     return configuration;
   }
 
+  let lastFailure = 0;
+
   return {
+    async isAvailable() {
+      // Discovery is cached once it succeeds; after a failure, retry at most once a minute.
+      if (configuration === undefined && Date.now() - lastFailure < 60_000) return false;
+      try {
+        await getConfiguration();
+        return true;
+      } catch {
+        lastFailure = Date.now();
+        return false;
+      }
+    },
+
     async beginLogin() {
       const config = await getConfiguration();
       const codeVerifier = oidc.randomPKCECodeVerifier();

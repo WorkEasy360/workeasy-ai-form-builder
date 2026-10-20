@@ -63,7 +63,7 @@ export function OrgShell({ orgId, children }: { orgId: string; children: ReactNo
         <div className="c-empty">
           <h2>Your session has ended</h2>
           <p>Sign in again to continue where you left off.</p>
-          <a className="c-btn c-btn-primary" href="/auth/login">
+          <a className="c-btn c-btn-primary" href="/">
             Sign in
           </a>
         </div>

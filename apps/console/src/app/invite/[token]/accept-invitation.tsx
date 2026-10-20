@@ -54,7 +54,7 @@ export function AcceptInvitation({ token }: { token: string }) {
         <h2 style={{ margin: 0, fontSize: 20 }}>You&apos;ve been invited</h2>
         <p style={{ margin: 0 }}>Sign in to join the organization that invited you.</p>
         <p style={{ margin: 0 }}>
-          <a className="c-btn c-btn-primary" href={`/auth/login?returnTo=${encodeURIComponent(here)}`}>
+          <a className="c-btn c-btn-primary" href={`/?returnTo=${encodeURIComponent(here)}`}>
             Sign in to continue
           </a>
         </p>

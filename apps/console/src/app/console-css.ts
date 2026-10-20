@@ -75,6 +75,7 @@ h1, h2, h3 { line-height: 1.25; }
 .c-btn-danger { color: var(--we-color-danger); border-color: color-mix(in srgb, var(--we-color-danger) 40%, var(--we-color-border)); }
 .c-btn-ghost { border-color: transparent; background: transparent; }
 .c-btn-sm { padding: 4px 10px; font-size: 14px; }
+.c-link-btn { font: inherit; padding: 0; border: 0; background: none; color: var(--we-color-accent); text-decoration: underline; cursor: pointer; }
 
 /* Inputs */
 .c-field { display: grid; gap: 6px; }

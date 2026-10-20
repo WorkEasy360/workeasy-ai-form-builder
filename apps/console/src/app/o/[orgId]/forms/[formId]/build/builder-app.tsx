@@ -123,7 +123,7 @@ export function BuilderApp({ orgId, formId, aiJob }: { orgId: string; formId: st
   if (load.kind === "signed-out") {
     return (
       <p style={{ padding: 16 }}>
-        Your session has ended. <a href="/auth/login">Sign in</a> to continue.
+        Your session has ended. <a href="/">Sign in</a> to continue.
       </p>
     );
   }

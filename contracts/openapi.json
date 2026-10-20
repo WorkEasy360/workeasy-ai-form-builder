@@ -202,6 +202,119 @@
         }
       }
     },
+    "/auth/methods": {
+      "get": {
+        "operationId": "signInMethods",
+        "summary": "Sign-in options the console offers: email and password, and single sign-on when its provider answers",
+        "responses": {
+          "200": {
+            "description": "{ password: true, sso: boolean }"
+          }
+        }
+      }
+    },
+    "/auth/password/signup": {
+      "post": {
+        "operationId": "passwordSignUp",
+        "summary": "Create an email and password account and open a session ({ email, password ≥ 10 characters, name? })",
+        "responses": {
+          "200": {
+            "description": "Signed up; sets the session cookie"
+          },
+          "403": {
+            "description": "Forbidden: missing permission, or a cookie-authenticated mutation not sent from the console origin",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "EMAIL_TAKEN",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "VALIDATION_FAILED",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "TOO_MANY_SIGN_UPS",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/password/login": {
+      "post": {
+        "operationId": "passwordLogin",
+        "summary": "Sign in with email and password ({ email, password })",
+        "responses": {
+          "200": {
+            "description": "Signed in; sets the session cookie"
+          },
+          "401": {
+            "description": "INVALID_CREDENTIALS: unknown email or wrong password (indistinguishable)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden: missing permission, or a cookie-authenticated mutation not sent from the console origin",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "VALIDATION_FAILED",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "TOO_MANY_ATTEMPTS: 10 failures for this email in 15 minutes",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/auth/logout": {
       "post": {
         "operationId": "logout",

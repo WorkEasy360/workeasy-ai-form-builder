@@ -1,4 +1,5 @@
-import { Router } from "express";
+import { Router, type Response } from "express";
+import { z } from "zod";
 import type { IdentityProvider } from "@workeasy/auth";
 import { identityRepo, type Db } from "@workeasy/database";
 import type { Logger } from "@workeasy/observability";
@@ -8,6 +9,14 @@ import { sendProblem } from "../http/problem.js";
 import { requestLog } from "../http/request-context.js";
 import { requireSameOrigin } from "../http/same-origin.js";
 import { LOGIN_TRANSACTION_MAX_AGE_MS, sealLoginTransaction, unsealLoginTransaction } from "../identity/login-transaction.js";
+import {
+  createAttemptLimiter,
+  hashPassword,
+  PASSWORD_MAX_LENGTH,
+  PASSWORD_MIN_LENGTH,
+  unknownAccountHash,
+  verifyPassword,
+} from "../identity/passwords.js";
 
 /** `__Host-` binds the cookie to the exact console origin when it is served over HTTPS. */
 export function sessionCookieName(secure: boolean): string {
@@ -123,10 +132,111 @@ function signInRouter(options: SignInOptions): Router {
 /** Console pages a user may be sent back to after signing in: only invitation links. */
 const INVITE_RETURN_PATH = /^\/invite\/[A-Za-z0-9_-]{20,200}$/;
 
+const Email = z.email().trim().toLowerCase().max(254);
+const SignUpBodySchema = z.object({
+  email: Email,
+  password: z.string().min(PASSWORD_MIN_LENGTH, `Use at least ${PASSWORD_MIN_LENGTH} characters`).max(PASSWORD_MAX_LENGTH),
+  name: z.string().trim().min(1).max(200).optional(),
+});
+const SignInBodySchema = z.object({ email: Email, password: z.string().min(1).max(PASSWORD_MAX_LENGTH) });
+
+/** Failed sign-ins allowed per email before a 15-minute pause. */
+const MAX_FAILED_SIGN_INS = 10;
+/** New accounts per hour from this server; a ceiling on scripted sign-ups. */
+const MAX_SIGN_UPS_PER_HOUR = 200;
+
+/**
+ * Email and password accounts at /auth/password (sign-up and sign-in), next
+ * to OIDC. A success opens the same server-side session as OIDC sign-in.
+ */
+function passwordRouter({ db, settings, logger }: AppDependencies, secure: boolean): Router {
+  const router = Router();
+  const sessionCookie = sessionCookieName(secure);
+  const failures = createAttemptLimiter(MAX_FAILED_SIGN_INS, 15 * 60 * 1000);
+  const signUps = createAttemptLimiter(MAX_SIGN_UPS_PER_HOUR, 60 * 60 * 1000);
+  router.use(requireSameOrigin(settings.consoleOrigin));
+
+  async function openSession(res: Response, userId: string) {
+    const session = await identityRepo.createSession(db, userId, settings.sessionTtlMs);
+    res.append("Set-Cookie", serializeCookie(sessionCookie, session.token, { path: "/", secure, maxAgeSeconds: settings.sessionTtlMs / 1000 }));
+    res.set("Cache-Control", "no-store");
+    res.json({ ok: true });
+    return session;
+  }
+
+  function invalid(res: Response, error: z.ZodError) {
+    const errors = error.issues.map((i) => ({ field: i.path.map(String).join(".") || "body", code: i.code.toUpperCase(), message: i.message }));
+    sendProblem(res, 422, "VALIDATION_FAILED", errors[0]?.message ?? "Check the details and try again", { errors });
+  }
+
+  router.post("/signup", async (req, res) => {
+    const log = requestLog(res, logger);
+    const body = SignUpBodySchema.safeParse(req.body);
+    if (!body.success) {
+      invalid(res, body.error);
+      return;
+    }
+    if (signUps.blocked("all")) {
+      sendProblem(res, 429, "TOO_MANY_SIGN_UPS", "Too many new accounts right now. Try again later");
+      return;
+    }
+    const { email, password, name } = body.data;
+    const userId = await identityRepo.createPasswordAccount(db, {
+      email,
+      passwordHash: await hashPassword(password),
+      displayName: name ?? email,
+    });
+    if (!userId) {
+      sendProblem(res, 409, "EMAIL_TAKEN", "An account with this email already exists. Sign in instead");
+      return;
+    }
+    signUps.fail("all");
+    const session = await openSession(res, userId);
+    log.info({ userId, sessionId: session.sessionId }, "user signed up with a password");
+  });
+
+  router.post("/login", async (req, res) => {
+    const log = requestLog(res, logger);
+    const body = SignInBodySchema.safeParse(req.body);
+    if (!body.success) {
+      invalid(res, body.error);
+      return;
+    }
+    const { email, password } = body.data;
+    if (failures.blocked(email)) {
+      sendProblem(res, 429, "TOO_MANY_ATTEMPTS", "Too many failed attempts. Wait 15 minutes and try again");
+      return;
+    }
+    const credential = await identityRepo.findPasswordCredential(db, email);
+    // Unknown emails cost the same time as wrong passwords.
+    const ok = await verifyPassword(password, credential?.passwordHash ?? (await unknownAccountHash()));
+    if (!credential || !ok) {
+      failures.fail(email);
+      log.info("password sign-in failed");
+      sendProblem(res, 401, "INVALID_CREDENTIALS", "That email and password don't match an account");
+      return;
+    }
+    failures.reset(email);
+    const session = await openSession(res, credential.userId);
+    log.info({ userId: credential.userId, sessionId: session.sessionId }, "user signed in with a password");
+  });
+
+  return router;
+}
+
 /** Console sign-in at /auth on the console origin. */
-export function authRouter({ db, identityProvider, settings, logger }: AppDependencies): Router {
+export function authRouter(deps: AppDependencies): Router {
+  const { db, identityProvider, settings, logger } = deps;
   const secure = settings.secureCookies;
-  return signInRouter({
+  const router = Router();
+  router.use("/password", passwordRouter(deps, secure));
+  // Which sign-in options the console offers: email and password always, single sign-on when its provider answers.
+  router.get("/methods", async (_req, res) => {
+    const sso = identityProvider.isAvailable ? await identityProvider.isAvailable() : true;
+    res.set("Cache-Control", "no-store");
+    res.json({ password: true, sso });
+  });
+  return router.use(signInRouter({
     db,
     logger,
     identityProvider,
@@ -140,7 +250,7 @@ export function authRouter({ db, identityProvider, settings, logger }: AppDepend
     home: (returnTo) => new URL(returnTo ?? "/", settings.consoleOrigin).toString(),
     signInFailed: () => new URL("/?signin=failed", settings.consoleOrigin).toString(),
     parseReturnTo: (raw) => (typeof raw === "string" && INVITE_RETURN_PATH.test(raw) ? raw : undefined),
-  });
+  }));
 }
 
 /** Form pages a respondent may be sent back to after signing in: `/f/<slug>`, optionally embedded. */

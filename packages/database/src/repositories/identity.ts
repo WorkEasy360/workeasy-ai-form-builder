@@ -56,6 +56,44 @@ export async function findOrCreateUser(db: Db, identity: IdentityClaims): Promis
   return userId;
 }
 
+/** Issuer of email and password accounts; their subject is the normalized email. */
+export const PASSWORD_ISSUER = "urn:workeasy:password";
+
+/**
+ * Creates a user with an email and password (already hashed by the caller).
+ * Returns undefined when the email is taken.
+ */
+export async function createPasswordAccount(
+  db: Db,
+  account: { email: string; passwordHash: string; displayName?: string },
+): Promise<string | undefined> {
+  const email = account.email.toLowerCase();
+  if (await findUserId(db, PASSWORD_ISSUER, email)) return undefined;
+  const userId = randomUUID();
+  try {
+    await withContext(db, { userId }, async (trx) => {
+      await trx
+        .insertInto("users")
+        .values({ id: userId, issuer: PASSWORD_ISSUER, subject: email, display_name: account.displayName?.slice(0, 200) ?? null })
+        .execute();
+      await trx.insertInto("password_credentials").values({ user_id: userId, email, password_hash: account.passwordHash }).execute();
+    });
+  } catch (err) {
+    // A concurrent sign-up with the same email won.
+    if (typeof err === "object" && err !== null && (err as { code?: string }).code === "23505") return undefined;
+    throw err;
+  }
+  return userId;
+}
+
+/** The stored hash for an email, for checking a sign-in attempt. */
+export async function findPasswordCredential(db: Db, email: string): Promise<{ userId: string; passwordHash: string } | undefined> {
+  const { rows } = await sql<{ user_id: string; password_hash: string }>`
+    SELECT user_id, password_hash FROM app.find_password_credential(${email.toLowerCase()})`.execute(db);
+  const row = rows[0];
+  return row ? { userId: row.user_id, passwordHash: row.password_hash } : undefined;
+}
+
 export interface CreatedSession {
   token: string;
   sessionId: string;

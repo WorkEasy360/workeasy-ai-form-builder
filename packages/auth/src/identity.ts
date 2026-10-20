@@ -22,4 +22,6 @@ export interface IdentityProvider {
   beginLogin(): Promise<{ authorizationUrl: URL; transaction: LoginTransaction }>;
   /** Validates the callback (state, nonce, code exchange, ID token) and returns the verified identity. */
   completeLogin(callbackUrl: URL, transaction: LoginTransaction): Promise<VerifiedIdentity>;
+  /** Whether sign-in can start now (the provider is reachable and configured); assumed true when absent. */
+  isAvailable?(): Promise<boolean>;
 }

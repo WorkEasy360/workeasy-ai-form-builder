@@ -29,6 +29,15 @@ export interface UsersTable {
   updated_at: UpdatedAt;
 }
 
+export interface PasswordCredentialsTable {
+  user_id: string;
+  /** Lower-cased; the identity's subject. */
+  email: string;
+  password_hash: string;
+  created_at: CreatedAt;
+  updated_at: UpdatedAt;
+}
+
 export interface MembershipsTable {
   tenant_id: string;
   user_id: string;
@@ -398,6 +407,7 @@ export interface DeliveryAttemptsTable {
 export interface Database {
   tenants: TenantsTable;
   users: UsersTable;
+  password_credentials: PasswordCredentialsTable;
   memberships: MembershipsTable;
   invitations: InvitationsTable;
   forms: FormsTable;

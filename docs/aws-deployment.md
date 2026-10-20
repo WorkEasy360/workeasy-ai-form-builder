@@ -61,9 +61,11 @@ Two A records pointing at `54.255.105.162`, for example `forms-admin.example.com
 
 **No domain yet?** Use `forms-admin.54-255-105-162.sslip.io` (console) and `forms.54-255-105-162.sslip.io` (forms): sslip.io resolves them to the IP inside the name, and Caddy gets real certificates for them. Switching to your domain later only changes the settings (and the Cognito callback URLs).
 
-### 4b. Sign-up with email and password (Amazon Cognito)
+### 4b. Sign-in
 
-The app signs people in with OpenID Connect; Amazon Cognito provides email and password sign-up on top of it. New users then create their own organization on first sign-in and invite the rest from **Members**.
+People sign up and sign in with **email and password** on the console's home page; nothing to set up. New users create their own organization on first sign-in and invite the rest from **Members**. Not yet included: email verification and "forgot password" (they need SES).
+
+**Optional, single sign-on** (OpenID Connect, e.g. Amazon Cognito or your company's identity provider): the console offers "Sign in with single sign-on" only once the provider in `OIDC_ISSUER_URL` answers. With Cognito:
 
 In **Amazon Cognito → User pools → Create user pool** (ap-southeast-1):
 
