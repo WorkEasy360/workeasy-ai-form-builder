@@ -18,24 +18,6 @@
       "Resource": ["arn:aws:s3:::LEDGER_BUCKET/*"]
     },
     {
-      "Sid": "ReadReleases",
-      "Effect": "Allow",
-      "Action": ["s3:GetObject"],
-      "Resource": ["arn:aws:s3:::RELEASES_BUCKET/*"]
-    },
-    {
-      "Sid": "PullImages",
-      "Effect": "Allow",
-      "Action": ["ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer", "ecr:BatchCheckLayerAvailability"],
-      "Resource": ["arn:aws:ecr:REGION:ACCOUNT_ID:repository/workeasy-forms"]
-    },
-    {
-      "Sid": "EcrLogin",
-      "Effect": "Allow",
-      "Action": ["ecr:GetAuthorizationToken"],
-      "Resource": "*"
-    },
-    {
       "Sid": "ReadSettings",
       "Effect": "Allow",
       "Action": ["secretsmanager:GetSecretValue"],

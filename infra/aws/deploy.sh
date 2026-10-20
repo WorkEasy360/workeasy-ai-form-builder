@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
-# Deploys one image on the EC2 server (OPS-03). GitHub Actions runs it through
-# AWS Systems Manager after every successful build of main; you can also run
-# it on the server yourself:
+# Deploys one image on the EC2 server (OPS-03). GitHub Actions runs it over
+# SSH after every successful build of main; you can also run it on the
+# server yourself, as root:
 #
-#   ./deploy.sh <account>.dkr.ecr.<region>.amazonaws.com/workeasy-forms:<commit>
+#   ./deploy.sh ghcr.io/<owner>/workeasy-forms:<commit>
 #   ./deploy.sh --rollback      back to the previous release
 #   ./deploy.sh --status        recent releases and service health
 #
-# Needs AWS_REGION and SETTINGS_SECRET_ID (the Secrets Manager secret holding
-# the .env). Credentials come from the instance's IAM role.
+# Settings come from the Secrets Manager secret SETTINGS_SECRET_ID (default
+# workeasy-forms/production/env) in the server's own region, read with the
+# instance's IAM role. The image registry login is done by the caller,
+# except for Amazon ECR images, which log in with the instance role.
 #
 # Migrations only ever add (expand/contract, docs/deployment.md), so rolling
 # the application back after a migration is safe.
@@ -22,7 +24,14 @@ RDS_CA_URL=https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem
 
 die() { echo "deploy: $*" >&2; exit 1; }
 log() { echo "deploy: $*"; }
-: "${AWS_REGION:?set AWS_REGION}"
+
+# The server's own region, from the instance metadata service (IMDSv2), unless given.
+if [ -z "${AWS_REGION:-}" ]; then
+  imds_token=$(curl -fsS -X PUT http://169.254.169.254/latest/api/token -H "X-aws-ec2-metadata-token-ttl-seconds: 60") \
+    || die "set AWS_REGION (the instance metadata service is not reachable)"
+  AWS_REGION=$(curl -fsS -H "X-aws-ec2-metadata-token: $imds_token" http://169.254.169.254/latest/meta-data/placement/region)
+fi
+SETTINGS_SECRET_ID=${SETTINGS_SECRET_ID:-workeasy-forms/production/env}
 
 compose() { WORKEASY_IMAGE="$IMAGE" docker compose --env-file .env "$@"; }
 # No release log yet (the first deploy) means no previous release, not an error.
@@ -30,7 +39,6 @@ last_release() { { grep ' deployed ' "$RELEASES" 2>/dev/null || true; } | tail -
 
 # Settings: the whole .env lives in Secrets Manager; it is written here with mode 600 on every deploy.
 fetch_settings() {
-  : "${SETTINGS_SECRET_ID:?set SETTINGS_SECRET_ID}"
   umask 077
   aws secretsmanager get-secret-value --region "$AWS_REGION" --secret-id "$SETTINGS_SECRET_ID" --query SecretString --output text > .env.next
   grep -q '^DATABASE_URL=' .env.next || { rm -f .env.next; die "the settings secret has no DATABASE_URL; fill it from env.example"; }
@@ -40,7 +48,11 @@ fetch_settings() {
 }
 
 registry_login() {
-  aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "${IMAGE%%/*}" > /dev/null
+  # Amazon ECR: log in with the instance role. Other registries: the caller has logged in.
+  case "${IMAGE%%/*}" in
+    *.dkr.ecr.*.amazonaws.com)
+      aws ecr get-login-password --region "$(echo "${IMAGE%%/*}" | cut -d. -f4)" | docker login --username AWS --password-stdin "${IMAGE%%/*}" > /dev/null ;;
+  esac
 }
 
 wait_healthy() {
