@@ -25,7 +25,7 @@ const app = createApp({
   publicDb,
   objectStore: createObjectStore({
     endpoint: config.OBJECT_STORAGE_ENDPOINT,
-    publicEndpoint: config.OBJECT_STORAGE_PUBLIC_ENDPOINT ?? config.OBJECT_STORAGE_ENDPOINT,
+    publicEndpoint: config.OBJECT_STORAGE_PUBLIC_ENDPOINT,
     region: config.OBJECT_STORAGE_REGION,
     accessKeyId: config.OBJECT_STORAGE_ACCESS_KEY,
     secretAccessKey: config.OBJECT_STORAGE_SECRET_KEY,

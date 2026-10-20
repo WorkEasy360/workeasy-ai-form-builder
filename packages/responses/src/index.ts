@@ -5,6 +5,7 @@
  */
 export { csvCell, csvRow, neutralizeFormula, UTF8_BOM } from "./csv.js";
 export { applyRetention, purgeDeletedResponses, purgeOne, type PurgeDeps } from "./purge.js";
+export { createLedgerShipper, LEDGER_OVERLAP_MS, type LedgerShipDeps, type LedgerShipper } from "./ledger-ship.js";
 export { EXPORT_LEASE_SECONDS, expireOldExports, processExports, runExportJob, type ExportDeps } from "./export-job.js";
 export {
   canRead,

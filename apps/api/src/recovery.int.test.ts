@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { createDb, governanceRepo, identityRepo, withTenant, type Db, type LedgerEntry } from "@workeasy/database";
 import { seedTenantFixture } from "@workeasy/database/testing";
 import { blankDefinition } from "@workeasy/form-engine";
-import { purgeDeletedResponses } from "@workeasy/responses";
+import { createLedgerShipper, purgeDeletedResponses } from "@workeasy/responses";
 import { createTenantFixture, type TenantFixture } from "@workeasy/test-fixtures";
 import type { Express } from "express";
 import { sql } from "kysely";
@@ -138,6 +138,24 @@ describe("deletion ledger replay (REC-01)", () => {
     ];
     expect(await governanceRepo.replayDeletions(owner, forged)).toEqual({ forms: 0, responses: 0 });
     expect((await submission(id)).deleted_at).toBeNull();
+  });
+
+  it("ships deletions to object storage as the worker, for installations on Aurora/RDS (OPS-03)", async () => {
+    const form = await publishedForm("Shipped");
+    const id = await respond(form.slug, "Ship my deletion");
+    expect((await consoleReq("delete", `${form.path}/submissions/${id}`).send({ reason: "Respondent asked" })).status).toBe(202);
+
+    const store = testObjectStore();
+    const prefix = `test-ledger/${randomUUID()}`;
+    const shipper = createLedgerShipper({ workerDb, store, bucket: store.exportsBucket, prefix }, new Date(Date.now() - 60_000));
+    const shipped = await shipper.run();
+    expect(shipped.entries).toBeGreaterThan(0);
+    expect(shipped.key?.startsWith(`${prefix}/`)).toBe(true);
+    const chunks: Buffer[] = [];
+    for await (const chunk of await store.read(store.exportsBucket, shipped.key!)) chunks.push(Buffer.from(chunk as Uint8Array));
+    const body = Buffer.concat(chunks).toString("utf8");
+    const entries = body.trim().split("\n").map((line) => JSON.parse(line) as LedgerEntry);
+    expect(entries).toContainEqual(expect.objectContaining({ kind: "response", id, tenant_id: a.id }));
   });
 
   it("is available only to the owner role", async () => {

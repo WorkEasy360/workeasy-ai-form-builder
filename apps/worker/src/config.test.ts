@@ -31,3 +31,19 @@ describe("worker AI settings", () => {
     expect(() => loadConfig({ ...base, AI_PROVIDER: "someone-else" })).toThrow(/AI_PROVIDER/);
   });
 });
+
+describe("worker object storage settings (OPS-03)", () => {
+  const { OBJECT_STORAGE_ENDPOINT: _endpoint, OBJECT_STORAGE_ACCESS_KEY: _key, OBJECT_STORAGE_SECRET_KEY: _secret, ...s3 } = base;
+
+  it("use Amazon S3 and the instance role when no endpoint or keys are set", () => {
+    const config = loadConfig({ ...s3, OBJECT_STORAGE_ENDPOINT: "", OBJECT_STORAGE_ACCESS_KEY: "", OBJECT_STORAGE_SECRET_KEY: "" });
+    expect(config.OBJECT_STORAGE_ENDPOINT).toBeUndefined();
+    expect(config.OBJECT_STORAGE_ACCESS_KEY).toBeUndefined();
+    expect(config.OBJECT_STORAGE_SECRET_KEY).toBeUndefined();
+  });
+
+  it("refuse a key without its secret, and the reverse", () => {
+    expect(() => loadConfig({ ...s3, OBJECT_STORAGE_ACCESS_KEY: "a" })).toThrow(/both/);
+    expect(() => loadConfig({ ...s3, OBJECT_STORAGE_SECRET_KEY: "s" })).toThrow(/both/);
+  });
+});

@@ -4,7 +4,7 @@ import { createMailer, parseSecretKey, STRICT_POLICY } from "@workeasy/integrati
 import { dispatchOutbox, runJobs, type JobDeps } from "@workeasy/jobs";
 import { createObjectStore, expireStaleUploads, scanPendingUploads, type ScanDeps } from "@workeasy/files";
 import { createLogger } from "@workeasy/observability";
-import { applyRetention, expireOldExports, processExports, purgeDeletedResponses } from "@workeasy/responses";
+import { applyRetention, createLedgerShipper, expireOldExports, processExports, purgeDeletedResponses } from "@workeasy/responses";
 import { loadConfig } from "./config.js";
 import { createHealthServer } from "./health.js";
 import { createRegistry } from "./jobs.js";
@@ -19,7 +19,7 @@ const scanDeps: ScanDeps = {
   workerDb,
   store: createObjectStore({
     endpoint: config.OBJECT_STORAGE_ENDPOINT,
-    publicEndpoint: config.OBJECT_STORAGE_PUBLIC_ENDPOINT ?? config.OBJECT_STORAGE_ENDPOINT,
+    publicEndpoint: config.OBJECT_STORAGE_PUBLIC_ENDPOINT,
     region: config.OBJECT_STORAGE_REGION,
     accessKeyId: config.OBJECT_STORAGE_ACCESS_KEY,
     secretAccessKey: config.OBJECT_STORAGE_SECRET_KEY,
@@ -53,6 +53,11 @@ const registry = createRegistry({
     log: jobDeps.log!,
   },
 });
+
+const LEDGER_INTERVAL_MS = 60_000;
+const ledgerBucket = config.DELETION_LEDGER_BUCKET;
+const ledger = ledgerBucket ? createLedgerShipper({ workerDb, store: scanDeps.store, bucket: ledgerBucket }) : undefined;
+let ledgerShippedAt = 0;
 
 const tasks: PollingTask[] = [
   {
@@ -102,6 +107,19 @@ const tasks: PollingTask[] = [
       await purgeDeletedResponses(scanDeps, 50);
     },
   },
+  ...(ledger
+    ? [
+        {
+          // Off the database, so a restored snapshot can be followed by a replay (REC-01).
+          name: "ship-deletion-ledger",
+          async run() {
+            if (Date.now() - ledgerShippedAt < LEDGER_INTERVAL_MS) return;
+            await ledger.run();
+            ledgerShippedAt = Date.now();
+          },
+        },
+      ]
+    : []),
   {
     name: "expire-uploads",
     async run() {

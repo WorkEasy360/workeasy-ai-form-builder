@@ -45,6 +45,32 @@ async function loadMigrations(dir: string): Promise<MigrationFile[]> {
 }
 
 /**
+ * PostgreSQL 18 has uuidv7(); managed services (Aurora, RDS) may run an
+ * older version. There, an equivalent app.uuidv7() is created before any
+ * migration: time-ordered (48-bit Unix milliseconds) with random bits, as in
+ * RFC 9562. Unqualified calls find pg_catalog's version first when it
+ * exists, so this never shadows the built-in one.
+ */
+async function ensureUuidv7(client: Client): Promise<void> {
+  const { rows } = await client.query<{ version: number }>("SELECT current_setting('server_version_num')::int AS version");
+  if (rows[0]!.version >= 180000) return;
+  await client.query(`
+    CREATE OR REPLACE FUNCTION ${APP_SCHEMA}.uuidv7() RETURNS uuid
+      LANGUAGE plpgsql VOLATILE PARALLEL SAFE
+      SET search_path = pg_catalog, pg_temp
+      AS $$
+      DECLARE
+        b bytea := uuid_send(gen_random_uuid());
+      BEGIN
+        b := overlay(b PLACING substring(int8send(floor(extract(epoch FROM clock_timestamp()) * 1000)::bigint) FROM 3) FROM 1 FOR 6);
+        b := set_byte(b, 6, (get_byte(b, 6) & 15) | 112);
+        b := set_byte(b, 8, (get_byte(b, 8) & 63) | 128);
+        RETURN encode(b, 'hex')::uuid;
+      END
+      $$`);
+}
+
+/**
  * Applies pending forward-only migrations, each in its own transaction.
  * Refuses to run when an applied migration was edited or removed: fix forward
  * with a new migration instead (docs/06 §9).
@@ -63,6 +89,7 @@ export async function migrate({ connectionString, migrationsDir = DEFAULT_MIGRAT
           checksum text NOT NULL,
           applied_at timestamptz NOT NULL DEFAULT now()
         )`);
+      await ensureUuidv7(client);
       const { rows } = await client.query<{ version: string; name: string; checksum: string }>(
         `SELECT version, name, checksum FROM ${APP_SCHEMA}.schema_migrations ORDER BY version`,
       );

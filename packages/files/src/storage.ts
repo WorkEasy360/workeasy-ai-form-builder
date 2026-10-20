@@ -17,13 +17,17 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
  * it only through short-lived presigned GETs for authorized readers.
  */
 export interface ObjectStoreConfig {
-  /** Where the servers reach storage. */
-  endpoint: string;
-  /** Where browsers reach storage; presigned URLs are signed for this host. */
-  publicEndpoint: string;
+  /** Where the servers reach storage; undefined means Amazon S3 in `region`. */
+  endpoint?: string | undefined;
+  /** Where browsers reach storage; presigned URLs are signed for this host. Undefined: as `endpoint`. */
+  publicEndpoint?: string | undefined;
   region: string;
-  accessKeyId: string;
-  secretAccessKey: string;
+  /**
+   * Static credentials for S3-compatible storage. Without them the AWS SDK's
+   * default chain is used: on EC2, the instance's IAM role (no stored keys).
+   */
+  accessKeyId?: string | undefined;
+  secretAccessKey?: string | undefined;
   quarantineBucket: string;
   cleanBucket: string;
   /** Generated response exports (RES-02). */
@@ -52,12 +56,12 @@ export interface ObjectStore {
   remove(bucket: string, key: string): Promise<void>;
 }
 
-function client(config: ObjectStoreConfig, endpoint: string): S3Client {
+function client(config: ObjectStoreConfig, endpoint: string | undefined): S3Client {
   return new S3Client({
-    endpoint,
     region: config.region,
-    forcePathStyle: true,
-    credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+    // Self-hosted S3-compatible storage needs path-style URLs; Amazon S3 uses its own addresses.
+    ...(endpoint ? { endpoint, forcePathStyle: true } : {}),
+    ...(config.accessKeyId && config.secretAccessKey ? { credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey } } : {}),
   });
 }
 
@@ -72,7 +76,7 @@ export function attachmentDisposition(fileName: string): string {
 
 export function createObjectStore(config: ObjectStoreConfig): ObjectStore {
   const internal = client(config, config.endpoint);
-  const browser = client(config, config.publicEndpoint);
+  const browser = client(config, config.publicEndpoint ?? config.endpoint);
   return {
     quarantineBucket: config.quarantineBucket,
     cleanBucket: config.cleanBucket,

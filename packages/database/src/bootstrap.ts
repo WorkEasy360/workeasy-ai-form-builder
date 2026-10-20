@@ -38,15 +38,24 @@ export async function bootstrapDatabase({ adminUrl, database, roleUrls }: Bootst
   const admin = new Client({ connectionString: withDatabase(adminUrl, "postgres") });
   await admin.connect();
   try {
+    // Managed services (Aurora, RDS) give an admin with CREATEROLE and CREATEDB
+    // but not SUPERUSER. Only a superuser may name the SUPERUSER, REPLICATION and
+    // BYPASSRLS attributes at all; new roles never have them anyway.
+    const isSuperuser = (await admin.query<{ s: boolean }>("SELECT rolsuper AS s FROM pg_roles WHERE rolname = current_user")).rows[0]?.s === true;
+    const restricted = isSuperuser ? "NOSUPERUSER NOREPLICATION NOBYPASSRLS " : "";
     for (const key of Object.keys(DB_ROLES) as DbRoleKey[]) {
       const { name, password } = credentialsFor(key, roleUrls[key]);
       const role = admin.escapeIdentifier(name);
       const exists = await admin.query("SELECT 1 FROM pg_roles WHERE rolname = $1", [name]);
       if (exists.rowCount === 0) await admin.query(`CREATE ROLE ${role} LOGIN`);
-      await admin.query(
-        `ALTER ROLE ${role} WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT PASSWORD ${admin.escapeLiteral(password)}`,
-      );
+      await admin.query(`ALTER ROLE ${role} WITH LOGIN ${restricted}NOCREATEDB NOCREATEROLE NOINHERIT PASSWORD ${admin.escapeLiteral(password)}`);
+      if (!isSuperuser) {
+        const bad = await admin.query("SELECT 1 FROM pg_roles WHERE rolname = $1 AND (rolsuper OR rolreplication OR rolbypassrls)", [name]);
+        if (bad.rowCount !== 0) throw new Error(`Role "${name}" has SUPERUSER, REPLICATION or BYPASSRLS; remove it as a superuser first.`);
+      }
     }
+    // A non-superuser admin may only hand the schema to the owner role as a member of it.
+    if (!isSuperuser) await admin.query(`GRANT ${admin.escapeIdentifier(DB_ROLES.owner)} TO CURRENT_USER`);
 
     const db = admin.escapeIdentifier(database);
     const dbExists = await admin.query("SELECT 1 FROM pg_database WHERE datname = $1", [database]);

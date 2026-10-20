@@ -1,6 +1,9 @@
 import { AI_PROVIDERS } from "@workeasy/ai";
 import { z } from "zod";
 
+/** An empty value (`KEY=` in .env) means unset. */
+const unsetIfEmpty = (v: unknown) => (v === "" ? undefined : v);
+
 const ConfigSchema = z
   .object({
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -16,12 +19,14 @@ const ConfigSchema = z
     /** Public origin of the respondent app: share links, QR codes and embeds point here. */
     RESPONDENT_PUBLIC_URL: z.url().default("http://localhost:3001"),
     /** S3-compatible storage for uploads (docs/06 §3). */
-    OBJECT_STORAGE_ENDPOINT: z.url(),
+    /** Unset: Amazon S3 in OBJECT_STORAGE_REGION. */
+    OBJECT_STORAGE_ENDPOINT: z.preprocess(unsetIfEmpty, z.url().optional()),
     /** Where browsers reach storage for presigned uploads and downloads; defaults to the endpoint. */
-    OBJECT_STORAGE_PUBLIC_ENDPOINT: z.url().optional(),
+    OBJECT_STORAGE_PUBLIC_ENDPOINT: z.preprocess(unsetIfEmpty, z.url().optional()),
     OBJECT_STORAGE_REGION: z.string().min(1).default("us-east-1"),
-    OBJECT_STORAGE_ACCESS_KEY: z.string().min(1),
-    OBJECT_STORAGE_SECRET_KEY: z.string().min(1),
+    /** Both or neither; neither uses the AWS default credential chain (on EC2, the instance role). */
+    OBJECT_STORAGE_ACCESS_KEY: z.preprocess(unsetIfEmpty, z.string().min(1).optional()),
+    OBJECT_STORAGE_SECRET_KEY: z.preprocess(unsetIfEmpty, z.string().min(1).optional()),
     OBJECT_STORAGE_BUCKET_QUARANTINE: z.string().min(3),
     OBJECT_STORAGE_BUCKET_CLEAN: z.string().min(3),
     OBJECT_STORAGE_BUCKET_EXPORTS: z.string().min(3),
@@ -36,6 +41,10 @@ const ConfigSchema = z
     WEBHOOK_ALLOW_PRIVATE_NETWORKS: z.stringbool().default(false),
   })
   .superRefine((config, ctx) => {
+    // Static storage keys come in pairs; with neither, the AWS default credential chain is used.
+    if (!config.OBJECT_STORAGE_ACCESS_KEY !== !config.OBJECT_STORAGE_SECRET_KEY) {
+      ctx.addIssue({ code: "custom", path: ["OBJECT_STORAGE_SECRET_KEY"], message: "set both OBJECT_STORAGE_ACCESS_KEY and OBJECT_STORAGE_SECRET_KEY, or neither" });
+    }
     if (config.NODE_ENV !== "production") return;
     // Local-only conveniences must be impossible to enable in production (docs/06 §1).
     if (config.WEBHOOK_ALLOW_PRIVATE_NETWORKS) {

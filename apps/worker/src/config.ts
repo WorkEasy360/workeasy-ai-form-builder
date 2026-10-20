@@ -14,14 +14,22 @@ const ConfigSchema = z.object({
   WORKER_JOB_CONCURRENCY: z.coerce.number().int().min(1).max(64).default(8),
   /** How long each iteration may keep draining due jobs before the other tasks get a turn. */
   WORKER_JOB_BUDGET_MS: z.coerce.number().int().min(1000).max(600_000).default(20_000),
+  /**
+   * Bucket for the deletion ledger on managed databases (Aurora/RDS), whose
+   * backups are snapshots: deletions are copied there every minute (REC-01).
+   * Unset on installations with the bundled backup service.
+   */
+  DELETION_LEDGER_BUCKET: optionalText(63),
   WORKER_MAX_ITERATION_MS: z.coerce.number().int().min(1000).max(3_600_000).default(300_000),
   /** The worker database role (docs/02 §3). */
   DATABASE_WORKER_URL: z.url(),
-  OBJECT_STORAGE_ENDPOINT: z.url(),
-  OBJECT_STORAGE_PUBLIC_ENDPOINT: z.url().optional(),
+  /** Unset: Amazon S3 in OBJECT_STORAGE_REGION. */
+  OBJECT_STORAGE_ENDPOINT: z.preprocess((v) => (v === "" ? undefined : v), z.url().optional()),
+  OBJECT_STORAGE_PUBLIC_ENDPOINT: z.preprocess((v) => (v === "" ? undefined : v), z.url().optional()),
   OBJECT_STORAGE_REGION: z.string().min(1).default("us-east-1"),
-  OBJECT_STORAGE_ACCESS_KEY: z.string().min(1),
-  OBJECT_STORAGE_SECRET_KEY: z.string().min(1),
+  /** Both or neither; neither uses the AWS default credential chain (on EC2, the instance role). */
+  OBJECT_STORAGE_ACCESS_KEY: optionalText(200),
+  OBJECT_STORAGE_SECRET_KEY: optionalText(500),
   OBJECT_STORAGE_BUCKET_QUARANTINE: z.string().min(3),
   OBJECT_STORAGE_BUCKET_CLEAN: z.string().min(3),
   OBJECT_STORAGE_BUCKET_EXPORTS: z.string().min(3),
@@ -47,6 +55,11 @@ const ConfigSchema = z.object({
   MAIL_FROM: z.string().min(3).max(200).default("Workeasy <notifications@workeasy.test>"),
   /** Links in notification email point at the console. */
   CONSOLE_PUBLIC_URL: z.url().default("http://localhost:3000"),
+}).superRefine((config, ctx) => {
+  // Static storage keys come in pairs; with neither, the AWS default credential chain is used.
+  if (!config.OBJECT_STORAGE_ACCESS_KEY !== !config.OBJECT_STORAGE_SECRET_KEY) {
+    ctx.addIssue({ code: "custom", path: ["OBJECT_STORAGE_SECRET_KEY"], message: "set both OBJECT_STORAGE_ACCESS_KEY and OBJECT_STORAGE_SECRET_KEY, or neither" });
+  }
 });
 
 export type WorkerConfig = z.infer<typeof ConfigSchema>;
