@@ -23,7 +23,9 @@ const nextConfig: NextConfig = {
   },
   async headers() {
     // The console is never framed (clickjacking), and never sends its URLs,
-    // which can hold invitation tokens, to other sites. HSTS is set by the
+    // which can hold invitation tokens, to other sites. "same-origin" rather
+    // than "no-referrer": with no-referrer, browsers send `Origin: null` on
+    // form posts (Sign out), which the API's same-origin check must refuse. HSTS is set by the
     // TLS-terminating proxy in production.
     return [
       {
@@ -32,7 +34,7 @@ const nextConfig: NextConfig = {
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Content-Security-Policy", value: "frame-ancestors 'none'" },
           { key: "X-Frame-Options", value: "DENY" },
-          { key: "Referrer-Policy", value: "no-referrer" },
+          { key: "Referrer-Policy", value: "same-origin" },
           { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), payment=()" },
         ],
       },

@@ -20,7 +20,7 @@ describe("console security headers", () => {
     expect(h["Content-Security-Policy"]).toBe("frame-ancestors 'none'");
     expect(h["X-Frame-Options"]).toBe("DENY");
     expect(h["X-Content-Type-Options"]).toBe("nosniff");
-    expect(h["Referrer-Policy"]).toBe("no-referrer");
+    expect(h["Referrer-Policy"]).toBe("same-origin");
   });
 });
 
