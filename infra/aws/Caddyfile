@@ -1,0 +1,28 @@
+# TLS for the EC2 server (OPS-03). Caddy obtains and renews certificates from
+# Let's Encrypt; ports 80 and 443 must be open to the internet. Files go
+# straight between browsers and Amazon S3, so there is no files site here.
+{
+	email {$ACME_EMAIL}
+}
+
+(common) {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+	log {
+		output stdout
+		format json
+	}
+}
+
+{$CONSOLE_DOMAIN} {
+	import common
+	reverse_proxy console:3000
+}
+
+{$FORMS_DOMAIN} {
+	import common
+	reverse_proxy respondent:3001
+}

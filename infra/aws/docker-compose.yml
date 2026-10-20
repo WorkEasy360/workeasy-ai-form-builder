@@ -1,0 +1,110 @@
+# Workeasy Forms on one AWS EC2 server (OPS-03; docs/aws-deployment.md).
+# The database is your Aurora/RDS cluster and files are in Amazon S3, so only
+# the application, the malware scanner and Caddy (HTTPS) run here. Settings
+# come from .env, which deploy.sh writes from AWS Secrets Manager.
+name: workeasy-forms-production
+
+x-app: &app
+  image: ${WORKEASY_IMAGE:?set WORKEASY_IMAGE}
+  env_file: .env
+  restart: unless-stopped
+  environment:
+    NODE_ENV: production
+    API_INTERNAL_URL: http://api:4000
+    SCANNER_HOST: scanner
+    SCANNER_PORT: "3310"
+    SESSION_COOKIE_SECURE: "true"
+    WEBHOOK_ALLOW_PRIVATE_NETWORKS: "false"
+  volumes:
+    # Amazon's certificate authorities for RDS, so database connections are verified (sslmode=verify-full).
+    - ./rds-ca.pem:/etc/ssl/rds/global-bundle.pem:ro
+  logging:
+    driver: json-file
+    options: { max-size: "20m", max-file: "5" }
+
+x-http-check: &http-check
+  interval: 15s
+  timeout: 5s
+  retries: 5
+  start_period: 30s
+
+services:
+  caddy:
+    image: caddy:2.10.2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      CONSOLE_DOMAIN: ${CONSOLE_DOMAIN:?set CONSOLE_DOMAIN}
+      FORMS_DOMAIN: ${FORMS_DOMAIN:?set FORMS_DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on: [console, respondent]
+
+  # One-shot, before each release: creates the database and roles on the first
+  # deploy (when DATABASE_ADMIN_URL is set), then applies migrations.
+  migrate:
+    <<: *app
+    profiles: ["migrate"]
+    restart: "no"
+    working_dir: /app/packages/database
+    command: ["./node_modules/.bin/tsx", "src/cli.ts", "deploy"]
+
+  api:
+    <<: *app
+    command: ["node", "apps/api/dist/server.js"]
+    healthcheck:
+      <<: *http-check
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/health/ready').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+
+  worker:
+    <<: *app
+    command: ["node", "apps/worker/dist/main.js"]
+    healthcheck:
+      <<: *http-check
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4001/health/live').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+    depends_on:
+      scanner: { condition: service_started }
+
+  console:
+    <<: *app
+    working_dir: /app/apps/console
+    command: ["./node_modules/.bin/next", "start", "--port", "3000"]
+    healthcheck:
+      <<: *http-check
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+    depends_on: [api]
+
+  respondent:
+    <<: *app
+    working_dir: /app/apps/respondent
+    command: ["./node_modules/.bin/next", "start", "--port", "3001"]
+    healthcheck:
+      <<: *http-check
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/healthz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+    depends_on: [api]
+
+  # Malware scanner for uploads; signatures update automatically.
+  scanner:
+    image: clamav/clamav:1.5.1
+    restart: unless-stopped
+    environment:
+      CLAMAV_NO_MILTERD: "true"
+    volumes:
+      - clamav-data:/var/lib/clamav
+    healthcheck:
+      test: ["CMD-SHELL", "echo PING | nc -w 2 127.0.0.1 3310 | grep -q PONG"]
+      interval: 15s
+      timeout: 5s
+      retries: 30
+      start_period: 180s
+
+volumes:
+  clamav-data:
+  caddy-data:
+  caddy-config:

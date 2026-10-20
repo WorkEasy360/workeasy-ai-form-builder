@@ -97,6 +97,13 @@ const commands: Record<string, (env: Env) => Promise<void>> = {
     await runBootstrap(env);
     await runMigrate(env);
   },
+  // Deploys: provisions roles and the database when an admin URL is given
+  // (first deploy, or a password change), otherwise only migrates as the owner.
+  deploy: async (env) => {
+    if (env.DATABASE_ADMIN_URL) await runBootstrap(env);
+    else console.log("deploy: no DATABASE_ADMIN_URL; skipping role and database setup");
+    await runMigrate(env);
+  },
   seed: runSeed,
 };
 

@@ -1,0 +1,124 @@
+# Deploys to AWS (OPS-03; docs/aws-deployment.md). Every push to main whose CI
+# run succeeds is built into an image, pushed to Amazon ECR, and deployed on
+# the EC2 server tagged workeasy-forms=production through AWS Systems Manager.
+# Run it by hand (Actions -> Deploy to AWS -> Run workflow) to redeploy main.
+#
+# GitHub signs in to AWS with OpenID Connect: no AWS keys are stored here.
+# Repository variables (Settings -> Secrets and variables -> Actions -> Variables):
+#   AWS_REGION              e.g. eu-west-1
+#   AWS_DEPLOY_ROLE_ARN     DeployRoleArn output of infra/aws/cloudformation.yml
+#   AWS_ECR_REPOSITORY      ImageRepository output
+#   AWS_RELEASES_BUCKET     ReleasesBucketName output
+#   AWS_SETTINGS_SECRET_ID  SettingsSecretArn output
+# Until AWS_DEPLOY_ROLE_ARN is set, this workflow does nothing.
+name: Deploy to AWS
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-aws-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build and deploy to production
+    if: >-
+      vars.AWS_DEPLOY_ROLE_ARN != '' && github.ref == 'refs/heads/main' &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      REPOSITORY: ${{ vars.AWS_ECR_REPOSITORY }}
+      RELEASES_BUCKET: ${{ vars.AWS_RELEASES_BUCKET }}
+      SETTINGS_SECRET_ID: ${{ vars.AWS_SETTINGS_SECRET_ID }}
+      COMMIT: ${{ github.event.workflow_run.head_sha || github.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Sign in to AWS (OpenID Connect)
+        env:
+          ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+        run: |
+          set -euo pipefail
+          token=$(curl -fsS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r .value)
+          creds=$(aws sts assume-role-with-web-identity --role-arn "$ROLE_ARN" --role-session-name "github-$GITHUB_RUN_ID" \
+            --web-identity-token "$token" --duration-seconds 3600 --query Credentials --output json)
+          for pair in "AWS_ACCESS_KEY_ID AccessKeyId" "AWS_SECRET_ACCESS_KEY SecretAccessKey" "AWS_SESSION_TOKEN SessionToken"; do
+            set -- $pair
+            value=$(echo "$creds" | jq -r ".$2")
+            echo "::add-mask::$value"
+            echo "$1=$value" >> "$GITHUB_ENV"
+          done
+
+      - name: Build and push the image (skipped if this commit is already built)
+        run: |
+          set -euo pipefail
+          image="$REPOSITORY:$COMMIT"
+          echo "IMAGE=$image" >> "$GITHUB_ENV"
+          aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "${REPOSITORY%%/*}"
+          if aws ecr describe-images --region "$AWS_REGION" --repository-name "${REPOSITORY#*/}" --image-ids imageTag="$COMMIT" > /dev/null 2>&1; then
+            echo "$image already exists"
+          else
+            docker build --pull -t "$image" .
+            docker push "$image"
+          fi
+
+      - name: Upload the server files for this release
+        run: |
+          set -euo pipefail
+          tar -czf release.tgz -C infra/aws docker-compose.yml Caddyfile deploy.sh
+          aws s3 cp release.tgz "s3://$RELEASES_BUCKET/releases/$COMMIT.tgz" --region "$AWS_REGION" --only-show-errors
+
+      - name: Deploy on the server (AWS Systems Manager)
+        run: |
+          set -euo pipefail
+          params=$(jq -n --arg bucket "$RELEASES_BUCKET" --arg commit "$COMMIT" --arg image "$IMAGE" --arg region "$AWS_REGION" --arg secret "$SETTINGS_SECRET_ID" '{
+            commands: [
+              "set -e",
+              "mkdir -p /opt/workeasy-forms && cd /opt/workeasy-forms",
+              "aws s3 cp \"s3://\($bucket)/releases/\($commit).tgz\" release.tgz --region \($region) --only-show-errors",
+              "tar -xzf release.tgz && rm release.tgz && chmod +x deploy.sh",
+              "AWS_REGION=\($region) SETTINGS_SECRET_ID=\"\($secret)\" ./deploy.sh \"\($image)\""
+            ],
+            executionTimeout: ["1800"]
+          }')
+          command_id=$(aws ssm send-command --region "$AWS_REGION" --document-name AWS-RunShellScript \
+            --targets "Key=tag:workeasy-forms,Values=production" --comment "Deploy ${COMMIT:0:12}" \
+            --timeout-seconds 600 --parameters "$params" --query Command.CommandId --output text)
+          echo "Systems Manager command $command_id"
+
+          # Follow it until every targeted server has finished.
+          for i in $(seq 1 120); do
+            sleep 15
+            statuses=$(aws ssm list-command-invocations --region "$AWS_REGION" --command-id "$command_id" --query 'CommandInvocations[].Status' --output text)
+            [ -z "$statuses" ] && continue
+            echo "status: $statuses"
+            echo "$statuses" | grep -qE 'Pending|InProgress|Delayed' || break
+          done
+          instances=$(aws ssm list-command-invocations --region "$AWS_REGION" --command-id "$command_id" --query 'CommandInvocations[].InstanceId' --output text)
+          [ -n "$instances" ] || { echo "No server is tagged workeasy-forms=production, or its Systems Manager agent is offline."; exit 1; }
+          failed=0
+          for instance in $instances; do
+            result=$(aws ssm get-command-invocation --region "$AWS_REGION" --command-id "$command_id" --instance-id "$instance" --output json)
+            echo "--- $instance: $(echo "$result" | jq -r .Status)"
+            echo "$result" | jq -r .StandardOutputContent
+            echo "$result" | jq -r .StandardErrorContent >&2
+            [ "$(echo "$result" | jq -r .Status)" = "Success" ] || failed=1
+          done
+          exit $failed

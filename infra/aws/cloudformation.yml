@@ -1,0 +1,277 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  Workeasy Forms on AWS (OPS-03): image repository, private S3 buckets, the EC2
+  instance role, and the role GitHub Actions deploys with (OpenID Connect, no
+  stored keys). The EC2 server and the Aurora/RDS database are yours; see
+  docs/aws-deployment.md.
+
+Parameters:
+  Name:
+    Type: String
+    Default: workeasy-forms
+    AllowedPattern: "^[a-z][a-z0-9-]{2,30}$"
+    Description: Prefix for every resource; bucket names add the account ID and region.
+  GitHubRepository:
+    Type: String
+    AllowedPattern: "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+    Description: owner/name of the GitHub repository allowed to deploy.
+  DeployBranch:
+    Type: String
+    Default: main
+    Description: Only workflows running on this branch may deploy.
+  FormsOrigin:
+    Type: String
+    AllowedPattern: "^https://[a-z0-9.-]+$"
+    Description: The public forms address, e.g. https://forms.example.com (browsers upload files from there).
+  CreateGitHubOidcProvider:
+    Type: String
+    AllowedValues: ["true", "false"]
+    Default: "true"
+    Description: "false if this AWS account already has the token.actions.githubusercontent.com identity provider."
+
+Conditions:
+  CreateOidc: !Equals [!Ref CreateGitHubOidcProvider, "true"]
+
+Resources:
+  # --- Image repository -------------------------------------------------------
+  Repository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Ref Name
+      ImageTagMutability: IMMUTABLE
+      ImageScanningConfiguration: { ScanOnPush: true }
+      EncryptionConfiguration: { EncryptionType: AES256 }
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {"rules":[{"rulePriority":1,"description":"Keep the last 30 releases","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":30},"action":{"type":"expire"}}]}
+
+  # --- Buckets: private, encrypted, TLS only ---------------------------------
+  QuarantineBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${Name}-quarantine-${AWS::AccountId}-${AWS::Region}"
+      PublicAccessBlockConfiguration: { BlockPublicAcls: true, BlockPublicPolicy: true, IgnorePublicAcls: true, RestrictPublicBuckets: true }
+      BucketEncryption: { ServerSideEncryptionConfiguration: [{ ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 } }] }
+      OwnershipControls: { Rules: [{ ObjectOwnership: BucketOwnerEnforced }] }
+      # Respondents' browsers upload here with presigned PUTs; nothing stays longer than a scan takes.
+      CorsConfiguration:
+        CorsRules:
+          - AllowedOrigins: [!Ref FormsOrigin]
+            AllowedMethods: [PUT]
+            AllowedHeaders: ["*"]
+            MaxAge: 600
+      LifecycleConfiguration:
+        Rules:
+          - { Id: expire-unscanned, Status: Enabled, ExpirationInDays: 2, AbortIncompleteMultipartUpload: { DaysAfterInitiation: 1 } }
+
+  FilesBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${Name}-files-${AWS::AccountId}-${AWS::Region}"
+      PublicAccessBlockConfiguration: { BlockPublicAcls: true, BlockPublicPolicy: true, IgnorePublicAcls: true, RestrictPublicBuckets: true }
+      BucketEncryption: { ServerSideEncryptionConfiguration: [{ ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 } }] }
+      OwnershipControls: { Rules: [{ ObjectOwnership: BucketOwnerEnforced }] }
+      # Versioning keeps files recoverable for 14 days; after that a deleted response's files are gone for good.
+      VersioningConfiguration: { Status: Enabled }
+      LifecycleConfiguration:
+        Rules:
+          - { Id: purge-deleted-versions, Status: Enabled, NoncurrentVersionExpiration: { NoncurrentDays: 14 }, ExpiredObjectDeleteMarker: true }
+
+  ExportsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${Name}-exports-${AWS::AccountId}-${AWS::Region}"
+      PublicAccessBlockConfiguration: { BlockPublicAcls: true, BlockPublicPolicy: true, IgnorePublicAcls: true, RestrictPublicBuckets: true }
+      BucketEncryption: { ServerSideEncryptionConfiguration: [{ ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 } }] }
+      OwnershipControls: { Rules: [{ ObjectOwnership: BucketOwnerEnforced }] }
+      LifecycleConfiguration:
+        Rules:
+          - { Id: expire-exports, Status: Enabled, ExpirationInDays: 3 }
+
+  LedgerBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub "${Name}-deletion-ledger-${AWS::AccountId}-${AWS::Region}"
+      PublicAccessBlockConfiguration: { BlockPublicAcls: true, BlockPublicPolicy: true, IgnorePublicAcls: true, RestrictPublicBuckets: true }
+      BucketEncryption: { ServerSideEncryptionConfiguration: [{ ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 } }] }
+      OwnershipControls: { Rules: [{ ObjectOwnership: BucketOwnerEnforced }] }
+      VersioningConfiguration: { Status: Enabled }
+      # Must outlive the oldest database backup you might restore.
+      LifecycleConfiguration:
+        Rules:
+          - { Id: keep-400-days, Status: Enabled, ExpirationInDays: 400, NoncurrentVersionExpiration: { NoncurrentDays: 400 } }
+
+  ReleasesBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${Name}-releases-${AWS::AccountId}-${AWS::Region}"
+      PublicAccessBlockConfiguration: { BlockPublicAcls: true, BlockPublicPolicy: true, IgnorePublicAcls: true, RestrictPublicBuckets: true }
+      BucketEncryption: { ServerSideEncryptionConfiguration: [{ ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 } }] }
+      OwnershipControls: { Rules: [{ ObjectOwnership: BucketOwnerEnforced }] }
+      LifecycleConfiguration:
+        Rules:
+          - { Id: expire-old-releases, Status: Enabled, ExpirationInDays: 90 }
+
+  QuarantineTlsOnly:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref QuarantineBucket
+      PolicyDocument:
+        Statement:
+          - { Sid: TlsOnly, Effect: Deny, Principal: "*", Action: "s3:*", Resource: [!GetAtt QuarantineBucket.Arn, !Sub "${QuarantineBucket.Arn}/*"], Condition: { Bool: { "aws:SecureTransport": "false" } } }
+  FilesTlsOnly:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref FilesBucket
+      PolicyDocument:
+        Statement:
+          - { Sid: TlsOnly, Effect: Deny, Principal: "*", Action: "s3:*", Resource: [!GetAtt FilesBucket.Arn, !Sub "${FilesBucket.Arn}/*"], Condition: { Bool: { "aws:SecureTransport": "false" } } }
+  ExportsTlsOnly:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ExportsBucket
+      PolicyDocument:
+        Statement:
+          - { Sid: TlsOnly, Effect: Deny, Principal: "*", Action: "s3:*", Resource: [!GetAtt ExportsBucket.Arn, !Sub "${ExportsBucket.Arn}/*"], Condition: { Bool: { "aws:SecureTransport": "false" } } }
+  LedgerTlsOnly:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref LedgerBucket
+      PolicyDocument:
+        Statement:
+          - { Sid: TlsOnly, Effect: Deny, Principal: "*", Action: "s3:*", Resource: [!GetAtt LedgerBucket.Arn, !Sub "${LedgerBucket.Arn}/*"], Condition: { Bool: { "aws:SecureTransport": "false" } } }
+  ReleasesTlsOnly:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ReleasesBucket
+      PolicyDocument:
+        Statement:
+          - { Sid: TlsOnly, Effect: Deny, Principal: "*", Action: "s3:*", Resource: [!GetAtt ReleasesBucket.Arn, !Sub "${ReleasesBucket.Arn}/*"], Condition: { Bool: { "aws:SecureTransport": "false" } } }
+
+  # --- Settings and secrets (the server's .env) ------------------------------
+  AppSettings:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub "${Name}/production/env"
+      Description: The complete .env for the EC2 server; deploy.sh writes it to disk with mode 600. Fill it from infra/aws/env.example.
+      SecretString: "# Replace with the contents of your .env (see infra/aws/env.example)"
+
+  # --- The EC2 server's role --------------------------------------------------
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${Name}-instance"
+      AssumeRolePolicyDocument:
+        Statement:
+          - { Effect: Allow, Principal: { Service: ec2.amazonaws.com }, Action: "sts:AssumeRole" }
+      # Lets GitHub Actions run deploys through Systems Manager: no SSH, no open port 22.
+      ManagedPolicyArns: ["arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"]
+      Policies:
+        - PolicyName: app
+          PolicyDocument:
+            Statement:
+              - Sid: Files
+                Effect: Allow
+                Action: ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
+                Resource: [!Sub "${QuarantineBucket.Arn}/*", !Sub "${FilesBucket.Arn}/*", !Sub "${ExportsBucket.Arn}/*"]
+              - Sid: LedgerWriteOnly
+                Effect: Allow
+                Action: ["s3:PutObject"]
+                Resource: [!Sub "${LedgerBucket.Arn}/*"]
+              - Sid: ReadReleases
+                Effect: Allow
+                Action: ["s3:GetObject"]
+                Resource: [!Sub "${ReleasesBucket.Arn}/*"]
+              - Sid: PullImages
+                Effect: Allow
+                Action: ["ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer", "ecr:BatchCheckLayerAvailability"]
+                Resource: [!GetAtt Repository.Arn]
+              - Sid: EcrLogin
+                Effect: Allow
+                Action: ["ecr:GetAuthorizationToken"]
+                Resource: "*"
+              - Sid: ReadSettings
+                Effect: Allow
+                Action: ["secretsmanager:GetSecretValue"]
+                Resource: [!Ref AppSettings]
+
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub "${Name}-instance"
+      Roles: [!Ref InstanceRole]
+
+  # --- GitHub Actions' deploy role (OpenID Connect) --------------------------
+  GitHubOidcProvider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: CreateOidc
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList: [sts.amazonaws.com]
+
+  DeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${Name}-github-deploy"
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal: { Federated: !Sub "arn:aws:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com" }
+            Action: "sts:AssumeRoleWithWebIdentity"
+            Condition:
+              StringEquals:
+                "token.actions.githubusercontent.com:aud": sts.amazonaws.com
+                "token.actions.githubusercontent.com:sub": !Sub "repo:${GitHubRepository}:ref:refs/heads/${DeployBranch}"
+      Policies:
+        - PolicyName: deploy
+          PolicyDocument:
+            Statement:
+              - Sid: PushImages
+                Effect: Allow
+                Action: ["ecr:BatchCheckLayerAvailability", "ecr:InitiateLayerUpload", "ecr:UploadLayerPart", "ecr:CompleteLayerUpload", "ecr:PutImage", "ecr:BatchGetImage", "ecr:DescribeImages"]
+                Resource: [!GetAtt Repository.Arn]
+              - Sid: EcrLogin
+                Effect: Allow
+                Action: ["ecr:GetAuthorizationToken"]
+                Resource: "*"
+              - Sid: UploadRelease
+                Effect: Allow
+                Action: ["s3:PutObject"]
+                Resource: [!Sub "${ReleasesBucket.Arn}/*"]
+              - Sid: RunDeployOnTaggedServer
+                Effect: Allow
+                Action: ["ssm:SendCommand"]
+                Resource: ["arn:aws:ssm:*::document/AWS-RunShellScript"]
+              - Sid: RunDeployOnTaggedServerInstances
+                Effect: Allow
+                Action: ["ssm:SendCommand"]
+                Resource: [!Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:instance/*"]
+                Condition:
+                  StringEquals: { "ssm:resourceTag/workeasy-forms": production }
+              - Sid: FollowDeploy
+                Effect: Allow
+                Action: ["ssm:GetCommandInvocation", "ssm:ListCommandInvocations", "ec2:DescribeInstances"]
+                Resource: "*"
+
+Outputs:
+  ImageRepository:
+    Value: !GetAtt Repository.RepositoryUri
+  QuarantineBucketName:
+    Value: !Ref QuarantineBucket
+  FilesBucketName:
+    Value: !Ref FilesBucket
+  ExportsBucketName:
+    Value: !Ref ExportsBucket
+  LedgerBucketName:
+    Value: !Ref LedgerBucket
+  ReleasesBucketName:
+    Value: !Ref ReleasesBucket
+  InstanceProfileName:
+    Value: !Ref InstanceProfile
+  DeployRoleArn:
+    Value: !GetAtt DeployRole.Arn
+  SettingsSecretArn:
+    Value: !Ref AppSettings

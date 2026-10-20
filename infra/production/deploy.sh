@@ -57,7 +57,7 @@ case "${1:-}" in
     compose ps
     ;;
   --rollback)
-    previous=$(grep ' deployed ' "$RELEASES" 2>/dev/null | tail -n 2 | head -n 1 | awk '{print $3}')
+    previous=$({ grep ' deployed ' "$RELEASES" 2>/dev/null || true; } | tail -n 2 | head -n 1 | awk '{print $3}')
     [ -n "$previous" ] && [ "$previous" != "$(current_image)" ] || die "no earlier release to roll back to"
     echo "rolling back to $previous"
     set_image "$previous"

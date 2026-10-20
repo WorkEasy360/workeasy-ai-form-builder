@@ -36,7 +36,7 @@ Machine-readable starting contracts:
 |---|---|
 | People building forms | **Help** in the console sidebar |
 | Developers | [Local development](docs/local-development.md), [API guide](docs/api.md) |
-| Operators | [Deployment](docs/deployment.md), [Operations runbook](docs/operations.md), [Backup and restore](docs/backup-and-restore.md) |
+| Operators | [Deploying on AWS](docs/aws-deployment.md) (production), [Deployment on any VM](docs/deployment.md), [Operations runbook](docs/operations.md), [Backup and restore](docs/backup-and-restore.md) |
 | Release readiness | [Security review](docs/security-review.md), [Accessibility](docs/accessibility.md), [Performance](docs/performance.md) |
 
 ## Recommended deployment shape

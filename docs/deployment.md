@@ -1,5 +1,7 @@
 # Deployment (OPS-01)
 
+> **Production runs on AWS** (EC2, Aurora/RDS, S3, SES): see [aws-deployment.md](aws-deployment.md). This page covers the self-contained stack for any Linux VM, with its own database and storage.
+
 Staging and production each run on one Linux VM with Docker Compose. Every release is a single image, `ghcr.io/<owner>/workeasy-forms:<commit>`, built once and promoted unchanged from staging to production.
 
 ```
