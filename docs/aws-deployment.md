@@ -32,7 +32,9 @@ The app needs PostgreSQL 13 or later. On versions before 18 it adds its own `uui
 
 ### 1. Create the AWS resources
 
-In CloudFormation, create a stack from [`infra/aws/cloudformation.yml`](../infra/aws/cloudformation.yml) in the region of your database. Parameters:
+**By hand in the console:** follow [aws-manual-setup.md](aws-manual-setup.md) (about 15 minutes), then continue with step 2.
+
+**Or with CloudFormation** (optional), create a stack from [`infra/aws/cloudformation.yml`](../infra/aws/cloudformation.yml) in the region of your database. Parameters:
 
 | Parameter | Value |
 |---|---|
@@ -69,11 +71,13 @@ Create A records for your two addresses (for example `forms-admin.example.com` f
 1. Copy [`infra/aws/env.example`](../infra/aws/env.example) and fill it in: domains, cluster endpoint, bucket names (stack outputs), your identity provider, SES SMTP credentials and region.
 2. Run `infra/aws/new-secrets.sh` for the four database passwords, `SESSION_SECRET` and `INTEGRATION_SECRET_KEY`.
 3. For the first deploy, set `DATABASE_ADMIN_URL` to your cluster's master user. The first deploy creates the `workeasy_forms` database and the four roles with it. Without it, a DBA can create them with the same names and passwords instead.
-4. Paste the whole file as the value of the secret in the stack's `SettingsSecretArn` (Secrets Manager → Retrieve secret value → Edit → Plaintext). **Never commit it or send it in chat.**
+4. Paste the whole file as the value of the secret `workeasy-forms/production/env` (Secrets Manager → Retrieve secret value → Edit → Plaintext). **Never commit it or send it in chat.**
 
 ### 6. GitHub
 
 Settings → Secrets and variables → Actions → **Variables** (these are not secret):
+
+(Set up by hand? The values are in step 7 of [aws-manual-setup.md](aws-manual-setup.md); "stack output" below means the same value.)
 
 | Variable | Value |
 |---|---|

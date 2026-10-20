@@ -1,0 +1,8 @@
+[
+  {
+    "AllowedOrigins": ["https://FORMS_DOMAIN"],
+    "AllowedMethods": ["PUT"],
+    "AllowedHeaders": ["*"],
+    "MaxAgeSeconds": 600
+  }
+]
