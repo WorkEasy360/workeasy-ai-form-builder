@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { CreateOrganization } from "./create-organization";
 
 interface Organization {
   id: string;
@@ -67,7 +68,7 @@ export function SessionPanel({ signInFailed }: { signInFailed: boolean }) {
         <p style={{ margin: 0, color: "var(--we-color-textMuted)" }}>Use your Workeasy account to build forms, share them and review responses.</p>
         <p style={{ margin: 0 }}>
           <a href="/auth/login" className="c-btn c-btn-primary">
-            Sign in with Workeasy
+            Sign in or sign up
           </a>
         </p>
       </div>
@@ -80,14 +81,11 @@ export function SessionPanel({ signInFailed }: { signInFailed: boolean }) {
       <p style={{ margin: 0 }}>
         Signed in as <strong>{me.user.displayName ?? "your account"}</strong>.
       </p>
-      <h2 style={{ fontSize: 20, margin: 0 }}>Choose an organization</h2>
       {me.organizations.length === 0 ? (
-        <div className="c-empty">
-          <h2>You&apos;re not in an organization yet</h2>
-          <p>Ask an organization owner to add you.</p>
-        </div>
+        <CreateOrganization first />
       ) : (
         <div style={{ display: "grid", gap: 8 }}>
+          <h2 style={{ fontSize: 20, margin: 0 }}>Choose an organization</h2>
           {me.organizations.map((org) => (
             <a key={org.id} href={`/o/${org.id}/forms`} className="c-card c-choice" style={{ textDecoration: "none" }}>
               <h3>{org.name}</h3>

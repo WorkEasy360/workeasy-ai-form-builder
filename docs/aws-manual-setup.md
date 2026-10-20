@@ -41,10 +41,10 @@ For **every** bucket keep the defaults: *ACLs disabled*, **Block all public acce
 
 1. Trusted entity: **AWS service** → Use case **EC2** → Next.
 2. Permissions: optional but handy, tick **`AmazonSSMManagedInstanceCore`**: it lets you open a shell from the console (Session Manager) without SSH. → Next.
-3. Role name: **`workeasy-forms-instance`** → Create role.
+3. Role name: **`instanceRole`** → Create role.
 4. Open the role → **Add permissions → Create inline policy** → **JSON** → paste [`instance-policy.json`](../infra/aws/iam/instance-policy.json) with the placeholders replaced → Policy name `workeasy-forms-app` → Create.
 
-It lets the server use the four buckets and read the settings secret, nothing else. Attach it to the server: **EC2 → Instances → your instance → Actions → Security → Modify IAM role** → `workeasy-forms-instance` → Update IAM role.
+It lets the server use the four buckets and read the settings secret, nothing else. Attach it to the server: **EC2 → Instances → your instance → Actions → Security → Modify IAM role** → `instanceRole` → Update IAM role.
 
 ## What goes where
 

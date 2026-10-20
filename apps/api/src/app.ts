@@ -25,6 +25,8 @@ export interface AppSettings {
   secureCookies: boolean;
   /** Whether AI generation is offered (a worker with a provider runs it). Manual editing never depends on it. */
   aiEnabled: boolean;
+  /** Recorded on organizations created by sign-up; defaults to "default". */
+  homeRegion?: string;
   /** Encrypts webhook signing secrets before they are stored (AUT-01). */
   integrationSecretKey: Buffer;
   /** Which webhook URLs may be saved; the worker checks again before every delivery. */

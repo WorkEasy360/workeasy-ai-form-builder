@@ -15,6 +15,8 @@ import {
   FormListQuerySchema,
   FormListResponseSchema,
   MeResponseSchema,
+  CreateOrganizationBodySchema,
+  OrganizationCreatedResponseSchema,
   ProblemSchema,
   PublicAcceptanceResponseSchema,
   PublicFormResponseSchema,
@@ -191,6 +193,21 @@ export function buildOpenApiDocument(): JsonSchema {
           summary: "Signed-in user, active memberships and organization permissions",
           security: [{ consoleSession: [] }],
           responses: { "200": json("Current user", MeResponseSchema), "401": unauthenticated },
+        },
+      },
+      "/api/v1/organizations": {
+        post: {
+          operationId: "createOrganization",
+          summary: "Create an organization owned by the caller (self-serve sign-up; at most 5 owned)",
+          security: [{ consoleSession: [] }],
+          requestBody: { required: true, content: { "application/json": { schema: schemaOf(CreateOrganizationBodySchema, "input") } } },
+          responses: {
+            "201": json("Organization created", OrganizationCreatedResponseSchema),
+            "401": unauthenticated,
+            "403": crossOrigin,
+            "409": problem("ORGANIZATION_LIMIT: the caller already owns 5 organizations"),
+            "422": problem("VALIDATION_FAILED"),
+          },
         },
       },
       "/api/v1/form-templates": {

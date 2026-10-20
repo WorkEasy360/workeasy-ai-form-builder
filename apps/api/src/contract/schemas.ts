@@ -99,6 +99,11 @@ export const CreateFormBodySchema = z.object({
   template: z.enum(TEMPLATE_IDS).optional(),
 });
 
+/** Self-serve sign-up: creates an organization owned by the caller. */
+export const CreateOrganizationBodySchema = z.object({ name: z.string().trim().min(1).max(200) });
+export const OrganizationCreatedResponseSchema = z.object({ id: Uuid, name: z.string() });
+export type OrganizationCreatedResponse = z.infer<typeof OrganizationCreatedResponseSchema>;
+
 export const DuplicateFormBodySchema = z.object({ name: FormName });
 
 export const FormResponseSchema = z.object({

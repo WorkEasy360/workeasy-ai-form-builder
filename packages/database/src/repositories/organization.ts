@@ -416,3 +416,17 @@ export async function countResponses(trx: Trx, formId: string): Promise<number> 
     .executeTakeFirstOrThrow();
   return Number(row.n);
 }
+
+export interface NewOrganization {
+  /** The new tenant's id; the transaction must already be scoped to it. */
+  tenantId: string;
+  name: string;
+  homeRegion: string;
+  ownerId: string;
+}
+
+/** Self-serve sign-up: a new organization with its creator as the only owner. */
+export async function createOrganization(trx: Trx, input: NewOrganization): Promise<void> {
+  await trx.insertInto("tenants").values({ id: input.tenantId, name: input.name, home_region: input.homeRegion }).execute();
+  await trx.insertInto("memberships").values({ tenant_id: input.tenantId, user_id: input.ownerId, role: "owner" }).execute();
+}

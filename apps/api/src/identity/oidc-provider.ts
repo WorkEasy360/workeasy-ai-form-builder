@@ -43,7 +43,7 @@ export function createOidcIdentityProvider(options: OidcProviderOptions): Identi
       const nonce = oidc.randomNonce();
       const authorizationUrl = oidc.buildAuthorizationUrl(config, {
         redirect_uri: options.redirectUri,
-        scope: "openid profile",
+        scope: "openid profile email",
         code_challenge: await oidc.calculatePKCECodeChallenge(codeVerifier),
         code_challenge_method: "S256",
         state,
@@ -62,7 +62,8 @@ export function createOidcIdentityProvider(options: OidcProviderOptions): Identi
       });
       const claims = tokens.claims();
       if (!claims) throw new Error("The identity provider returned no ID token.");
-      const name = typeof claims.name === "string" ? claims.name : undefined;
+      // Providers with email sign-up (e.g. Amazon Cognito) often have no name; show the address instead.
+      const name = typeof claims.name === "string" ? claims.name : typeof claims.email === "string" ? claims.email.slice(0, 200) : undefined;
       return { issuer: claims.iss, subject: claims.sub, ...(name ? { displayName: name } : {}) };
     },
   };

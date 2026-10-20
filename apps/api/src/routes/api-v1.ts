@@ -77,6 +77,7 @@ import {
   RetentionBodySchema,
   ResponseListQuerySchema,
   CreateFormBodySchema,
+  CreateOrganizationBodySchema,
   IDEMPOTENCY_KEY_PATTERN,
   DuplicateFormBodySchema,
   FormGrantsBodySchema,
@@ -116,6 +117,7 @@ import {
   type FormResponse,
   type FormSummaryBody,
   type MeResponse,
+  type OrganizationCreatedResponse,
   type PublishResponse,
   type SaveDraftResponse,
   type ShareResponse,
@@ -393,6 +395,34 @@ export function apiV1Router({ db, settings, objectStore }: AppDependencies): Rou
       })),
     };
     res.json(body);
+  });
+
+  /** Organizations one user may own; sign-up is open, so this bounds what one account can create. */
+  const MAX_OWNED_ORGANIZATIONS = 5;
+
+  router.post("/organizations", async (req, res) => {
+    const body = CreateOrganizationBodySchema.safeParse(req.body);
+    if (!body.success) {
+      problems.validation(res, issuesToErrors(body.error));
+      return;
+    }
+    const userId = sessionOf(res).userId;
+    const profile = await identityRepo.getUserProfile(db, userId);
+    if (!profile) {
+      problems.unauthenticated(res);
+      return;
+    }
+    if (profile.memberships.filter((m) => m.role === "owner").length >= MAX_OWNED_ORGANIZATIONS) {
+      sendProblem(res, 409, "ORGANIZATION_LIMIT", `You can own at most ${MAX_OWNED_ORGANIZATIONS} organizations`);
+      return;
+    }
+    const tenantId = randomUUID();
+    await withContext(db, { tenantId, userId }, async (trx) => {
+      await orgRepo.createOrganization(trx, { tenantId, name: body.data.name, homeRegion: settings.homeRegion ?? "default", ownerId: userId });
+      await audit(trx, res, tenantId, "organization.created", "organization", tenantId, {});
+    });
+    const organization: OrganizationCreatedResponse = { id: tenantId, name: body.data.name };
+    res.status(201).location(`/api/v1/organizations/${tenantId}`).json(organization);
   });
 
   router.get("/form-templates", (_req, res) => {

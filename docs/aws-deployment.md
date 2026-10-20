@@ -43,7 +43,7 @@ Follow [aws-manual-setup.md](aws-manual-setup.md) (about 10 minutes), in `ap-sou
 
 Already launched, with Elastic IP `54.255.105.162`. Check that it has:
 
-- **IAM instance profile:** `workeasy-forms-instance` (Actions → Security → Modify IAM role).
+- **IAM instance profile:** `instanceRole` (Actions → Security → Modify IAM role).
 - **Security group, inbound:** HTTP 80 and HTTPS 443 from `0.0.0.0/0` (Let's Encrypt and visitors), SSH 22 for GitHub Actions' deploys.
 - **Docker and the AWS CLI:** the server runs **Ubuntu**: copy [`infra/aws/ec2-setup-ubuntu.sh`](../infra/aws/ec2-setup-ubuntu.sh) to it and run it once with `sudo bash ec2-setup-ubuntu.sh`. (On Amazon Linux 2023, use [`ec2-user-data.sh`](../infra/aws/ec2-user-data.sh) instead.)
 - **Size:** `t3.large` or larger (the malware scanner needs about 1.5 GB of memory); 30 GB disk.
@@ -58,6 +58,22 @@ In the RDS console, `projectmodule-test` → Connectivity & security:
 ### 4. DNS
 
 Two A records pointing at `54.255.105.162`, for example `forms-admin.example.com` (console) and `forms.example.com` (public forms). With Cloudflare, set them to **DNS only**. Caddy gets HTTPS certificates on the first deploy.
+
+**No domain yet?** Use `forms-admin.54-255-105-162.sslip.io` (console) and `forms.54-255-105-162.sslip.io` (forms): sslip.io resolves them to the IP inside the name, and Caddy gets real certificates for them. Switching to your domain later only changes the settings (and the Cognito callback URLs).
+
+### 4b. Sign-up with email and password (Amazon Cognito)
+
+The app signs people in with OpenID Connect; Amazon Cognito provides email and password sign-up on top of it. New users then create their own organization on first sign-in and invite the rest from **Members**.
+
+In **Amazon Cognito → User pools → Create user pool** (ap-southeast-1):
+
+1. Application type **Traditional web application**, name `workeasy-forms`.
+2. Sign-in identifiers: **Email**. Self-registration: **on**. Required attributes: `email`.
+3. Return URL: `https://<console domain>/auth/callback` → Create.
+4. Open the app client → **Login pages → Edit**: allowed callback URLs `https://<console domain>/auth/callback` **and** `https://<forms domain>/public/v1/auth/callback`; OAuth grant **Authorization code**; scopes `openid`, `email`, `profile`.
+5. Settings: `OIDC_ISSUER_URL=https://cognito-idp.ap-southeast-1.amazonaws.com/<user pool ID>`, `OIDC_CLIENT_ID` and `OIDC_CLIENT_SECRET` from the app client.
+
+Cognito sends the verification emails itself (up to 50 a day without SES; connect SES later for more).
 
 ### 5. Amazon SES (in ap-southeast-1)
 

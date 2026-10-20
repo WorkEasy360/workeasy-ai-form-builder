@@ -55,6 +55,7 @@ const app = createApp({
     sessionTtlMs: config.SESSION_TTL_HOURS * 60 * 60 * 1000,
     secureCookies: config.SESSION_COOKIE_SECURE,
     aiEnabled: config.AI_PROVIDER !== "disabled",
+    homeRegion: config.OBJECT_STORAGE_REGION,
     integrationSecretKey: parseSecretKey(config.INTEGRATION_SECRET_KEY),
     webhookPolicy: config.WEBHOOK_ALLOW_PRIVATE_NETWORKS ? { allowHttp: true, allowPrivateNetworks: true, allowedPorts: [] } : STRICT_POLICY,
   },

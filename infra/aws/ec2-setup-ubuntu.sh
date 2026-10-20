@@ -18,6 +18,6 @@ fi
 aws --version
 
 # The instance role must be attached for this to print the role's identity.
-aws sts get-caller-identity || echo "No IAM role yet: attach workeasy-forms-instance (EC2 -> Actions -> Security -> Modify IAM role)."
+aws sts get-caller-identity || echo "No IAM role yet: attach instanceRole (EC2 -> Actions -> Security -> Modify IAM role)."
 
 install -d -m 700 /opt/workeasy-forms
