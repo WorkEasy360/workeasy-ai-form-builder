@@ -44,7 +44,9 @@ fetch_settings() {
   grep -q '^DATABASE_URL=' .env.next || { rm -f .env.next; die "the settings secret has no DATABASE_URL; fill it from env.example"; }
   mv .env.next .env
   # Amazon's certificate authorities for RDS/Aurora, for verified database connections.
+  # Public, and read by the containers' non-root user, so not mode 600.
   [ -s rds-ca.pem ] || curl -fsSL --retry 3 "$RDS_CA_URL" -o rds-ca.pem
+  chmod 644 rds-ca.pem
 }
 
 registry_login() {
