@@ -46,7 +46,7 @@ Already launched, with Elastic IP `54.255.105.162`. Check that it has:
 - **IAM instance profile:** `instanceRole` (Actions → Security → Modify IAM role).
 - **Security group, inbound:** HTTP 80 and HTTPS 443 from `0.0.0.0/0` (Let's Encrypt and visitors), SSH 22 for GitHub Actions' deploys.
 - **Docker and the AWS CLI:** the server runs **Ubuntu**: copy [`infra/aws/ec2-setup-ubuntu.sh`](../infra/aws/ec2-setup-ubuntu.sh) to it and run it once with `sudo bash ec2-setup-ubuntu.sh`. (On Amazon Linux 2023, use [`ec2-user-data.sh`](../infra/aws/ec2-user-data.sh) instead.)
-- **Size:** `t3.large` or larger (the malware scanner needs about 1.5 GB of memory); 30 GB disk.
+- **Size:** `m7i-flex.large` (2 vCPU, 8 GB) or `t3.large`; the malware scanner alone needs about 1.5 GB of memory. 30 GB disk.
 
 ### 3. The database
 
