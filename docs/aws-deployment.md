@@ -45,7 +45,7 @@ Already launched, with Elastic IP `54.255.105.162`. Check that it has:
 
 - **IAM instance profile:** `workeasy-forms-instance` (Actions → Security → Modify IAM role).
 - **Security group, inbound:** HTTP 80 and HTTPS 443 from `0.0.0.0/0` (Let's Encrypt and visitors), SSH 22 for GitHub Actions' deploys.
-- **Docker:** if the instance was launched without [`infra/aws/ec2-user-data.sh`](../infra/aws/ec2-user-data.sh), run that script once on it with `sudo bash`.
+- **Docker and the AWS CLI:** the server runs **Ubuntu**: copy [`infra/aws/ec2-setup-ubuntu.sh`](../infra/aws/ec2-setup-ubuntu.sh) to it and run it once with `sudo bash ec2-setup-ubuntu.sh`. (On Amazon Linux 2023, use [`ec2-user-data.sh`](../infra/aws/ec2-user-data.sh) instead.)
 - **Size:** `t3.large` or larger (the malware scanner needs about 1.5 GB of memory); 30 GB disk.
 
 ### 3. The database
@@ -80,7 +80,7 @@ Settings → Secrets and variables → Actions:
 | Kind | Name | Value |
 |---|---|---|
 | Secret | `EC2_HOST` | `54.255.105.162` |
-| Secret | `EC2_USER` | `ec2-user` (Amazon Linux) |
+| Secret | `EC2_USER` | `ubuntu` (on Amazon Linux it would be `ec2-user`) |
 | Secret | `EC2_SSH_KEY` | the private key (`.pem` file contents) of the instance's key pair |
 | Secret, optional | `EC2_KNOWN_HOSTS` | output of `ssh-keyscan 54.255.105.162`, run from a machine you trust; pins the server's identity |
 | Variable | `DOMAIN` | the console's domain, e.g. `forms-admin.example.com` (checked after each deploy) |
