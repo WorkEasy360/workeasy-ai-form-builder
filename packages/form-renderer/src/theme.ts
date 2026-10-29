@@ -75,6 +75,8 @@ export function themeStyle(theme: Theme): CSSProperties {
     "--we-color-danger": p.danger,
     "--we-color-focus": p.accent,
     "--we-form-radius": `${p.radius}px`,
+    // Native controls (radios, date pickers, scrollbars) follow the form's background, not the page's.
+    colorScheme: readableTextOn(p.background) === "#FFFFFF" ? "dark" : "light",
     background: p.background,
     color: p.text,
   } as CSSProperties;

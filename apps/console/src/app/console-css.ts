@@ -12,6 +12,8 @@ h1, h2, h3, h4 { color: var(--we-text-primary); line-height: 1.3; font-weight: 6
 h1 { font-size: var(--we-text-xl); line-height: var(--we-leading-xl); }
 h2 { font-size: var(--we-text-lg); line-height: var(--we-leading-lg); }
 h3 { font-size: var(--we-text-md); line-height: var(--we-leading-md); }
+/* A rendered form (preview, builder canvas) takes its colours from its own theme. */
+.we-surface :is(h1, h2, h3, h4), .b-canvas :is(h1, h2, h3, h4) { color: inherit; }
 input[type="checkbox"], input[type="radio"], input[type="range"], progress { accent-color: var(--we-primary); }
 ::placeholder { color: var(--we-text-secondary); opacity: 1; }
 ::selection { background: var(--we-accent-soft); color: var(--we-text-primary); }
