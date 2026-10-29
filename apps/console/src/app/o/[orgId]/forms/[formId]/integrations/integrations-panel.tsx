@@ -124,14 +124,14 @@ export function IntegrationsPanel({ orgId, formId }: { orgId: string; formId: st
 
   return (
     <div>
-      <h2 style={{ fontSize: 22, margin: "0 0 8px" }}>Notifications and webhooks</h2>
-      <p style={{ color: "var(--we-color-textMuted)", marginTop: 0 }}>
+      <h2 style={{ margin: "0 0 8px" }}>Notifications and webhooks</h2>
+      <p style={{ color: "var(--we-text-secondary)", marginTop: 0 }}>
         Each new response is sent to every active destination below. Failed sends are retried for about a day, and every attempt is listed.
       </p>
       <p role="status">{notice}</p>
       {error && <p role="alert">{error}</p>}
       {secret && (
-        <div role="alert" style={{ border: "1px solid var(--we-color-border)", padding: 12, borderRadius: 8 }}>
+        <div role="alert" style={{ border: "1px solid var(--we-border)", padding: 12, borderRadius: 8 }}>
           <p style={{ marginTop: 0 }}>
             Signing secret for <strong>{secret.name}</strong>. Copy it now: it won&apos;t be shown again.
           </p>
@@ -165,9 +165,9 @@ function IntegrationCard({ integration: i, orgPath, act, fields }: { integration
   const [open, setOpen] = useState(false);
   const path = `${orgPath}/integrations/${i.id}`;
   return (
-    <section style={{ border: "1px solid var(--we-color-border)", borderRadius: 8, padding: 12, margin: "12px 0" }} aria-label={i.name}>
-      <h2 style={{ fontSize: 18, margin: 0 }}>
-        {i.name} <span style={{ color: "var(--we-color-textMuted)", fontSize: 14 }}>({KIND_NAMES[i.kind]}{i.enabled ? "" : ", paused"})</span>
+    <section style={{ border: "1px solid var(--we-border)", borderRadius: 8, padding: 12, margin: "12px 0" }} aria-label={i.name}>
+      <h2 style={{ margin: 0 }}>
+        {i.name} <span style={{ color: "var(--we-text-secondary)", fontSize: 14 }}>({KIND_NAMES[i.kind]}{i.enabled ? "" : ", paused"})</span>
       </h2>
       <p style={{ overflowWrap: "anywhere", margin: "4px 0" }}>
         {i.kind === "webhook"
@@ -175,7 +175,7 @@ function IntegrationCard({ integration: i, orgPath, act, fields }: { integration
           : i.kind === "confirmation"
             ? `"${i.subject ?? ""}" to the address given in "${fields.find((f) => f.id === i.recipientFieldId)?.label ?? i.recipientFieldId}"`
             : `To ${(i.recipients ?? []).join(", ")}`}
-        {i.kind === "webhook" && <span style={{ color: "var(--we-color-textMuted)" }}> · {i.fieldIds.length === 0 ? "identifiers only" : `${i.fieldIds.length} answers included`}</span>}
+        {i.kind === "webhook" && <span style={{ color: "var(--we-text-secondary)" }}> · {i.fieldIds.length === 0 ? "identifiers only" : `${i.fieldIds.length} answers included`}</span>}
       </p>
       <p style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "8px 0" }}>
         <button type="button" onClick={() => void act(path, "PATCH", { enabled: !i.enabled }, i.enabled ? `Paused ${i.name}.` : `Resumed ${i.name}.`)}>
@@ -249,10 +249,10 @@ function Deliveries({ orgPath, integrationId }: { orgPath: string; integrationId
         </thead>
         <tbody>
           {items.map((d) => (
-            <tr key={d.id} style={{ borderTop: "1px solid var(--we-color-border)", verticalAlign: "top" }}>
+            <tr key={d.id} style={{ borderTop: "1px solid var(--we-border)", verticalAlign: "top" }}>
               <td style={{ padding: 6, whiteSpace: "nowrap" }}>{new Date(d.createdAt).toLocaleString()}</td>
               <td style={{ padding: 6 }}>
-                <strong style={d.status === "failed" ? { color: "var(--we-color-danger, #b42318)" } : undefined}>{statusText(d)}</strong>
+                <strong style={d.status === "failed" ? { color: "var(--we-error-fg)" } : undefined}>{statusText(d)}</strong>
                 {d.ambiguous && <div style={{ fontSize: 12 }}>A timed-out attempt may have arrived; the destination can recognize repeats by event ID.</div>}
               </td>
               <td style={{ padding: 6 }}>
@@ -295,7 +295,7 @@ function AddWebhook({ formPath, fields, act }: { formPath: string; fields: Array
   const [chosen, setChosen] = useState<string[]>([]);
   return (
     <form
-      style={{ border: "1px solid var(--we-color-border)", borderRadius: 8, padding: 12, margin: "12px 0", display: "grid", gap: 8 }}
+      style={{ border: "1px solid var(--we-border)", borderRadius: 8, padding: 12, margin: "12px 0", display: "grid", gap: 8 }}
       onSubmit={(e) => {
         e.preventDefault();
         void act(`${formPath}/integrations`, "POST", { kind: "webhook", name, url, fieldIds: chosen }, `Added ${name}.`).then(() => {
@@ -305,7 +305,7 @@ function AddWebhook({ formPath, fields, act }: { formPath: string; fields: Array
         });
       }}
     >
-      <h2 style={{ fontSize: 18, margin: 0 }}>Add a webhook</h2>
+      <h2 style={{ margin: 0 }}>Add a webhook</h2>
       <label htmlFor={ids.name}>Name</label>
       <input id={ids.name} value={name} onChange={(e) => setName(e.target.value)} required maxLength={100} />
       <label htmlFor={ids.url}>HTTPS URL</label>
@@ -343,7 +343,7 @@ function AddEmail({ formPath, act }: { formPath: string; act: Act }) {
     .filter(Boolean);
   return (
     <form
-      style={{ border: "1px solid var(--we-color-border)", borderRadius: 8, padding: 12, margin: "12px 0", display: "grid", gap: 8 }}
+      style={{ border: "1px solid var(--we-border)", borderRadius: 8, padding: 12, margin: "12px 0", display: "grid", gap: 8 }}
       onSubmit={(e) => {
         e.preventDefault();
         void act(`${formPath}/integrations`, "POST", { kind: "email", name, recipients }, `Added ${name}.`).then(() => {
@@ -352,8 +352,8 @@ function AddEmail({ formPath, act }: { formPath: string; act: Act }) {
         });
       }}
     >
-      <h2 style={{ fontSize: 18, margin: 0 }}>Add an email notification</h2>
-      <p style={{ margin: 0, color: "var(--we-color-textMuted)" }}>Emails link to the response; answers stay in Workeasy.</p>
+      <h2 style={{ margin: 0 }}>Add an email notification</h2>
+      <p style={{ margin: 0, color: "var(--we-text-secondary)" }}>Emails link to the response; answers stay in Workeasy.</p>
       <label htmlFor={ids.name}>Name</label>
       <input id={ids.name} value={name} onChange={(e) => setName(e.target.value)} required maxLength={100} />
       <label htmlFor={ids.to}>Send to (up to 10 addresses)</label>
@@ -380,7 +380,7 @@ function AddConfirmation({ formPath, emailFields, act }: { formPath: string; ema
   const chosen = fieldId || emailFields[0]?.id || "";
   return (
     <form
-      style={{ border: "1px solid var(--we-color-border)", borderRadius: 8, padding: 12, margin: "12px 0", display: "grid", gap: 8 }}
+      style={{ border: "1px solid var(--we-border)", borderRadius: 8, padding: 12, margin: "12px 0", display: "grid", gap: 8 }}
       onSubmit={(e) => {
         e.preventDefault();
         void act(`${formPath}/integrations`, "POST", { kind: "confirmation", name, recipientFieldId: chosen, subject, message: text }, `Added ${name}.`).then(() => {
@@ -389,8 +389,8 @@ function AddConfirmation({ formPath, emailFields, act }: { formPath: string; ema
         });
       }}
     >
-      <h2 style={{ fontSize: 18, margin: 0 }}>Add a confirmation email to respondents</h2>
-      <p style={{ margin: 0, color: "var(--we-color-textMuted)" }}>
+      <h2 style={{ margin: 0 }}>Add a confirmation email to respondents</h2>
+      <p style={{ margin: 0, color: "var(--we-text-secondary)" }}>
         Sends your message to the address each respondent gives. Their answers are not included. An address gets at most 5 confirmations a day.
       </p>
       {emailFields.length === 0 ? (

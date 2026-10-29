@@ -44,16 +44,22 @@ const OPS: Array<{ op: Op; label: string; needsValue: boolean }> = [
 
 const CSS = `
 .r-filters { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: end; margin: 16px 0; }
-.r-filters label { display: grid; gap: 4px; font-size: 14px; }
-.r-filters input, .r-filters select { font: inherit; padding: 6px; border: 1px solid var(--we-color-border); border-radius: var(--we-radius-sm); background: var(--we-color-background); color: var(--we-color-text); }
-.r-btn { font: inherit; padding: 6px 12px; border-radius: var(--we-radius-sm); border: 1px solid var(--we-color-border); background: var(--we-color-background); color: var(--we-color-text); cursor: pointer; }
-.r-primary { background: var(--we-color-accent); border-color: var(--we-color-accent); color: var(--we-color-accentText); }
-.r-scroll { overflow-x: auto; border: 1px solid var(--we-color-border); border-radius: var(--we-radius-md); }
-.r-table { border-collapse: collapse; min-width: 100%; font-size: 14px; }
-.r-table th, .r-table td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--we-color-border); vertical-align: top; max-width: 280px; overflow-wrap: anywhere; }
-.r-table th { position: sticky; top: 0; background: var(--we-color-surface); white-space: nowrap; }
-.r-hidden { color: var(--we-color-textMuted); font-style: italic; }
-.r-muted { color: var(--we-color-textMuted); }
+.r-filters label { display: grid; gap: 6px; font-size: var(--we-text-sm); font-weight: 500; color: var(--we-text-primary); }
+.r-filters input, .r-filters select { font: inherit; font-weight: 400; min-height: var(--we-control-height); padding: 6px 10px; border: 1px solid var(--we-border-strong); border-radius: var(--we-radius-md); background: var(--we-surface); color: var(--we-text-primary); }
+.r-filters input:focus-visible, .r-filters select:focus-visible { outline: none; border-color: var(--we-focus); box-shadow: 0 0 0 3px color-mix(in srgb, var(--we-focus) 25%, transparent); }
+.r-btn { font: inherit; font-weight: 500; min-height: var(--we-control-height); padding: 0 14px; border-radius: var(--we-radius-md); border: 1px solid var(--we-border); background: var(--we-surface); color: var(--we-text-primary); cursor: pointer;
+  transition: background-color var(--we-duration-fast) var(--we-ease), border-color var(--we-duration-fast) var(--we-ease); }
+.r-btn:hover:not(:disabled) { background: var(--we-surface-hover); border-color: var(--we-border-strong); }
+.r-btn:disabled { opacity: .5; cursor: not-allowed; }
+.r-primary { background: var(--we-accent); border-color: var(--we-accent); color: var(--we-on-accent); font-weight: 600; }
+.r-primary:hover:not(:disabled) { background: var(--we-accent-hover); border-color: var(--we-accent-hover); }
+.r-scroll { overflow-x: auto; border: 1px solid var(--we-border); border-radius: var(--we-radius-lg); background: var(--we-surface); box-shadow: var(--we-shadow-xs); }
+.r-table { border-collapse: collapse; min-width: 100%; font-size: var(--we-text-base); }
+.r-table th, .r-table td { text-align: left; padding: 10px 16px; border-bottom: 1px solid var(--we-border); vertical-align: top; max-width: 280px; overflow-wrap: anywhere; }
+.r-table th { position: sticky; top: 0; background: var(--we-background); color: var(--we-text-secondary); font-size: var(--we-text-xs); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; white-space: nowrap; }
+.r-table tbody tr:hover { background: var(--we-background); }
+.r-hidden { color: var(--we-text-secondary); font-style: italic; }
+.r-muted { color: var(--we-text-secondary); }
 `;
 
 function errorText(err: unknown): string {
@@ -137,10 +143,10 @@ export function ResponsesApp({ orgId, formId }: { orgId: string; formId: string 
   return (
     <div>
       <style>{CSS}</style>
-      <h2 style={{ margin: "0 0 4px", fontSize: 22 }}>Responses</h2>
+      <h2 style={{ margin: "0 0 4px" }}>Responses</h2>
 
       {error && (
-        <p role="alert" style={{ color: "var(--we-color-danger)" }}>
+        <p role="alert" style={{ color: "var(--we-error-fg)" }}>
           {error}
         </p>
       )}

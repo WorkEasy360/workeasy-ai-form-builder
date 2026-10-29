@@ -55,54 +55,70 @@ export function FormAnalytics({ orgId, formId }: { orgId: string; formId: string
 
   return (
     <div>
-      <h2 style={{ fontSize: 22, margin: "0 0 8px" }}>Analytics</h2>
-      <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "end", marginBottom: 16 }}>
-        <label htmlFor={ids.from} style={{ display: "grid", gap: 4 }}>
-          From
-          <input id={ids.from} type="date" value={from} max={to} onChange={(e) => e.target.value && setFrom(e.target.value)} />
-        </label>
-        <label htmlFor={ids.to} style={{ display: "grid", gap: 4 }}>
-          To
-          <input id={ids.to} type="date" value={to} min={from} max={today} onChange={(e) => e.target.value && setTo(e.target.value)} />
-        </label>
-        <span style={{ color: "var(--we-color-textMuted)", fontSize: 14 }}>Dates are UTC.</span>
+      <h2 style={{ margin: "0 0 12px" }}>Analytics</h2>
+      <div className="c-toolbar" style={{ alignItems: "end", gap: 16, marginBottom: 20 }}>
+        <div className="c-field">
+          <label className="c-label" htmlFor={ids.from}>
+            From
+          </label>
+          <input id={ids.from} className="c-input" type="date" value={from} max={to} onChange={(e) => e.target.value && setFrom(e.target.value)} />
+        </div>
+        <div className="c-field">
+          <label className="c-label" htmlFor={ids.to}>
+            To
+          </label>
+          <input id={ids.to} className="c-input" type="date" value={to} min={from} max={today} onChange={(e) => e.target.value && setTo(e.target.value)} />
+        </div>
+        <span className="c-hint" style={{ paddingBottom: 8 }}>
+          Dates are UTC.
+        </span>
       </div>
-      {error && <p role="alert">{error}</p>}
-      {!data && !error && <p>Loading…</p>}
+      {error && (
+        <p role="alert" className="c-alert" data-tone="danger">
+          {error}
+        </p>
+      )}
+      {!data && !error && <p className="c-hint">Loading…</p>}
       {data && (
         <>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
+          <div className="c-stats">
             {tiles.map((t) => (
-              <section key={t.label} style={{ border: "1px solid var(--we-color-border)", borderRadius: 8, padding: 12 }} aria-label={t.label}>
-                <h2 style={{ fontSize: 14, margin: 0, color: "var(--we-color-textMuted)" }}>{t.label}</h2>
-                <p style={{ fontSize: 28, margin: "4px 0", fontVariantNumeric: "tabular-nums" }}>{t.value}</p>
-                <p style={{ fontSize: 13, margin: 0, color: "var(--we-color-textMuted)" }}>{t.note}</p>
+              <section key={t.label} className="c-stat" aria-label={t.label}>
+                <h2>{t.label}</h2>
+                <p className="c-stat-value">{t.value}</p>
+                <p>{t.note}</p>
               </section>
             ))}
           </div>
-          <p style={{ fontSize: 13, color: "var(--we-color-textMuted)" }}>{data.definitions.day}</p>
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 14, fontVariantNumeric: "tabular-nums" }}>
-              <caption style={{ textAlign: "left", fontWeight: 600, padding: "8px 0" }}>By day</caption>
+          <p className="c-hint" style={{ marginBottom: 12 }}>
+            {data.definitions.day}
+          </p>
+          <div className="c-table-wrap">
+            <table className="c-table" style={{ fontVariantNumeric: "tabular-nums" }}>
+              <caption className="c-visually-hidden">By day</caption>
               <thead>
-                <tr style={{ textAlign: "right" }}>
-                  <th scope="col" style={{ textAlign: "left", padding: 6 }}>
-                    Day
+                <tr>
+                  <th scope="col">Day</th>
+                  <th scope="col" className="c-num">
+                    Views
                   </th>
-                  <th scope="col" style={{ padding: 6 }}>Views</th>
-                  <th scope="col" style={{ padding: 6 }}>Starts</th>
-                  <th scope="col" style={{ padding: 6 }}>Accepted</th>
+                  <th scope="col" className="c-num">
+                    Starts
+                  </th>
+                  <th scope="col" className="c-num">
+                    Accepted
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {data.days.toReversed().map((d) => (
-                  <tr key={d.day} style={{ borderTop: "1px solid var(--we-color-border)", textAlign: "right" }}>
-                    <th scope="row" style={{ textAlign: "left", padding: 6, fontWeight: 400 }}>
+                  <tr key={d.day}>
+                    <th scope="row" style={{ textAlign: "left", fontWeight: 500, padding: "12px 16px", borderBottom: "1px solid var(--we-border)" }}>
                       {d.day}
                     </th>
-                    <td style={{ padding: 6 }}>{number.format(d.views)}</td>
-                    <td style={{ padding: 6 }}>{number.format(d.starts)}</td>
-                    <td style={{ padding: 6 }}>{number.format(d.accepts)}</td>
+                    <td className="c-num">{number.format(d.views)}</td>
+                    <td className="c-num">{number.format(d.starts)}</td>
+                    <td className="c-num">{number.format(d.accepts)}</td>
                   </tr>
                 ))}
               </tbody>

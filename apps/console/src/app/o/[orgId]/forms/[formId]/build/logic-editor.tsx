@@ -160,7 +160,7 @@ function ConditionEditor({
         {condition.items.map((item, index) => {
           const field = candidates.find((f) => f.id === item.fieldId);
           return (
-            <li key={index} style={{ borderLeft: "2px solid var(--we-color-border)", paddingLeft: 8 }}>
+            <li key={index} style={{ borderLeft: "2px solid var(--we-border)", paddingLeft: 8 }}>
               <ConditionRow
                 candidates={candidates}
                 item={item}
@@ -264,7 +264,7 @@ function ProblemList({ definition, ruleId }: { definition: FormDefinition; ruleI
   const problems = ruleProblems(definition, ruleId);
   if (problems.length === 0) return null;
   return (
-    <ul className="b-issues" role="alert" style={{ color: "var(--we-color-danger)" }}>
+    <ul className="b-issues" role="alert" style={{ color: "var(--we-error-fg)" }}>
       {problems.map((p) => (
         <li key={`${p.path}:${p.code}`}>{p.message}</li>
       ))}
@@ -350,7 +350,7 @@ function FieldRuleEditor({
   const whenTrue = rule.action.type !== "skipToPage" && rule.action.onTrue;
   const simple = toSimpleCondition(rule.when);
   return (
-    <fieldset className="b-field" style={{ border: "1px solid var(--we-color-border)", borderRadius: "var(--we-radius-md)", padding: 8 }}>
+    <fieldset className="b-field" style={{ border: "1px solid var(--we-border)", borderRadius: "var(--we-radius-md)", padding: 8 }}>
       <legend>{text.heading}</legend>
       <div className="b-field">
         <label htmlFor={modeId}>Rule</label>
@@ -418,7 +418,7 @@ export function PageLogic({ definition, pageId, tryApply }: { definition: FormDe
           </button>
         )
       ) : (
-        <fieldset className="b-field" style={{ border: "1px solid var(--we-color-border)", borderRadius: "var(--we-radius-md)", padding: 8 }}>
+        <fieldset className="b-field" style={{ border: "1px solid var(--we-border)", borderRadius: "var(--we-radius-md)", padding: 8 }}>
           <legend>After this page</legend>
           <div className="b-field">
             <label htmlFor={targetId}>Skip to</label>

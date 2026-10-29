@@ -217,7 +217,7 @@ export function CreateForm({ orgId }: { orgId: string }) {
                   <p>
                     {t.fields.length} questions{t.pages > 1 ? ` · ${t.pages} pages` : ""}
                   </p>
-                  <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, color: "var(--we-color-textMuted)" }}>
+                  <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, color: "var(--we-text-secondary)" }}>
                     {t.fields.slice(0, 4).map((f, i) => (
                       <li key={i}>
                         {f.label} <span style={{ opacity: 0.75 }}>· {TYPE_NAMES[f.type] ?? f.type}</span>

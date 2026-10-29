@@ -75,7 +75,7 @@ export function updateTheme(def: FormDefinition, patch: Partial<Theme>): FormDef
   for (const key of ["accent", "background", "text"] as const) {
     const value = patch[key];
     if (value === undefined) continue;
-    if (!/^#[0-9a-fA-F]{6}$/.test(value)) throw new BuilderError("Enter a colour as # followed by six hex digits, like #4F46E5.");
+    if (!/^#[0-9a-fA-F]{6}$/.test(value)) throw new BuilderError("Enter a colour as # followed by six hex digits, like #1B3040.");
     next.theme[key] = value.toUpperCase();
   }
   if (patch.radius !== undefined) {

@@ -53,7 +53,7 @@ export function SessionPanel({ signInFailed, returnTo }: { signInFailed: boolean
   if (state.kind === "error") {
     return (
       <p role="alert">
-        We couldn&apos;t reach Workeasy Forms. Check your connection and <a href="/">try again</a>.
+        We couldn&apos;t reach WorkEasy360 Forms. Check your connection and <a href="/">try again</a>.
       </p>
     );
   }
@@ -72,7 +72,7 @@ export function SessionPanel({ signInFailed, returnTo }: { signInFailed: boolean
         <CreateOrganization first />
       ) : (
         <div style={{ display: "grid", gap: 8 }}>
-          <h2 style={{ fontSize: 20, margin: 0 }}>Choose an organization</h2>
+          <h2 style={{ margin: 0 }}>Choose an organization</h2>
           {me.organizations.map((org) => (
             <a key={org.id} href={`/o/${org.id}/forms`} className="c-card c-choice" style={{ textDecoration: "none" }}>
               <h3>{org.name}</h3>

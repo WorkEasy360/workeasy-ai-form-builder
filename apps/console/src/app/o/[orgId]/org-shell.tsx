@@ -22,6 +22,26 @@ export function useOrg(): OrgContextValue | undefined {
   return useContext(OrgContext);
 }
 
+/** The WorkEasy360 lockup: the mark, the suite name and this product's name. */
+export function Brand({ href }: { href: string }) {
+  return (
+    <a className="c-brand" href={href}>
+      <span className="c-brand-mark" aria-hidden="true">
+        W
+      </span>
+      <span className="c-brand-name">
+        WorkEasy360
+        <small>Forms</small>
+      </span>
+    </a>
+  );
+}
+
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  return ((parts[0]?.[0] ?? "") + (parts.length > 1 ? (parts.at(-1)?.[0] ?? "") : "")).toUpperCase() || "?";
+}
+
 type State = { kind: "loading" } | { kind: "signed-out" } | { kind: "not-found" } | { kind: "error" } | { kind: "ready"; me: Me; org: OrgContextValue };
 
 /**
@@ -86,8 +106,8 @@ export function OrgShell({ orgId, children }: { orgId: string; children: ReactNo
   if (state.kind === "error") {
     return (
       <main className="c-page">
-        <p role="alert">
-          We couldn&apos;t reach Workeasy Forms. Check your connection and <a href={pathname}>try again</a>.
+        <p role="alert" className="c-alert" data-tone="danger">
+          We couldn&apos;t reach WorkEasy360 Forms. Check your connection and <a href={pathname}>try again</a>.
         </p>
       </main>
     );
@@ -113,13 +133,28 @@ export function OrgShell({ orgId, children }: { orgId: string; children: ReactNo
       <a className="c-skip" href="#main">
         Skip to main content
       </a>
+      {!focus && (
+        <nav className="c-sidebar" aria-label="Organization">
+          <Brand href={`${base}/forms`} />
+          <div className="c-sidebar-body">
+            <p className="c-nav-label">Workspace</p>
+            <ul className="c-nav">
+              {nav
+                .filter((n) => n.show)
+                .map((n) => (
+                  <li key={n.href}>
+                    <a href={n.href} aria-current={pathname === n.match || pathname.startsWith(`${n.match}/`) ? "page" : undefined}>
+                      {n.icon}
+                      {n.label}
+                    </a>
+                  </li>
+                ))}
+            </ul>
+          </div>
+        </nav>
+      )}
       <header className="c-topbar">
-        <a className="c-brand" href={`${base}/forms`}>
-          <span className="c-brand-mark" aria-hidden="true">
-            W
-          </span>
-          Workeasy Forms
-        </a>
+        <Brand href={`${base}/forms`} />
         {org && (
           <span className="c-org" title={org.orgName}>
             {org.orgName}
@@ -141,10 +176,13 @@ export function OrgShell({ orgId, children }: { orgId: string; children: ReactNo
           {org && (
             <details className="c-menu">
               <summary className="c-btn c-btn-sm c-btn-ghost" aria-label={`Account: ${org.userName}`}>
+                <span className="c-avatar" aria-hidden="true">
+                  {initials(org.userName)}
+                </span>
                 {org.userName}
               </summary>
               <div className="c-menu-list">
-                <span style={{ padding: "6px 10px", fontSize: 13, color: "var(--we-color-textMuted)" }}>Role: {org.role}</span>
+                <span className="c-menu-meta">Role: {org.role}</span>
                 <hr />
                 <form method="post" action="/auth/logout">
                   <button type="submit">
@@ -158,23 +196,6 @@ export function OrgShell({ orgId, children }: { orgId: string; children: ReactNo
           )}
         </div>
       </header>
-{!focus && (
-      <nav className="c-sidebar" aria-label="Organization">
-        <p className="c-nav-label">Workspace</p>
-        <ul className="c-nav">
-          {nav
-            .filter((n) => n.show)
-            .map((n) => (
-              <li key={n.href}>
-                <a href={n.href} aria-current={pathname === n.match || pathname.startsWith(`${n.match}/`) ? "page" : undefined}>
-                  {n.icon}
-                  {n.label}
-                </a>
-              </li>
-            ))}
-        </ul>
-      </nav>
-      )}
       <main className="c-main" id="main" tabIndex={-1}>
         <OrgContext.Provider value={org}>{children}</OrgContext.Provider>
       </main>

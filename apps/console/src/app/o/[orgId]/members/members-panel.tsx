@@ -184,7 +184,7 @@ export function MembersPanel({ orgId }: { orgId: string }) {
 
       {inviting && (
         <section className="c-card" aria-labelledby={`${ids.role}-h`} style={{ marginBottom: 20, display: "grid", gap: 12 }}>
-          <h2 id={`${ids.role}-h`} style={{ margin: 0, fontSize: 18 }}>
+          <h2 id={`${ids.role}-h`} style={{ margin: 0 }}>
             Invite people
           </h2>
           {link ? (
@@ -346,7 +346,7 @@ export function MembersPanel({ orgId }: { orgId: string }) {
         </div>
       )}
 
-      <h2 style={{ fontSize: 18, margin: "28px 0 8px" }}>Invitations</h2>
+      <h2 style={{ margin: "28px 0 8px" }}>Invitations</h2>
       {pending.length === 0 && past.length === 0 ? (
         <p className="c-hint">No invitations yet.</p>
       ) : (

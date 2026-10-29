@@ -28,9 +28,9 @@ export function CreateOrganization({ first }: { first: boolean }) {
 
   return (
     <form className="c-card" style={{ display: "grid", gap: 12 }} onSubmit={submit}>
-      <h2 style={{ margin: 0, fontSize: 20 }}>{first ? "Create your organization" : "Create another organization"}</h2>
+      <h2 style={{ margin: 0 }}>{first ? "Create your organization" : "Create another organization"}</h2>
       {first && (
-        <p style={{ margin: 0, color: "var(--we-color-textMuted)" }}>
+        <p style={{ margin: 0, color: "var(--we-text-secondary)" }}>
           Your forms and responses live in an organization. You&apos;ll be its owner and can invite others later. If someone invited you, open the link from their invitation instead.
         </p>
       )}

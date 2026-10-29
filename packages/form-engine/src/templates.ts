@@ -6,7 +6,8 @@ import type { FormDefinition, Theme } from "@workeasy/form-schema";
  * incomplete draft (no fields yet) that becomes valid as the creator builds it.
  */
 
-export const DEFAULT_THEME: Theme = { accent: "#4F46E5", background: "#FFFFFF", text: "#111827", radius: 8 };
+// WorkEasy360 brand: navy accent and text on white (13.6:1). Stored themes are unaffected.
+export const DEFAULT_THEME: Theme = { accent: "#1B3040", background: "#FFFFFF", text: "#1B3040", radius: 8 };
 export const DEFAULT_SUCCESS_MESSAGE = "Thank you. Your response has been recorded.";
 
 export function blankDefinition(title: string, locale = "en"): FormDefinition {

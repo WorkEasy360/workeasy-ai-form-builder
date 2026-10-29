@@ -48,14 +48,14 @@ export function SignIn({ signInFailed, returnTo }: { signInFailed: boolean; retu
   const signingUp = mode === "sign-up";
   return (
     <form className="c-card" style={{ display: "grid", gap: 14 }} onSubmit={submit} noValidate={false}>
-      <h2 style={{ margin: 0, fontSize: 20 }}>{signingUp ? "Create your account" : "Sign in"}</h2>
-      <p style={{ margin: 0, color: "var(--we-color-textMuted)" }}>
+      <h2 style={{ margin: 0 }}>{signingUp ? "Create your account" : "Sign in"}</h2>
+      <p style={{ margin: 0, color: "var(--we-text-secondary)" }}>
         {signingUp ? "Build forms, share them and review responses." : "Welcome back. Sign in to your forms."}
       </p>
       {signingUp && (
         <div className="c-field">
           <label className="c-label" htmlFor={ids.name}>
-            Your name <span style={{ color: "var(--we-color-textMuted)", fontWeight: 400 }}>(optional)</span>
+            Your name <span style={{ color: "var(--we-text-secondary)", fontWeight: 400 }}>(optional)</span>
           </label>
           <input id={ids.name} className="c-input" value={name} onChange={(e) => setName(e.target.value)} maxLength={200} autoComplete="name" />
         </div>
@@ -83,7 +83,7 @@ export function SignIn({ signInFailed, returnTo }: { signInFailed: boolean; retu
           aria-describedby={signingUp ? `${ids.password}-hint` : undefined}
         />
         {signingUp && (
-          <span id={`${ids.password}-hint`} style={{ fontSize: 13, color: "var(--we-color-textMuted)" }}>
+          <span id={`${ids.password}-hint`} style={{ fontSize: 13, color: "var(--we-text-secondary)" }}>
             At least 10 characters.
           </span>
         )}
@@ -97,7 +97,7 @@ export function SignIn({ signInFailed, returnTo }: { signInFailed: boolean; retu
         {busy ? (signingUp ? "Creating account…" : "Signing in…") : signingUp ? "Create account" : "Sign in"}
       </button>
       <p style={{ margin: 0, fontSize: 14 }}>
-        {signingUp ? "Already have an account? " : "New to Workeasy Forms? "}
+        {signingUp ? "Already have an account? " : "New to WorkEasy360 Forms? "}
         <button type="button" className="c-link-btn" onClick={() => switchTo(signingUp ? "sign-in" : "sign-up")}>
           {signingUp ? "Sign in" : "Create an account"}
         </button>

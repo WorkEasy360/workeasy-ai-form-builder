@@ -97,8 +97,8 @@ export function ExportsPanel({ orgId, formId, filters }: { orgId: string; formId
   }
 
   return (
-    <section aria-labelledby={`${rawId}-heading`} style={{ margin: "24px 0", padding: 16, border: "1px solid var(--we-color-border)", borderRadius: "var(--we-radius-md)" }}>
-      <h2 id={`${rawId}-heading`} style={{ fontSize: 18, margin: "0 0 8px" }}>
+    <section aria-labelledby={`${rawId}-heading`} style={{ margin: "24px 0", padding: 16, border: "1px solid var(--we-border)", borderRadius: "var(--we-radius-md)" }}>
+      <h2 id={`${rawId}-heading`} style={{ margin: "0 0 8px" }}>
         Export
       </h2>
       <p className="r-muted" style={{ marginTop: 0 }}>

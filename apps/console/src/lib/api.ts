@@ -36,7 +36,7 @@ export async function api<T>(
       ...(init.body !== undefined ? { body: JSON.stringify(init.body) } : {}),
     });
   } catch {
-    throw new ApiError({ status: 0, code: "NETWORK", title: "We couldn't reach Workeasy Forms. Check your connection and try again." });
+    throw new ApiError({ status: 0, code: "NETWORK", title: "We couldn't reach WorkEasy360 Forms. Check your connection and try again." });
   }
   if (res.ok) return (await res.json()) as T;
   let problem: Problem = { status: res.status, code: "UNKNOWN", title: "Something went wrong." };

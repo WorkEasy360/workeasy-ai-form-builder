@@ -29,7 +29,7 @@ async function startSession(slug: string, embed: boolean): Promise<SessionState>
   try {
     res = await fetch(`/public/v1/forms/${encodeURIComponent(slug)}/sessions${embed ? "?embed=1" : ""}`, { method: "POST", cache: "no-store" });
   } catch {
-    return { kind: "failed", message: "We couldn't reach Workeasy Forms. Check your connection and reload the page." };
+    return { kind: "failed", message: "We couldn't reach WorkEasy360 Forms. Check your connection and reload the page." };
   }
   if (res.status === 201) return { kind: "ready", session: (await res.json()) as Session };
   if (res.status === 410) return { kind: "failed", message: (await isFull(res)) ? "This form is full and isn't accepting more responses." : "This form has closed and isn't accepting responses any more." };
@@ -109,7 +109,7 @@ function uploaderFor(session: Session): FileUploader {
       }
       return { error: "Checking this file is taking too long. Remove it and try again later." };
     } catch {
-      return { error: "We couldn't reach Workeasy Forms. Check your connection, remove the file and try again." };
+      return { error: "We couldn't reach WorkEasy360 Forms. Check your connection, remove the file and try again." };
     }
   };
 }
@@ -179,7 +179,7 @@ export function PublicForm({ slug, versionId, definition, embed }: { slug: strin
         body: JSON.stringify({ formVersionId: sessionVersion, answers, ...(honeypot.current?.value ? { hp: honeypot.current.value } : {}) }),
       });
     } catch {
-      return "We couldn't reach Workeasy Forms. Check your connection and try again; your answers are still here and won't be sent twice.";
+      return "We couldn't reach WorkEasy360 Forms. Check your connection and try again; your answers are still here and won't be sent twice.";
     }
     if (res.ok) {
       setReceipt((await res.json()) as Receipt);

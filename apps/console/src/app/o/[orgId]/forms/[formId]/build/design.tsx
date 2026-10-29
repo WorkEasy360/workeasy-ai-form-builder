@@ -45,7 +45,7 @@ function ColorInput({ definition, colorKey, label, hint, tryApply }: { definitio
 function ContrastLine({ label, ratio, min }: { label: string; ratio: number; min: number }) {
   const passes = ratio >= min;
   return (
-    <li style={passes ? undefined : { color: "var(--we-color-danger)" }}>
+    <li style={passes ? undefined : { color: "var(--we-error-fg)" }}>
       {label}: {(Math.floor(ratio * 10) / 10).toFixed(1)}:1 — {passes ? "passes" : `needs ${min}:1`}
     </li>
   );

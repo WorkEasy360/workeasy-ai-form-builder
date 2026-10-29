@@ -198,7 +198,7 @@ export function FormsPanel({ orgId }: { orgId: string }) {
             Loading forms…
           </p>
           {[0, 1, 2].map((i) => (
-            <div key={i} style={{ padding: 16, display: "grid", gap: 8, borderBottom: "1px solid var(--we-color-border)" }}>
+            <div key={i} style={{ padding: 16, display: "grid", gap: 8, borderBottom: "1px solid var(--we-border)" }}>
               <div className="c-skeleton" style={{ width: "40%" }} />
               <div className="c-skeleton" style={{ width: "20%" }} />
             </div>

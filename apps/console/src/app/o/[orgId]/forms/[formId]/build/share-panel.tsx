@@ -153,7 +153,7 @@ export function SharePanel({ formPath, form, announce }: { formPath: string; for
               width={200}
               height={200}
               shapeRendering="crispEdges"
-              style={{ background: "#fff", border: "1px solid var(--we-color-border)" }}
+              style={{ background: "#fff", border: "1px solid var(--we-border)" }}
             >
               <path d={qr.d} fill="#000" />
             </svg>

@@ -94,8 +94,8 @@ export function AuditLog({ orgId }: { orgId: string }) {
 
   return (
     <div>
-      <h1 style={{ fontSize: 26, margin: "0 0 8px" }}>Audit log</h1>
-      <p style={{ color: "var(--we-color-textMuted)", marginTop: 0 }}>Who changed what, and when. Entries never contain answers.</p>
+      <h1 style={{ margin: "0 0 8px" }}>Audit log</h1>
+      <p style={{ color: "var(--we-text-secondary)", marginTop: 0 }}>Who changed what, and when. Entries never contain answers.</p>
       <label style={{ display: "inline-grid", gap: 4, marginBottom: 16 }}>
         Show
         <select value={action} onChange={(e) => setAction(e.target.value)}>
@@ -115,7 +115,7 @@ export function AuditLog({ orgId }: { orgId: string }) {
         <div style={{ overflowX: "auto", position: "relative" }} tabIndex={0} role="region" aria-label="Audit entries">
           <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 14 }}>
             <thead>
-              <tr style={{ textAlign: "left", borderBottom: "1px solid var(--we-color-border)" }}>
+              <tr style={{ textAlign: "left", borderBottom: "1px solid var(--we-border)" }}>
                 <th scope="col" style={{ padding: 8 }}>When</th>
                 <th scope="col" style={{ padding: 8 }}>Who</th>
                 <th scope="col" style={{ padding: 8 }}>What</th>
@@ -124,18 +124,18 @@ export function AuditLog({ orgId }: { orgId: string }) {
             </thead>
             <tbody>
               {items.map((e) => (
-                <tr key={e.id} style={{ borderBottom: "1px solid var(--we-color-border)", verticalAlign: "top" }}>
+                <tr key={e.id} style={{ borderBottom: "1px solid var(--we-border)", verticalAlign: "top" }}>
                   <td style={{ padding: 8, whiteSpace: "nowrap" }}>
                     <time dateTime={e.occurredAt}>{new Date(e.occurredAt).toLocaleString()}</time>
                   </td>
                   <td style={{ padding: 8 }}>{e.actor.type === "system" ? "System" : (e.actor.displayName ?? "A former member")}</td>
                   <td style={{ padding: 8 }}>
                     {ACTIONS[e.action] ?? e.action}
-                    <div style={{ color: "var(--we-color-textMuted)", fontSize: 12 }}>
+                    <div style={{ color: "var(--we-text-secondary)", fontSize: 12 }}>
                       {e.resourceType} {e.resourceId.slice(0, 8)}
                     </div>
                   </td>
-                  <td style={{ padding: 8, overflowWrap: "anywhere", color: "var(--we-color-textMuted)" }}>{details(e.metadata)}</td>
+                  <td style={{ padding: 8, overflowWrap: "anywhere", color: "var(--we-text-secondary)" }}>{details(e.metadata)}</td>
                 </tr>
               ))}
             </tbody>

@@ -96,8 +96,8 @@ export function ResponseDetail({ orgId, formId, submissionId }: { orgId: string;
       {!detail && !error && <p role="status">Loading the response…</p>}
       {detail && (
         <>
-          <h2 style={{ margin: "8px 0 4px", fontSize: 22 }}>Response {detail.receiptNumber}</h2>
-          <p style={{ marginTop: 0, color: "var(--we-color-textMuted)" }}>
+          <h2 style={{ margin: "8px 0 4px" }}>Response {detail.receiptNumber}</h2>
+          <p style={{ marginTop: 0, color: "var(--we-text-secondary)" }}>
             Received <time dateTime={detail.receivedAt}>{new Date(detail.receivedAt).toLocaleString()}</time> · version {detail.version.versionNumber}
             {detail.version.active ? " (live)" : " (an earlier version; questions are shown as respondents saw them)"} ·{" "}
             {detail.respondent.kind === "anonymous"
@@ -109,14 +109,14 @@ export function ResponseDetail({ orgId, formId, submissionId }: { orgId: string;
           {downloadError && <p role="alert">{downloadError}</p>}
           <dl style={{ display: "grid", gap: 16, margin: "16px 0" }}>
             {detail.fields.map((f) => (
-              <div key={f.fieldId} style={{ borderBottom: "1px solid var(--we-color-border)", paddingBottom: 12 }}>
+              <div key={f.fieldId} style={{ borderBottom: "1px solid var(--we-border)", paddingBottom: 12 }}>
                 <dt style={{ fontWeight: 600 }}>
                   {f.label}
-                  {f.privacy !== "ordinary" && <span style={{ fontWeight: 400, color: "var(--we-color-textMuted)" }}> · {PRIVACY_TEXT[f.privacy]}</span>}
+                  {f.privacy !== "ordinary" && <span style={{ fontWeight: 400, color: "var(--we-text-secondary)" }}> · {PRIVACY_TEXT[f.privacy]}</span>}
                 </dt>
                 <dd style={{ margin: "4px 0 0", whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
                   {f.answer.masked ? (
-                    <em style={{ color: "var(--we-color-textMuted)" }}>Hidden: you don&apos;t have permission to see {PRIVACY_TEXT[f.privacy] || "this answer"}.</em>
+                    <em style={{ color: "var(--we-text-secondary)" }}>Hidden: you don&apos;t have permission to see {PRIVACY_TEXT[f.privacy] || "this answer"}.</em>
                   ) : f.files && f.files.length > 0 ? (
                     <ul style={{ margin: 0, paddingLeft: 20 }}>
                       {f.files.map((file) => (
@@ -131,7 +131,7 @@ export function ResponseDetail({ orgId, formId, submissionId }: { orgId: string;
                   ) : f.answer.display ? (
                     f.answer.display
                   ) : (
-                    <span style={{ color: "var(--we-color-textMuted)" }}>Not answered</span>
+                    <span style={{ color: "var(--we-text-secondary)" }}>Not answered</span>
                   )}
                 </dd>
               </div>
@@ -139,7 +139,7 @@ export function ResponseDetail({ orgId, formId, submissionId }: { orgId: string;
           </dl>
           {canDelete && (
             <section aria-labelledby={`${reasonId}-heading`} style={{ marginTop: 24 }}>
-              <h2 id={`${reasonId}-heading`} style={{ fontSize: 18 }}>
+              <h2 id={`${reasonId}-heading`}>
                 Delete this response
               </h2>
               {!deleting ? (

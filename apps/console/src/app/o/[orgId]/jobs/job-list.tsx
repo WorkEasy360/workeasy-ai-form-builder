@@ -102,8 +102,8 @@ export function JobList({ orgId }: { orgId: string }) {
 
   return (
     <div>
-      <h1 style={{ fontSize: 26, margin: "0 0 8px" }}>Background jobs</h1>
-      <p style={{ color: "var(--we-color-textMuted)", marginTop: 0 }}>
+      <h1 style={{ margin: "0 0 8px" }}>Background jobs</h1>
+      <p style={{ color: "var(--we-text-secondary)", marginTop: 0 }}>
         Work done after a change is saved, such as deliveries. Failed attempts are retried automatically; a job that keeps failing stops and waits here.
       </p>
       <label style={{ display: "inline-grid", gap: 4, marginBottom: 16 }}>
@@ -126,7 +126,7 @@ export function JobList({ orgId }: { orgId: string }) {
         <div style={{ overflowX: "auto", position: "relative" }} tabIndex={0} role="region" aria-label="Background jobs">
           <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 14 }}>
             <thead>
-              <tr style={{ textAlign: "left", borderBottom: "1px solid var(--we-color-border)" }}>
+              <tr style={{ textAlign: "left", borderBottom: "1px solid var(--we-border)" }}>
                 <th scope="col" style={{ padding: 8 }}>Created</th>
                 <th scope="col" style={{ padding: 8 }}>Job</th>
                 <th scope="col" style={{ padding: 8 }}>Status</th>
@@ -141,18 +141,18 @@ export function JobList({ orgId }: { orgId: string }) {
             </thead>
             <tbody>
               {items.map((j) => (
-                <tr key={j.id} style={{ borderBottom: "1px solid var(--we-color-border)", verticalAlign: "top" }}>
+                <tr key={j.id} style={{ borderBottom: "1px solid var(--we-border)", verticalAlign: "top" }}>
                   <td style={{ padding: 8, whiteSpace: "nowrap" }}>
                     <time dateTime={j.createdAt}>{new Date(j.createdAt).toLocaleString()}</time>
                   </td>
                   <td style={{ padding: 8 }}>
                     {j.type}
-                    <div style={{ color: "var(--we-color-textMuted)", fontSize: 12 }}>{j.id.slice(0, 8)}</div>
+                    <div style={{ color: "var(--we-text-secondary)", fontSize: 12 }}>{j.id.slice(0, 8)}</div>
                   </td>
                   <td style={{ padding: 8 }}>
                     {STATUS[j.status]}
                     {j.status === "queued" && j.attempt > 0 && (
-                      <div style={{ color: "var(--we-color-textMuted)", fontSize: 12 }}>
+                      <div style={{ color: "var(--we-text-secondary)", fontSize: 12 }}>
                         Next try <time dateTime={j.nextAttemptAt}>{new Date(j.nextAttemptAt).toLocaleTimeString()}</time>
                       </div>
                     )}
@@ -160,7 +160,7 @@ export function JobList({ orgId }: { orgId: string }) {
                   <td style={{ padding: 8 }}>
                     {j.attempt} of {j.maxAttempts}
                   </td>
-                  <td style={{ padding: 8, color: "var(--we-color-textMuted)" }}>{j.lastError ?? "—"}</td>
+                  <td style={{ padding: 8, color: "var(--we-text-secondary)" }}>{j.lastError ?? "—"}</td>
                   {canReplay && (
                     <td style={{ padding: 8 }}>
                       {j.status === "dead" && (

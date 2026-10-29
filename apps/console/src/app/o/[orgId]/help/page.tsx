@@ -93,7 +93,7 @@ export default function HelpPage() {
       <div style={{ display: "grid", gap: 16, maxWidth: 760 }}>
         {SECTIONS.map((s) => (
           <section key={s.id} id={s.id} className="c-card" aria-labelledby={`${s.id}-h`}>
-            <h2 id={`${s.id}-h`} style={{ fontSize: 18, margin: "0 0 8px" }}>
+            <h2 id={`${s.id}-h`} style={{ margin: "0 0 8px" }}>
               {s.title}
             </h2>
             <ul style={{ margin: 0, paddingLeft: 20, display: "grid", gap: 6 }}>

@@ -87,12 +87,13 @@ export function SettingsApp({ orgId, formId }: { orgId: string; formId: string }
 const SETTINGS_CSS = `
 .s-layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 24px; align-items: start; }
 .s-nav { display: grid; gap: 2px; position: sticky; top: calc(var(--c-topbar, 0px) + 16px); }
-.s-nav button { all: unset; box-sizing: border-box; cursor: pointer; padding: 8px 12px; border-radius: var(--we-radius-md); color: var(--we-color-text); }
-.s-nav button:hover { background: var(--we-color-surface); }
-.s-nav button:focus-visible { outline: 2px solid var(--we-color-focus); }
-.s-nav button[aria-current="page"] { background: color-mix(in srgb, var(--we-color-accent) 12%, transparent); color: var(--we-color-accent); font-weight: 600; }
+.s-nav button { all: unset; box-sizing: border-box; cursor: pointer; padding: 8px 12px; border-radius: var(--we-radius-md); color: var(--we-text-primary); }
+.s-nav button { font-weight: 500; transition: background-color var(--we-duration-fast) var(--we-ease); }
+.s-nav button:hover { background: var(--we-surface-hover); }
+.s-nav button:focus-visible { outline: 2px solid var(--we-focus); }
+.s-nav button[aria-current="page"] { background: var(--we-surface); color: var(--we-primary); font-weight: 600; box-shadow: inset 3px 0 0 var(--we-accent), var(--we-shadow-xs); }
 .s-body { max-width: 640px; min-width: 0; }
-.s-body h2 { font-size: 20px; margin: 0 0 4px; }
+.s-body h2 { font-size: var(--we-text-lg); margin: 0 0 4px; }
 .s-body section + section { margin-top: 32px; }
 @media (max-width: 899px) {
   .s-layout { grid-template-columns: minmax(0, 1fr); }

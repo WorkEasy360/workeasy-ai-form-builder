@@ -65,7 +65,7 @@ type Props = { params: Promise<{ slug: string }>; searchParams: Promise<Record<s
 export async function generateMetadata({ params, searchParams }: Props): Promise<Metadata> {
   const loaded = await loadForm((await params).slug, (await searchParams).embed === "1");
   return {
-    title: loaded.kind === "open" ? loaded.definition.title : "Workeasy Forms",
+    title: loaded.kind === "open" ? loaded.definition.title : "WorkEasy360 Forms",
     // Forms are shared by link; they should not appear in search results.
     robots: { index: false, follow: false },
   };

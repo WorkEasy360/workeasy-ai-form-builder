@@ -64,8 +64,8 @@ export function AiSettingsForm({ orgId }: { orgId: string }) {
   const validLimit = Number.isInteger(n) && n >= 1000 && n <= 100_000_000;
   return (
     <div>
-      <h1 style={{ fontSize: 26, margin: "0 0 8px" }}>AI settings</h1>
-      <p style={{ color: "var(--we-color-textMuted)", marginTop: 0 }}>
+      <h1 style={{ margin: "0 0 8px" }}>AI settings</h1>
+      <p style={{ color: "var(--we-text-secondary)", marginTop: 0 }}>
         AI can suggest forms for people who edit them. Suggestions never change a form until someone applies them, and prompts are not kept after a request
         ends.
       </p>
@@ -97,7 +97,7 @@ export function AiSettingsForm({ orgId }: { orgId: string }) {
               onChange={(e) => setLimit(e.target.value)}
               style={{ maxWidth: 200 }}
             />
-            <span style={{ color: "var(--we-color-textMuted)", fontSize: 14 }}>
+            <span style={{ color: "var(--we-text-secondary)", fontSize: 14 }}>
               Each request holds its largest possible cost until it finishes, so requests stop before the limit can be passed. Resets at midnight UTC.
             </span>
           </div>
@@ -113,7 +113,7 @@ export function AiSettingsForm({ orgId }: { orgId: string }) {
               </button>
             </p>
           ) : (
-            <p style={{ margin: 0, color: "var(--we-color-textMuted)" }}>Only organization owners can change these settings.</p>
+            <p style={{ margin: 0, color: "var(--we-text-secondary)" }}>Only organization owners can change these settings.</p>
           )}
           <p role="status">{notice}</p>
         </form>

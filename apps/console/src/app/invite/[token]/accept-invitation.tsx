@@ -28,7 +28,7 @@ export function AcceptInvitation({ token }: { token: string }) {
       })
       .catch((err: unknown) => {
         if (cancelled) return;
-        setState(err instanceof ApiError && err.problem.status === 401 ? { kind: "signed-out" } : { kind: "failed", title: "We couldn't reach Workeasy Forms. Try again." });
+        setState(err instanceof ApiError && err.problem.status === 401 ? { kind: "signed-out" } : { kind: "failed", title: "We couldn't reach WorkEasy360 Forms. Try again." });
       });
     return () => {
       cancelled = true;
@@ -51,7 +51,7 @@ export function AcceptInvitation({ token }: { token: string }) {
   if (state.kind === "signed-out") {
     return (
       <div className="c-card" style={{ display: "grid", gap: 12 }}>
-        <h2 style={{ margin: 0, fontSize: 20 }}>You&apos;ve been invited</h2>
+        <h2 style={{ margin: 0 }}>You&apos;ve been invited</h2>
         <p style={{ margin: 0 }}>Sign in to join the organization that invited you.</p>
         <p style={{ margin: 0 }}>
           <a className="c-btn c-btn-primary" href={`/?returnTo=${encodeURIComponent(here)}`}>
@@ -64,7 +64,7 @@ export function AcceptInvitation({ token }: { token: string }) {
   if (state.kind === "joined") {
     return (
       <div className="c-card" style={{ display: "grid", gap: 12 }}>
-        <h2 style={{ margin: 0, fontSize: 20 }}>You&apos;re in</h2>
+        <h2 style={{ margin: 0 }}>You&apos;re in</h2>
         <p style={{ margin: 0 }}>You can now work on forms in this organization.</p>
         <p style={{ margin: 0 }}>
           <a className="c-btn c-btn-primary" href={`/o/${state.orgId}/forms`}>
@@ -77,7 +77,7 @@ export function AcceptInvitation({ token }: { token: string }) {
   if (state.kind === "failed") {
     return (
       <div className="c-card" role="alert" style={{ display: "grid", gap: 12 }}>
-        <h2 style={{ margin: 0, fontSize: 20 }}>This invitation can&apos;t be used</h2>
+        <h2 style={{ margin: 0 }}>This invitation can&apos;t be used</h2>
         <p style={{ margin: 0 }}>{state.title}</p>
         <p style={{ margin: 0 }}>
           <a className="c-btn" href="/">
@@ -89,7 +89,7 @@ export function AcceptInvitation({ token }: { token: string }) {
   }
   return (
     <div className="c-card" style={{ display: "grid", gap: 12 }}>
-      <h2 style={{ margin: 0, fontSize: 20 }}>You&apos;ve been invited</h2>
+      <h2 style={{ margin: 0 }}>You&apos;ve been invited</h2>
       <p style={{ margin: 0 }}>Join the organization that invited you as {state.name}?</p>
       <p style={{ margin: 0 }}>
         <button type="button" className="c-btn c-btn-primary" disabled={busy} onClick={() => void join()}>
