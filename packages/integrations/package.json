@@ -16,6 +16,6 @@
     "@workeasy/form-schema": "workspace:*",
     "@workeasy/jobs": "workspace:*",
     "kysely": "0.29.6",
-    "nodemailer": "10.0.13"
+    "nodemailer": "10.1.4"
   }
 }
