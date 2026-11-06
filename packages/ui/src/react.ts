@@ -1,4 +1,5 @@
 /** React primitives; server-safe (the theme toggle is a separate client entry). */
+export { AgentAvatar } from "./components/agent-avatar";
 export { BRAND_MARK_PATH, BrandLockup, BrandMark, PRODUCT_LINE, PRODUCT_NAME } from "./components/logo";
 export { Badge, Card, EmptyState, FeatureList, Page, PageHeader, Sparkline, StatCard, type Tone } from "./components/page";
 export {

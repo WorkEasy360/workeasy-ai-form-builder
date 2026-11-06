@@ -7,6 +7,7 @@ import { ThemeToggle } from "@workeasy/ui/theme-toggle";
 import { api, ApiError, type Me } from "../../../lib/api";
 import { MODULE_GROUPS, MODULES } from "../../../lib/modules";
 import { LogoutIcon, UsersIcon } from "../../icons";
+import { AssistantPanel } from "./assistant-panel";
 import { GlobalSearch, Notifications } from "./shell-tools";
 
 export interface OrgContextValue {
@@ -37,8 +38,9 @@ type State = { kind: "loading" } | { kind: "signed-out" } | { kind: "not-found" 
  * The console frame for one organization, the WorkEasy360 application
  * shell: a navy sidebar of the modules the user may open (lib/modules.tsx),
  * and a top bar with the organization switcher, search, notifications, the
- * theme toggle and the account menu. In the form builder the sidebar steps
- * aside into a drawer so the form gets the whole width.
+ * theme toggle and the account menu, plus the AI assistant in the corner.
+ * In the form builder the sidebar steps aside into a drawer so the form gets
+ * the whole width.
  */
 export function OrgShell({ orgId, children }: { orgId: string; children: ReactNode }) {
   const pathname = usePathname();
@@ -203,6 +205,7 @@ export function OrgShell({ orgId, children }: { orgId: string; children: ReactNo
       <main className="c-main" id="main" tabIndex={-1}>
         <OrgContext.Provider value={org}>{children}</OrgContext.Provider>
       </main>
+      {org && <AssistantPanel orgId={orgId} can={can} userName={org.userName} />}
     </div>
   );
 }

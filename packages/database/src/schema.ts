@@ -345,6 +345,7 @@ export interface AiUsageDaysTable {
   day: ColumnType<string, string, never>;
   reserved_tokens: ColumnType<string, number | undefined, number>;
   used_tokens: ColumnType<string, number | undefined, number>;
+  assistant_messages: ColumnType<number, number | undefined, number>;
 }
 
 export type IntegrationKind = "webhook" | "email" | "confirmation";

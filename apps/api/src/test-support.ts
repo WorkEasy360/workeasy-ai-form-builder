@@ -1,3 +1,4 @@
+import { stubProvider } from "@workeasy/ai";
 import type { IdentityProvider } from "@workeasy/auth";
 import type { Db } from "@workeasy/database";
 import { createObjectStore, type ObjectStore } from "@workeasy/files";
@@ -25,6 +26,8 @@ export const testSettings: AppSettings = {
   webhookPolicy: { allowHttp: true, allowPrivateNetworks: true, allowedPorts: [] },
   // Tests submit as soon as a session opens; the spam protection test sets its own minimum.
   minFillMs: 0,
+  // Small, so the assistant test can reach the limit.
+  assistantDailyLimit: 20,
 };
 
 /**
@@ -75,6 +78,8 @@ export function buildTestApp(
     settings,
     readinessChecks: { database: () => sql`SELECT 1`.execute(db) },
     isDraining: () => false,
+    // The console assistant answers with the local stub model.
+    assistant: stubProvider(),
   });
 }
 

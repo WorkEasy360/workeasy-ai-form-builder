@@ -33,8 +33,14 @@ const ConfigSchema = z
     SESSION_SECRET: z.string().min(32, "SESSION_SECRET must be at least 32 characters"),
     SESSION_TTL_HOURS: z.coerce.number().int().min(1).max(168).default(12),
     SESSION_COOKIE_SECURE: z.stringbool().default(true),
-    /** AI authoring (AI-01); the worker holds the provider keys. "disabled" hides it. */
+    /** AI authoring (AI-01, run by the worker) and the console assistant (run here, docs/09). "disabled" hides both. */
     AI_PROVIDER: z.enum(AI_PROVIDERS).default("disabled"),
+    /** The provider's model ID and key, shared with the worker; required for openai and gemini. */
+    AI_MODEL: z.preprocess(unsetIfEmpty, z.string().min(1).max(100).optional()),
+    OPENAI_API_KEY: z.preprocess(unsetIfEmpty, z.string().min(1).max(500).optional()),
+    GEMINI_API_KEY: z.preprocess(unsetIfEmpty, z.string().min(1).max(500).optional()),
+    /** Assistant questions per organization per UTC day. */
+    ASSISTANT_DAILY_LIMIT: z.coerce.number().int().min(1).max(100_000).default(200),
     /** Encrypts webhook signing secrets at rest (AUT-01): 32 bytes, base64. Shared with the worker. */
     INTEGRATION_SECRET_KEY: z.string().min(40),
     /** Local development only: accept http:// and private webhook URLs. Refused in production. */

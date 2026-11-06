@@ -35,6 +35,7 @@ Research checked 14 October 2026. Primary official sources are used for the comp
 | ADR-010 | Provider adapters for AI/auth/Workeasy/payment | Unknown existing infrastructure does not contaminate domain model |
 | ADR-011 | Hosted payment collection | Workeasy does not handle raw card details |
 | ADR-012 | No arbitrary code in forms/rules | Bounded evaluation and safer public rendering |
+| ADR-013 | The console assistant calls the AI provider from the API (docs/09) | A chat answer can't wait for a job queue, so the API now reads the AI keys too; AI drafting stays a worker job. The assistant has read-only tools and returns proposals that existing endpoints carry out |
 
 ## Open decisions and safe defaults
 

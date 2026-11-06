@@ -1,3 +1,4 @@
+import type { JsonCompletionProvider } from "@workeasy/ai";
 import type { DestinationPolicy } from "@workeasy/integrations";
 import express, { type ErrorRequestHandler, type Express } from "express";
 import type { IdentityProvider } from "@workeasy/auth";
@@ -33,6 +34,8 @@ export interface AppSettings {
   webhookPolicy: DestinationPolicy;
   /** Spam protection's minimum fill time; defaults to 2 seconds (tests that submit instantly set 0). */
   minFillMs?: number;
+  /** Assistant questions per organization per UTC day (ASSISTANT_DAILY_LIMIT); defaults to 200. */
+  assistantDailyLimit?: number;
 }
 
 export interface AppDependencies {
@@ -50,6 +53,8 @@ export interface AppDependencies {
   readinessChecks: Record<string, ReadinessCheck>;
   /** True once shutdown has begun, so load balancers stop routing here. */
   isDraining: () => boolean;
+  /** The model behind the console assistant (docs/09); undefined when AI is disabled on this server. */
+  assistant?: JsonCompletionProvider | undefined;
 }
 
 /** Maps body-parser failures to stable problem codes. */

@@ -8732,6 +8732,388 @@
         }
       }
     },
+    "/api/v1/organizations/{orgId}/assistant": {
+      "parameters": [
+        {
+          "name": "orgId",
+          "in": "path",
+          "required": true,
+          "description": "Organization (tenant) ID",
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "getAssistantStatus",
+        "summary": "Whether the console assistant is available, and today's questions (any member)",
+        "security": [
+          {
+            "consoleSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Availability and today's use",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "disabledBy": {
+                      "type": "string",
+                      "enum": [
+                        "server",
+                        "organization"
+                      ]
+                    },
+                    "usedToday": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "dailyLimit": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "enabled",
+                    "usedToday",
+                    "dailyLimit"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Organization not found or not visible",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "askAssistant",
+        "summary": "Ask the console assistant one question (any member, when AI is on)",
+        "description": "Runs the model with read-only tools that act as the member inside this organization, re-checking their role and form access on every call; tools return form metadata and counts, never respondents' answers. A proposed change is verified and returned for the member to confirm through its existing endpoint; nothing is changed here. Counts one question against ASSISTANT_DAILY_LIMIT and its tokens against the organization's daily AI token limit. Questions and answers are not stored or logged.",
+        "security": [
+          {
+            "consoleSession": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "question": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2000
+                  },
+                  "history": {
+                    "default": [],
+                    "maxItems": 40,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "role": {
+                          "type": "string",
+                          "enum": [
+                            "user",
+                            "assistant"
+                          ]
+                        },
+                        "content": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 4000
+                        }
+                      },
+                      "required": [
+                        "role",
+                        "content"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "question"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The answer, with an optional link and proposal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "answer": {
+                      "type": "object",
+                      "properties": {
+                        "text": {
+                          "type": "string"
+                        },
+                        "link": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "label": {
+                                  "type": "string"
+                                },
+                                "href": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "label",
+                                "href"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "proposal": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "create_form",
+                                    "duplicate_form",
+                                    "close_form",
+                                    "reopen_form",
+                                    "retry_job"
+                                  ]
+                                },
+                                "title": {
+                                  "type": "string"
+                                },
+                                "summary": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "array",
+                                    "prefixItems": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "string"
+                                      }
+                                    ],
+                                    "items": false,
+                                    "minItems": 2,
+                                    "maxItems": 2
+                                  }
+                                },
+                                "effect": {
+                                  "type": "string"
+                                },
+                                "confirmLabel": {
+                                  "type": "string"
+                                },
+                                "danger": {
+                                  "type": "boolean"
+                                },
+                                "request": {
+                                  "type": "object",
+                                  "properties": {
+                                    "method": {
+                                      "type": "string",
+                                      "enum": [
+                                        "POST",
+                                        "PUT"
+                                      ]
+                                    },
+                                    "path": {
+                                      "type": "string"
+                                    },
+                                    "body": {
+                                      "type": "object",
+                                      "propertyNames": {
+                                        "type": "string"
+                                      },
+                                      "additionalProperties": {}
+                                    }
+                                  },
+                                  "required": [
+                                    "method",
+                                    "path",
+                                    "body"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                "done": {
+                                  "type": "object",
+                                  "properties": {
+                                    "label": {
+                                      "type": "string"
+                                    },
+                                    "path": {
+                                      "type": "string"
+                                    },
+                                    "idFrom": {
+                                      "type": "string",
+                                      "const": "form"
+                                    }
+                                  },
+                                  "required": [
+                                    "label",
+                                    "path"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "title",
+                                "summary",
+                                "effect",
+                                "confirmLabel",
+                                "danger",
+                                "request"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "note": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "text",
+                        "link",
+                        "proposal",
+                        "note"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "usedToday": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    "dailyLimit": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "answer",
+                    "usedToday",
+                    "dailyLimit"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Organization not found or not visible",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "AI_NOT_ENABLED, ASSISTANT_DAILY_LIMIT or AI_BUDGET_EXCEEDED",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid question or history",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "ASSISTANT_FAILED: the model couldn't produce a valid answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "AI_DISABLED (no provider on this server) or ASSISTANT_FAILED (provider busy)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/organizations/{orgId}/ai-jobs/{jobId}/cancel": {
       "parameters": [
         {

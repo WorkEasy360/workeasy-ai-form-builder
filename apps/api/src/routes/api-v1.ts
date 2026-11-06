@@ -55,6 +55,7 @@ import type { DefinitionIssue, FormDefinition } from "@workeasy/form-schema";
 import { isLayoutType, privacyOf } from "@workeasy/form-engine";
 import type { z } from "zod";
 import type { AppDependencies } from "../app.js";
+import { assistantRoutes } from "./assistant.js";
 import {
   AccessPolicyBodySchema,
   ActivateVersionBodySchema,
@@ -296,7 +297,8 @@ interface FormContext {
   membership: MembershipRecord;
 }
 
-export function apiV1Router({ db, settings, objectStore }: AppDependencies): Router {
+export function apiV1Router(deps: AppDependencies): Router {
+  const { db, settings, objectStore } = deps;
   const router = Router();
   const sessionCookie = sessionCookieName(settings.secureCookies);
 
@@ -2487,6 +2489,14 @@ export function apiV1Router({ db, settings, objectStore }: AppDependencies): Rou
         return { kind: "ok", body: { grants: await currentGrants(trx, formId) } };
       }),
     );
+  });
+
+  // The console assistant (docs/09): same session, same-origin check and organization access as every route here.
+  assistantRoutes(router, deps, {
+    async inOrganization(orgId, userId, fn) {
+      const out = await inOrganization(orgId, userId, fn);
+      return out === NOT_VISIBLE ? undefined : { value: out };
+    },
   });
 
   return router;

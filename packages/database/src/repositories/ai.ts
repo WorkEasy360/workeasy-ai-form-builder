@@ -165,6 +165,38 @@ export async function settleGeneration(trx: Trx, id: string): Promise<void> {
      WHERE tenant_id = ${released.tenant_id}::uuid AND day = ${released.day}::date`.execute(trx);
 }
 
+// Assistant ------------------------------------------------------------------------------------
+
+/** Questions the organization's members asked the assistant today (UTC). */
+export async function assistantUsedToday(trx: Trx): Promise<number> {
+  const row = await trx.selectFrom("ai_usage_days").select("assistant_messages").where("day", "=", TODAY).executeTakeFirst();
+  return row?.assistant_messages ?? 0;
+}
+
+export type AssistantAllowance = { kind: "ok"; used: number } | { kind: "limit"; limit: number } | { kind: "tokens"; limit: number };
+
+/**
+ * Takes one assistant question from today's allowance. Refused when the day's
+ * questions are used up, or when AI drafting and the assistant together have
+ * already used the day's token limit. The row is locked, so concurrent
+ * questions never pass the question limit.
+ */
+export async function takeAssistantMessage(trx: Trx, tenantId: string, dailyLimit: number, tokenLimit: number): Promise<AssistantAllowance> {
+  await sql`INSERT INTO app.ai_usage_days (tenant_id, day) VALUES (${tenantId}::uuid, ${TODAY}) ON CONFLICT (tenant_id, day) DO NOTHING`.execute(trx);
+  const usage = await trx.selectFrom("ai_usage_days").select(["assistant_messages", "used_tokens", "reserved_tokens"]).where("day", "=", TODAY).forUpdate().executeTakeFirstOrThrow();
+  if (usage.assistant_messages >= dailyLimit) return { kind: "limit", limit: dailyLimit };
+  if (Number(usage.used_tokens) + Number(usage.reserved_tokens) >= tokenLimit) return { kind: "tokens", limit: tokenLimit };
+  await trx.updateTable("ai_usage_days").set((eb) => ({ assistant_messages: eb("assistant_messages", "+", 1) })).where("day", "=", TODAY).execute();
+  return { kind: "ok", used: usage.assistant_messages + 1 };
+}
+
+/** Charges a question's tokens, as the provider reported them, to today's usage. */
+export async function addAssistantTokens(trx: Trx, tokens: number): Promise<void> {
+  if (tokens <= 0) return;
+  // Row security limits this to the caller's organization.
+  await sql`UPDATE app.ai_usage_days SET used_tokens = used_tokens + ${tokens}::bigint WHERE day = ${TODAY}`.execute(trx);
+}
+
 /** Active generations in the tenant, and those of one user. */
 export async function countActive(trx: Trx, userId: string): Promise<{ tenant: number; user: number }> {
   const row = await trx

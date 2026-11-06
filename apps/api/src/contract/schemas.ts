@@ -614,6 +614,51 @@ export const AiSettingsResponseSchema = z.object({
 });
 export type AiSettingsResponse = z.infer<typeof AiSettingsResponseSchema>;
 
+// Assistant (docs/09) -------------------------------------------------------
+
+export const AssistantStatusResponseSchema = z.object({
+  /** True when this server has a provider and the organization has turned AI on. */
+  enabled: z.boolean(),
+  /** Why it's off: no provider on this server, or AI turned off for the organization. */
+  disabledBy: z.enum(["server", "organization"]).optional(),
+  usedToday: z.number().int().min(0),
+  dailyLimit: z.number().int().min(1),
+});
+
+const AssistantMessageSchema = z.object({ role: z.enum(["user", "assistant"]), content: z.string().trim().min(1).max(4000) });
+
+export const AssistantAskBodySchema = z.object({
+  question: z.string().trim().min(1).max(2000),
+  /** Earlier messages, oldest first; only the last 12 are sent to the model. The server stores none of them. */
+  history: z.array(AssistantMessageSchema).max(40).default([]),
+});
+
+/** A change for the member to confirm; confirming calls `request`, an existing endpoint, as the member. */
+export const AssistantProposalSchema = z.object({
+  kind: z.enum(["create_form", "duplicate_form", "close_form", "reopen_form", "retry_job"]),
+  title: z.string(),
+  /** Checked facts, label then value. */
+  summary: z.array(z.tuple([z.string(), z.string()])),
+  effect: z.string(),
+  confirmLabel: z.string(),
+  danger: z.boolean(),
+  request: z.object({ method: z.enum(["POST", "PUT"]), path: z.string(), body: z.record(z.string(), z.unknown()) }),
+  /** Where to go once it's done; `:id` is the created form's id when idFrom is "form". */
+  done: z.object({ label: z.string(), path: z.string(), idFrom: z.literal("form").optional() }).optional(),
+});
+
+export const AssistantAnswerResponseSchema = z.object({
+  answer: z.object({
+    text: z.string(),
+    link: z.object({ label: z.string(), href: z.string() }).nullable(),
+    proposal: AssistantProposalSchema.nullable(),
+    /** Why a requested change can't be offered (state, role or access). */
+    note: z.string().nullable(),
+  }),
+  usedToday: z.number().int().min(1),
+  dailyLimit: z.number().int().min(1),
+});
+
 export const AiApplyBodySchema = z.object({
   /** The draft revision the author is looking at; it must still be the proposal's base. */
   expectedRevision: z.number().int().min(1),

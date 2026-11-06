@@ -1,3 +1,4 @@
+import { providerFromSettings } from "@workeasy/ai";
 import { parseSecretKey, STRICT_POLICY } from "@workeasy/integrations";
 import { createDb } from "@workeasy/database";
 import { createObjectStore } from "@workeasy/files";
@@ -14,7 +15,11 @@ const publicDb = createDb({ connectionString: config.DATABASE_PUBLIC_URL, applic
 const consoleOrigin = new URL(config.CONSOLE_PUBLIC_URL).origin;
 let draining = false;
 
+// The worker runs AI drafting; the API runs the assistant, which answers while the member waits.
+const assistant = providerFromSettings(config);
+
 const app = createApp({
+  assistant,
   readinessChecks: {
     database: () => sql`SELECT 1`.execute(db),
     publicDatabase: () => sql`SELECT 1`.execute(publicDb),
@@ -55,6 +60,7 @@ const app = createApp({
     sessionTtlMs: config.SESSION_TTL_HOURS * 60 * 60 * 1000,
     secureCookies: config.SESSION_COOKIE_SECURE,
     aiEnabled: config.AI_PROVIDER !== "disabled",
+    assistantDailyLimit: config.ASSISTANT_DAILY_LIMIT,
     homeRegion: config.OBJECT_STORAGE_REGION,
     integrationSecretKey: parseSecretKey(config.INTEGRATION_SECRET_KEY),
     webhookPolicy: config.WEBHOOK_ALLOW_PRIVATE_NETWORKS ? { allowHttp: true, allowPrivateNetworks: true, allowedPorts: [] } : STRICT_POLICY,

@@ -160,6 +160,26 @@ function toSummary(row: {
 }
 
 /** A form that is not deleted, or undefined. */
+/** How many forms are in each state, among those the user may see (all of them for roles that read every form). */
+export async function formStateCounts(trx: Trx, onlyGrantedTo?: string): Promise<Record<FormState, number>> {
+  let query = trx.selectFrom("forms as f").select(["f.state", sql<number>`count(*)::int`.as("n")]).where("f.deleted_at", "is", null);
+  if (onlyGrantedTo) {
+    query = query.where((eb) =>
+      eb.exists(
+        eb
+          .selectFrom("form_grants as g")
+          .select(sql`1`.as("one"))
+          .whereRef("g.form_id", "=", "f.id")
+          .where("g.principal_type", "=", "user")
+          .where("g.principal_id", "=", onlyGrantedTo),
+      ),
+    );
+  }
+  const counts: Record<FormState, number> = { draft: 0, published: 0, closed: 0, archived: 0 };
+  for (const row of await query.groupBy("f.state").execute()) counts[row.state] = row.n;
+  return counts;
+}
+
 export async function getFormSummary(trx: Trx, formId: string): Promise<FormSummary | undefined> {
   const row = await trx
     .selectFrom("forms")
