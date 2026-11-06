@@ -264,7 +264,7 @@ function ProblemList({ definition, ruleId }: { definition: FormDefinition; ruleI
   const problems = ruleProblems(definition, ruleId);
   if (problems.length === 0) return null;
   return (
-    <ul className="b-issues" role="alert" style={{ color: "var(--we-error-fg)" }}>
+    <ul className="b-issues" role="alert" style={{ color: "var(--we-error-text)" }}>
       {problems.map((p) => (
         <li key={`${p.path}:${p.code}`}>{p.message}</li>
       ))}

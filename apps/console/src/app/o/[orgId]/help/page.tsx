@@ -1,3 +1,5 @@
+import { ModuleHeader } from "../module-header";
+
 /**
  * Help for people who build forms (DOC-01): from a new form to a shared
  * link, then what happens with responses. Operators' runbook is
@@ -73,12 +75,7 @@ const SECTIONS: Array<{ id: string; title: string; steps: string[] }> = [
 export default function HelpPage() {
   return (
     <div className="c-page">
-      <div className="c-page-head">
-        <div>
-          <h1>Help</h1>
-          <p className="c-subtitle">From a new form to a shared link, and what happens with responses.</p>
-        </div>
-      </div>
+      <ModuleHeader module="help" />
       <nav aria-label="On this page" style={{ marginBottom: 24 }}>
         <ul className="c-toolbar" style={{ listStyle: "none", padding: 0, margin: 0 }}>
           {SECTIONS.map((s) => (

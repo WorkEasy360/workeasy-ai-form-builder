@@ -4,8 +4,8 @@ import type { ReactNode } from "react";
 import { tokensCss } from "@workeasy/ui";
 
 export const metadata: Metadata = {
-  title: "WorkEasy360 Forms",
-  description: "Complete a WorkEasy360 form.",
+  title: "Workeasy AI Form Builder",
+  description: "Complete a form built with Workeasy.",
   referrer: "no-referrer",
 };
 
@@ -24,8 +24,8 @@ body{margin:0;font-family:var(--we-font-family);font-size:16px;line-height:1.5;b
 .r-notice>h1{font-size:24px;line-height:32px;font-weight:600;padding-top:48px}
 .r-embed.r-notice>h1{padding-top:16px}
 .r-embed{margin:0}
-.r-alert{max-width:680px;margin:16px auto 0;padding:12px 16px;border:1px solid var(--we-error);border-left-width:4px;border-radius:var(--we-radius-md);background:var(--we-error-bg);color:var(--we-error-fg)}
-.r-button{display:inline-flex;align-items:center;min-height:40px;padding:0 20px;border-radius:var(--we-radius-md);background:var(--we-color-accent);color:var(--we-color-accentText);font-weight:600;text-decoration:none;transition:filter var(--we-duration-fast) var(--we-ease)}
+.r-alert{max-width:680px;margin:16px auto 0;padding:12px 16px;border:1px solid var(--we-error);border-left-width:4px;border-radius:var(--we-radius-md);background:var(--we-error-soft);color:var(--we-error-text)}
+.r-button{display:inline-flex;align-items:center;min-height:40px;padding:0 20px;border-radius:var(--we-radius-md);background:var(--we-color-accent);color:var(--we-color-accentText);font-weight:600;text-decoration:none;transition:filter var(--we-motion-fast) var(--we-motion-ease)}
 .r-button:hover{filter:brightness(1.1)}
 `;
 

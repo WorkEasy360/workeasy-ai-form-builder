@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useState } from "react";
+import { StatCard } from "@workeasy/ui/react";
 import { api, ApiError } from "../../../../../../lib/api";
 
 interface Analytics {
@@ -21,7 +22,7 @@ const isoDay = (d: Date) => d.toISOString().slice(0, 10);
  * respondent sessions only; no answers are involved.
  */
 export function FormAnalytics({ orgId, formId }: { orgId: string; formId: string }) {
-  const ids = { from: useId(), to: useId() };
+  const ids = { from: useId(), to: useId(), funnel: useId() };
   // The last 30 days by default, fixed when the page opens.
   const [today] = useState(() => isoDay(new Date()));
   const [from, setFrom] = useState(() => isoDay(new Date(Date.now() - 29 * 86_400_000)));
@@ -83,14 +84,36 @@ export function FormAnalytics({ orgId, formId }: { orgId: string; formId: string
         <>
           <div className="c-stats">
             {tiles.map((t) => (
-              <section key={t.label} className="c-stat" aria-label={t.label}>
-                <h2>{t.label}</h2>
-                <p className="c-stat-value">{t.value}</p>
-                <p>{t.note}</p>
-              </section>
+              <StatCard key={t.label} label={t.label} value={t.value} foot={t.note} />
             ))}
           </div>
-          <p className="c-hint" style={{ marginBottom: 12 }}>
+          <section className="c-card c-section" aria-labelledby={ids.funnel}>
+            <div className="c-card-head">
+              <h2 id={ids.funnel}>From view to accepted response</h2>
+            </div>
+            {/* One measure across three stages: one series colour, bars against views, numbers in text colours. */}
+            <ol className="c-funnel">
+              {[
+                { label: "Viewed", value: data.totals.views, share: null, of: "" },
+                { label: "Started", value: data.totals.starts, share: data.totals.startRate, of: "of views" },
+                { label: "Accepted", value: data.totals.accepts, share: data.totals.completionRate, of: "of starts" },
+              ].map((stage) => (
+                <li key={stage.label}>
+                  <div className="c-barlist-text">
+                    <span className="c-barlist-label">{stage.label}</span>
+                    <span>
+                      <strong>{number.format(stage.value)}</strong>
+                      {stage.of && <span className="c-muted"> · {percent(stage.share)} {stage.of}</span>}
+                    </span>
+                  </div>
+                  <div className="c-barlist-track" aria-hidden="true">
+                    <i style={{ width: `${data.totals.views ? (stage.value / data.totals.views) * 100 : 0}%`, background: "var(--we-chart-1)" }} />
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </section>
+          <p className="c-hint" style={{ margin: "24px 0 12px" }}>
             {data.definitions.day}
           </p>
           <div className="c-table-wrap">

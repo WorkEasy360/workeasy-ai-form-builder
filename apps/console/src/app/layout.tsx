@@ -1,30 +1,34 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import type { ReactNode } from "react";
-import { tokensCss } from "@workeasy/ui";
+import { adminStyles, themeInitScript, tokens } from "@workeasy/ui";
+import { PRODUCT_NAME } from "@workeasy/ui/react";
 import { CONSOLE_CSS } from "./console-css";
 
-export const metadata: Metadata = {
-  title: "WorkEasy360 Forms",
-  description: "Build, publish and manage WorkEasy360 forms.",
-};
-
-// Self-hosted at build time: no request to a font service at runtime.
+// Self-hosted at build time; the tokens' font stack reads --we-font-inter.
 const inter = Inter({ subsets: ["latin"], display: "swap", variable: "--we-font-inter" });
 
-const baseCss = `
-${tokensCss()}
-*,*::before,*::after{box-sizing:border-box}
-body{margin:0;font-family:var(--we-font-family);font-size:var(--we-text-base);line-height:var(--we-leading-base);background:var(--we-background);color:var(--we-text-body);
-  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
-:focus-visible{outline:2px solid var(--we-focus);outline-offset:2px}
-${CONSOLE_CSS}`;
+export const metadata: Metadata = {
+  title: { default: PRODUCT_NAME, template: `%s · ${PRODUCT_NAME}` },
+  description: "Build, publish and manage forms, with AI drafts you review before anything goes live.",
+};
+
+export const viewport: Viewport = {
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: tokens.color.surface },
+    { media: "(prefers-color-scheme: dark)", color: tokens.colorDark.surface },
+  ],
+};
+
+const css = `${adminStyles()}\n${CONSOLE_CSS}`;
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className={inter.variable}>
+    // The theme script may set data-theme before React hydrates.
+    <html lang="en" className={inter.variable} suppressHydrationWarning>
       <head>
-        <style>{baseCss}</style>
+        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+        <style>{css}</style>
       </head>
       <body>{children}</body>
     </html>

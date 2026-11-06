@@ -4,6 +4,7 @@ import { useCallback, useEffect, useId, useState } from "react";
 import { api, ApiError } from "../../../../lib/api";
 import { PlusIcon } from "../../../icons";
 import { useOrg } from "../org-shell";
+import { ModuleHeader } from "../module-header";
 
 type Role = "owner" | "admin" | "creator" | "analyst" | "approver";
 
@@ -156,22 +157,21 @@ export function MembersPanel({ orgId }: { orgId: string }) {
 
   return (
     <div>
-      <div className="c-page-head">
-        <div>
-          <h1>Members</h1>
-          <p className="c-subtitle">{org ? `People who can sign in to ${org.orgName}, and what they can do.` : " "}</p>
-        </div>
-        <button
-          type="button"
-          className="c-btn c-btn-primary"
-          onClick={() => {
-            setInviting(true);
-            setLink(undefined);
-          }}
-        >
-          <PlusIcon size={16} /> Invite people
-        </button>
-      </div>
+      <ModuleHeader
+        module="members"
+        actions={
+          <button
+            type="button"
+            className="c-btn c-btn-primary"
+            onClick={() => {
+              setInviting(true);
+              setLink(undefined);
+            }}
+          >
+            <PlusIcon size={16} /> Invite people
+          </button>
+        }
+      />
 
       {error && (
         <p role="alert" className="c-error">

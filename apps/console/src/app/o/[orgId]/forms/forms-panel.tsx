@@ -5,6 +5,7 @@ import { api, ApiError, type FormListItem, type FormResponse } from "../../../..
 import { FormsIcon, MoreIcon, PlusIcon, SearchIcon } from "../../../icons";
 import { useOrg } from "../org-shell";
 import { STATE_BADGE } from "./[formId]/form-frame";
+import { ModuleHeader } from "../module-header";
 
 function message(err: unknown): string {
   return err instanceof ApiError ? err.problem.title : "Something went wrong.";
@@ -137,17 +138,16 @@ export function FormsPanel({ orgId }: { orgId: string }) {
   const base = `/o/${orgId}/forms`;
   return (
     <div className="c-page">
-      <div className="c-page-head">
-        <div>
-          <h1>Forms</h1>
-          <p className="c-subtitle">{org ? `Everything your team collects in ${org.orgName}.` : " "}</p>
-        </div>
-        {canCreate && (
-          <a className="c-btn c-btn-primary" href={`${base}/new`}>
-            <PlusIcon size={16} /> Create form
-          </a>
-        )}
-      </div>
+      <ModuleHeader
+        module="forms"
+        actions={
+          canCreate && (
+            <a className="c-btn c-btn-primary" href={`${base}/new`}>
+              <PlusIcon size={16} /> Create form
+            </a>
+          )
+        }
+      />
 
       <div className="c-toolbar" style={{ justifyContent: "space-between", marginBottom: 12 }}>
         <label className="c-search">

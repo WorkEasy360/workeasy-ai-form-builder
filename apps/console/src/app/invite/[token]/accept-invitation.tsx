@@ -28,7 +28,7 @@ export function AcceptInvitation({ token }: { token: string }) {
       })
       .catch((err: unknown) => {
         if (cancelled) return;
-        setState(err instanceof ApiError && err.problem.status === 401 ? { kind: "signed-out" } : { kind: "failed", title: "We couldn't reach WorkEasy360 Forms. Try again." });
+        setState(err instanceof ApiError && err.problem.status === 401 ? { kind: "signed-out" } : { kind: "failed", title: "We couldn't reach Workeasy. Try again." });
       });
     return () => {
       cancelled = true;

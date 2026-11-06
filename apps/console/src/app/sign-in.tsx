@@ -97,7 +97,7 @@ export function SignIn({ signInFailed, returnTo }: { signInFailed: boolean; retu
         {busy ? (signingUp ? "Creating account…" : "Signing in…") : signingUp ? "Create account" : "Sign in"}
       </button>
       <p style={{ margin: 0, fontSize: 14 }}>
-        {signingUp ? "Already have an account? " : "New to WorkEasy360 Forms? "}
+        {signingUp ? "Already have an account? " : "New to Workeasy? "}
         <button type="button" className="c-link-btn" onClick={() => switchTo(signingUp ? "sign-in" : "sign-up")}>
           {signingUp ? "Sign in" : "Create an account"}
         </button>

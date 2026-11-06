@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiError } from "../../../../lib/api";
+import { ModuleHeader } from "../module-header";
 
 type Status = "queued" | "running" | "succeeded" | "dead";
 
@@ -102,10 +103,7 @@ export function JobList({ orgId }: { orgId: string }) {
 
   return (
     <div>
-      <h1 style={{ margin: "0 0 8px" }}>Background jobs</h1>
-      <p style={{ color: "var(--we-text-secondary)", marginTop: 0 }}>
-        Work done after a change is saved, such as deliveries. Failed attempts are retried automatically; a job that keeps failing stops and waits here.
-      </p>
+      <ModuleHeader module="jobs" />
       <label style={{ display: "inline-grid", gap: 4, marginBottom: 16 }}>
         Show
         <select value={status} onChange={(e) => setStatus(e.target.value as Status | "")}>

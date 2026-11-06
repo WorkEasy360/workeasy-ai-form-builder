@@ -53,7 +53,7 @@ export function SessionPanel({ signInFailed, returnTo }: { signInFailed: boolean
   if (state.kind === "error") {
     return (
       <p role="alert">
-        We couldn&apos;t reach WorkEasy360 Forms. Check your connection and <a href="/">try again</a>.
+        We couldn&apos;t reach Workeasy. Check your connection and <a href="/">try again</a>.
       </p>
     );
   }

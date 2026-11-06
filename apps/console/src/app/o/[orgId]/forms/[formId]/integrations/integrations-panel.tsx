@@ -252,7 +252,7 @@ function Deliveries({ orgPath, integrationId }: { orgPath: string; integrationId
             <tr key={d.id} style={{ borderTop: "1px solid var(--we-border)", verticalAlign: "top" }}>
               <td style={{ padding: 6, whiteSpace: "nowrap" }}>{new Date(d.createdAt).toLocaleString()}</td>
               <td style={{ padding: 6 }}>
-                <strong style={d.status === "failed" ? { color: "var(--we-error-fg)" } : undefined}>{statusText(d)}</strong>
+                <strong style={d.status === "failed" ? { color: "var(--we-error-text)" } : undefined}>{statusText(d)}</strong>
                 {d.ambiguous && <div style={{ fontSize: 12 }}>A timed-out attempt may have arrived; the destination can recognize repeats by event ID.</div>}
               </td>
               <td style={{ padding: 6 }}>

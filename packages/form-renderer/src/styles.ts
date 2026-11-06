@@ -48,7 +48,7 @@ export const RENDERER_CSS = `
 .we-title:focus, .we-page-title:focus, .we-error-summary:focus { outline: 2px solid var(--we-color-focus, #2563EB); outline-offset: 4px; }
 .we-error-summary { border: 2px solid var(--we-color-danger, #B91C1C); border-radius: var(--we-form-radius, 8px);
   padding: 12px 16px; margin: 0 0 24px; }
-.we-error-summary-title { font-weight: 700; margin: 0; }
+.we-error-summary-title { font-weight: 600; margin: 0; }
 .we-error-summary ul { margin: 8px 0 0; padding-left: 20px; }
 .we-error-summary a { color: var(--we-color-danger, #B91C1C); font-weight: 600; }
 .we-success { margin: 16px 0 24px; white-space: pre-line; }

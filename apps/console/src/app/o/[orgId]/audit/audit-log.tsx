@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiError } from "../../../../lib/api";
+import { ModuleHeader } from "../module-header";
 
 interface Entry {
   id: string;
@@ -94,8 +95,7 @@ export function AuditLog({ orgId }: { orgId: string }) {
 
   return (
     <div>
-      <h1 style={{ margin: "0 0 8px" }}>Audit log</h1>
-      <p style={{ color: "var(--we-text-secondary)", marginTop: 0 }}>Who changed what, and when. Entries never contain answers.</p>
+      <ModuleHeader module="audit" />
       <label style={{ display: "inline-grid", gap: 4, marginBottom: 16 }}>
         Show
         <select value={action} onChange={(e) => setAction(e.target.value)}>

@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useState } from "react";
 import { api, ApiError } from "../../../../lib/api";
+import { ModuleHeader } from "../module-header";
 
 interface AiSettingsResponse {
   settings: { enabled: boolean; dailyTokenLimit: number };
@@ -64,11 +65,7 @@ export function AiSettingsForm({ orgId }: { orgId: string }) {
   const validLimit = Number.isInteger(n) && n >= 1000 && n <= 100_000_000;
   return (
     <div>
-      <h1 style={{ margin: "0 0 8px" }}>AI settings</h1>
-      <p style={{ color: "var(--we-text-secondary)", marginTop: 0 }}>
-        AI can suggest forms for people who edit them. Suggestions never change a form until someone applies them, and prompts are not kept after a request
-        ends.
-      </p>
+      <ModuleHeader module="ai" />
       {error && <p role="alert">{error}</p>}
       {!data && !error && <p>Loading…</p>}
       {data && (
