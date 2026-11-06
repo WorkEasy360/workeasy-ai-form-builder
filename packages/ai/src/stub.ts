@@ -74,9 +74,17 @@ function stubAssistant(request: CompletionRequest): { text: string; usage: { inp
     out = data.error
       ? { type: "answer", text: `I couldn't get that: ${String(data.error)}`, navigate: null, action: null }
       : { type: "answer", text: items === undefined ? `Here's what I found (${tool}).` : `I found ${items} result${items === 1 ? "" : "s"} (${tool}).`, navigate: null, action: null };
-  } else if (/\b(close|reopen)\b/.test(question) && id) {
-    const kind = /\breopen\b/.test(question) ? "reopen_form" : "close_form";
-    out = { type: "answer", text: kind === "close_form" ? "I'll close that form. Confirm below." : "I'll reopen that form. Confirm below.", navigate: null, action: { kind, formId: id } };
+  } else if (/\b(close|reopen|publish|live|archive|restore)\b/.test(question) && id) {
+    const kind = /\breopen\b/.test(question)
+      ? "reopen_form"
+      : /\bclose\b/.test(question)
+        ? "close_form"
+        : /\barchive\b/.test(question)
+          ? "archive_form"
+          : /\brestore\b/.test(question)
+            ? "restore_form"
+            : "publish_form";
+    out = { type: "answer", text: `I'll ${kind.replace("_form", "")} that form. Confirm below.`, navigate: null, action: { kind, formId: id } };
   } else if (/\b(copy|duplicate)\b/.test(question) && id && quoted) {
     out = { type: "answer", text: `I'll copy it as ${quoted}.`, navigate: null, action: { kind: "duplicate_form", formId: id, name: quoted } };
   } else if (/\bretry\b/.test(question) && id) {

@@ -33,7 +33,7 @@ describe("replies", () => {
     expect(parseAssistantReply(answer("Open it", { navigate: "members" }))).toMatchObject({ navigate: { page: "members" } });
     expect(parseAssistantReply(answer("Open it", { navigate: "https://evil.example" }))).toMatchObject({ navigate: null });
     expect(parseAssistantReply(answer("Open it", { navigate: "submissions:not-a-uuid" }))).toMatchObject({ navigate: null });
-    expect(parseAssistantReply(answer("Publish", { action: { kind: "publish_form", formId: FORM } }))).toMatchObject({ action: null });
+    expect(parseAssistantReply(answer("Delete", { action: { kind: "delete_form", formId: FORM } }))).toMatchObject({ action: null });
   });
 
   it("reads form and job tasks, keeping only known fields", () => {
@@ -48,6 +48,10 @@ describe("replies", () => {
     expect(parseAssistantReply(answer("Closing", { action: { kind: "close_form", formId: FORM, reason: "x".repeat(900) } }))).toMatchObject({ action: { kind: "close_form", reason: "x".repeat(500) } });
     expect(parseAssistantReply(answer("Closing", { action: { kind: "close_form", formId: "42" } }))).toMatchObject({ action: null });
     expect(parseAssistantReply(answer("Retrying", { action: { kind: "retry_job", jobId: FORM } }))).toMatchObject({ action: { kind: "retry_job", jobId: FORM } });
+    for (const kind of ["publish_form", "archive_form", "restore_form"]) {
+      expect(parseAssistantReply(answer("Doing it", { action: { kind, formId: FORM.toUpperCase(), extra: 1 } }))).toMatchObject({ action: { kind, formId: FORM } });
+      expect(parseAssistantReply(answer("Doing it", { action: { kind } }))).toMatchObject({ action: null });
+    }
   });
 
   it("strips markdown the chat can't show", () => {
@@ -69,7 +73,8 @@ describe("capabilities", () => {
     // An analyst holds no organization permissions: form tools only, no organization actions.
     const analyst = assistantCapabilities(new Set());
     expect(analyst.tools.map((t) => t.name)).toEqual(["organization_overview", "search_forms", "get_form", "form_analytics"]);
-    expect(analyst.actions.map((a) => a.kind)).toEqual(["close_form", "reopen_form"]);
+    // Form actions depend on each form's own access, checked when they are proposed.
+    expect(analyst.actions.map((a) => a.kind)).toEqual(["publish_form", "close_form", "reopen_form", "archive_form", "restore_form"]);
     expect(analyst.pages.map((p) => p.key)).toEqual(["forms", "help"]);
     const admin = assistantCapabilities(new Set(["members.manage", "integrations.manage", "forms.create", "organization.audit.read"]));
     expect(admin.tools.map((t) => t.name)).toContain("failed_jobs");

@@ -11,7 +11,7 @@ interface Proposal {
   effect: string;
   confirmLabel: string;
   danger: boolean;
-  request: { method: "POST" | "PUT"; path: string; body: Record<string, unknown> };
+  request: { method: "POST" | "PUT"; path: string; body: Record<string, unknown>; headers?: Record<string, string> };
   /** Where the result lives once it's done; `:id` comes from the response's form. */
   done?: { label: string; path: string; idFrom?: "form" };
 }
@@ -152,7 +152,8 @@ export function AssistantPanel({ orgId, can, userName }: { orgId: string; can: (
     setBusy(true);
     let outcome: Message["outcome"];
     try {
-      const result = await api<{ form?: { id?: string } }>(m.proposal.request.path, { method: m.proposal.request.method, body: m.proposal.request.body });
+      const { method, path, body, headers } = m.proposal.request;
+      const result = await api<{ form?: { id?: string } }>(path, { method, body, ...(headers ? { headers } : {}) });
       const done = m.proposal.done;
       const id = done?.idFrom ? result[done.idFrom]?.id : undefined;
       const link = done && (!done.idFrom || id) ? { label: done.label, href: `/o/${orgId}${done.path.replace(":id", id ?? "")}` } : undefined;

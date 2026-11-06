@@ -8,7 +8,7 @@ The console has a forms assistant: a round chat button floating in the bottom-ri
 
 The chat window is `apps/console/src/app/o/[orgId]/assistant-panel.tsx`, styled by the shared `.c-fab` and `.c-chatbox`. Members can ask about their forms, response counts, analytics, failed deliveries and recent changes, find pages, and have routine form changes prepared for them to confirm.
 
-The prompt is `ASSISTANT_PROMPT` in `packages/ai/src/assistant.ts`, written in the blueprint's ten sections. Its form-builder rules: only a person publishes; the assistant never sees respondents' answers; analytics days are UTC.
+The prompt is `ASSISTANT_PROMPT` in `packages/ai/src/assistant.ts`, written in the blueprint's ten sections. Its form-builder rules: publishing happens only when the member confirms; the assistant never sees respondents' answers; analytics days are UTC.
 
 ## How it works
 
@@ -42,17 +42,20 @@ The assistant never reads responses. No tool queries submissions or their answer
 |---|---|---|
 | `create_form` | `forms.create`. Blank or from a built-in template; name checked with the Create form schema | `POST …/forms` |
 | `duplicate_form` | `forms.create` and `forms.edit` on the source form | `POST …/forms/:id/duplicate` |
+| `publish_form` | `forms.publish` on the form, the form isn't archived, and its draft passes the same checks as the builder's Publish. The card shows the version number, question and page counts, and who can respond | `POST …/forms/:id/publish`, with `If-Match` set to the draft revision it checked and an `Idempotency-Key`: if the draft changes before the member confirms, publishing is refused (`412 DRAFT_CONFLICT`), and confirming twice publishes once |
 | `close_form` | `forms.publish` on the form, and the form is published. Shown as a red (danger) card because it stops respondents at once | `POST …/forms/:id/close` |
 | `reopen_form` | `forms.publish` on the form, and the form is closed | `POST …/forms/:id/reopen` |
+| `archive_form` | `forms.publish` on the form, and it isn't archived. Red card | `POST …/forms/:id/archive` |
+| `restore_form` | `forms.publish` on the form, and it is archived | `POST …/forms/:id/restore` |
 | `retry_job` | `integrations.manage`, and the job is dead | `POST …/jobs/:id/replay` |
 
-Left out on purpose: publishing (a person publishes, docs/03 §4), deleting forms or responses (irreversible), exports (they produce files), and editing questions, design, logic, access, limits, retention, integrations and members (rich editing). For those the assistant explains the steps and links to the right page.
+Left out on purpose: deleting forms or responses (irreversible), exports (they produce files), and editing questions, design, logic, access, limits, retention, integrations and members (rich editing). For those the assistant explains the steps and links to the right page.
 
 ## Safety
 
 - **Organization isolation** comes from the database (row-level security) and the membership check, not from the prompt. Members of other organizations get 404.
 - **Always on.** The assistant is a required part of the console, so there is no switch: it is on for every organization whenever the server has an AI provider. It sends form metadata and counts (never respondents' answers) to the provider; owners control cost with the daily token limit in AI settings.
-- **The model cannot write.** It has no write tools, and its actions are only suggestions. Forged chat history doesn't help an attacker: every tool and endpoint checks the signed-in member.
+- **The model cannot write.** It has no write tools, and its actions are only suggestions. This includes publishing: the model can only propose it, and the form goes live when the member presses Publish on the card, which calls the builder's own publish endpoint. That keeps the rule that AI never publishes on its own (AI_IDE_START_HERE.md, invariant 7; docs/03 §4). Forged chat history doesn't help an attacker: every tool and endpoint checks the signed-in member.
 - **Tool results are data.** Form names, question labels and reasons are marked as data, and the model is told never to follow instructions found inside them.
 - **Replies are checked.** Every reply is validated against the JSON format. A malformed reply gets one correction, and a second ends the question with an error. Links outside the page list and unknown actions are dropped.
 - **What's logged:** tools used, success or failure, and token counts. Questions, answers and tool data are not logged. Confirmed actions appear in the audit log through their endpoints.

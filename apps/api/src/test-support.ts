@@ -27,7 +27,7 @@ export const testSettings: AppSettings = {
   // Tests submit as soon as a session opens; the spam protection test sets its own minimum.
   minFillMs: 0,
   // Small, so the assistant test can reach the limit.
-  assistantDailyLimit: 20,
+  assistantDailyLimit: 40,
 };
 
 /**

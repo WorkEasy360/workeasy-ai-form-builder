@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { Response, Router } from "express";
 import type { Transaction } from "kysely";
 import {
@@ -26,7 +27,7 @@ import {
   type MembershipRecord,
   type ResolvedSession,
 } from "@workeasy/database";
-import { FORM_TEMPLATES } from "@workeasy/form-engine";
+import { FORM_TEMPLATES, validateDefinition } from "@workeasy/form-engine";
 import type { AppDependencies } from "../app.js";
 import { ANALYTICS_DEFINITIONS, AssistantAskBodySchema, CloseFormBodySchema, CreateFormBodySchema, DuplicateFormBodySchema } from "../contract/schemas.js";
 import { problems, sendProblem } from "../http/problem.js";
@@ -235,8 +236,8 @@ export interface Proposal {
   effect: string;
   confirmLabel: string;
   danger: boolean;
-  /** The existing endpoint the console calls on confirmation. */
-  request: { method: "POST" | "PUT"; path: string; body: Record<string, unknown> };
+  /** The existing endpoint the console calls on confirmation, with any headers it needs (publishing pins the draft revision). */
+  request: { method: "POST" | "PUT"; path: string; body: Record<string, unknown>; headers?: Record<string, string> };
   /** Where to send the member once it's done (shown as "Open <label>"); `:id` is filled from the response's form. */
   done?: { label: string; path: string; idFrom?: "form" };
 }
@@ -320,7 +321,76 @@ async function verifyAction(trx: Trx, ctx: ToolContext, action: ProposedAction):
       },
     };
   }
-  if (!perms.has("forms.publish")) return { ok: false, reason: `Your role can't open or close ${form.name}. Ask its owner or an organization admin.` };
+  if (!perms.has("forms.publish")) return { ok: false, reason: `Your role can't publish, close or archive ${form.name}. Ask its owner or an organization admin.` };
+  if (action.kind === "publish_form") {
+    if (form.state === "archived") return { ok: false, reason: `${form.name} is archived. Restore it before publishing.` };
+    const draft = await orgRepo.getDraft(trx, form.id);
+    if (!draft) return { ok: false, reason: `${form.name} has no draft to publish.` };
+    // The same check the builder's Publish runs, so a card is offered only for a draft that will publish.
+    const checked = validateDefinition(draft.definition);
+    if (!checked.ok) {
+      const reasons = checked.issues.slice(0, 3).map((i) => (/[.!?]$/.test(i.message) ? i.message : `${i.message}.`)).join(" ");
+      return { ok: false, reason: `${form.name} can't be published yet: ${reasons} Fix this in the builder, then ask again.` };
+    }
+    const [latest, policy] = await Promise.all([publishRepo.listVersions(trx, form.id, 1), orgRepo.getAccessPolicy(trx, form.id)]);
+    const questions = checked.definition.fields.length;
+    const next = (latest[0]?.versionNumber ?? 0) + 1;
+    return {
+      ok: true,
+      proposal: {
+        kind: action.kind,
+        title: `Publish ${form.name}`,
+        summary: [
+          ...summary,
+          ["Publishes", `Version ${next}: ${questions} question${questions === 1 ? "" : "s"} on ${checked.definition.pages.length} page${checked.definition.pages.length === 1 ? "" : "s"}`],
+          ["Who can respond", policy.mode === "organization" ? "Only members of this organization" : "Anyone with the link"],
+        ],
+        effect:
+          form.state === "closed"
+            ? "Makes this draft the live version. The form stays closed until you reopen it."
+            : form.state === "published"
+              ? "Replaces the live version: new respondents get this draft. Responses already given keep the version they answered."
+              : "Puts the form live: anyone it's shared with can respond. Share gives you the link.",
+        confirmLabel: "Publish",
+        danger: false,
+        // If-Match pins the exact draft checked here: if anyone edits it first, publishing is refused rather than sending something unreviewed.
+        request: { method: "POST", path: `${path}/publish`, body: {}, headers: { "If-Match": `"draft-${draft.revision}"`, "Idempotency-Key": `assistant-${randomUUID()}` } },
+        done: { label: `Share ${form.name}`, path: `/forms/${form.id}/build` },
+      },
+    };
+  }
+  if (action.kind === "archive_form") {
+    if (form.state === "archived") return { ok: false, reason: `${form.name} is already archived.` };
+    return {
+      ok: true,
+      proposal: {
+        kind: action.kind,
+        title: `Archive ${form.name}`,
+        summary,
+        effect: "Removes it from the Forms list and stops new responses. Its responses are kept, and you can restore it from Forms → Archived.",
+        confirmLabel: "Archive form",
+        danger: true,
+        request: { method: "POST", path: `${path}/archive`, body: {} },
+        done: { label: "Forms", path: "/forms" },
+      },
+    };
+  }
+  if (action.kind === "restore_form") {
+    if (form.state !== "archived") return { ok: false, reason: `${form.name} isn't archived, so there's nothing to restore.` };
+    return {
+      ok: true,
+      proposal: {
+        kind: action.kind,
+        title: `Restore ${form.name}`,
+        summary,
+        effect: form.activeVersionId ? "Brings it back to the Forms list as closed. Reopen it when it should take responses again." : "Brings it back to the Forms list as a draft.",
+        confirmLabel: "Restore form",
+        danger: false,
+        request: { method: "POST", path: `${path}/restore`, body: {} },
+        done: { label: form.name, path: `/forms/${form.id}/build` },
+      },
+    };
+  }
   if (action.kind === "close_form") {
     if (form.state !== "published") return { ok: false, reason: `${form.name} isn't accepting responses, so there's nothing to close (it's ${form.state}).` };
     const body = action.reason ? { reason: action.reason } : {};

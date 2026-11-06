@@ -87,7 +87,7 @@ export const ASSISTANT_TOOLS: readonly AssistantToolSpec[] = [
 
 /** A change the assistant may propose. The member confirms it; the existing endpoint carries it out. */
 export interface AssistantActionSpec {
-  kind: "create_form" | "duplicate_form" | "close_form" | "reopen_form" | "retry_job";
+  kind: "create_form" | "duplicate_form" | "publish_form" | "close_form" | "reopen_form" | "archive_form" | "restore_form" | "retry_job";
   description: string;
   args: string;
   /** Any-of organization permissions; null when only the member's access to the form decides. */
@@ -110,12 +110,20 @@ export const ASSISTANT_ACTIONS: readonly AssistantActionSpec[] = [
     permission: ["forms.create"],
   },
   {
+    kind: "publish_form",
+    description: "Publish a form's current draft as its new live version, so respondents get it. The server checks it the same way the builder's Publish button does and shows what will go live; it happens only when the member confirms. A closed form stays closed until it is reopened.",
+    args: '{"formId": string}',
+    permission: null,
+  },
+  {
     kind: "close_form",
     description: "Stop a published form accepting responses, at once, even for people who have it open. It can be reopened later.",
     args: '{"formId": string, "reason"?: string (kept in the audit log)}',
     permission: null,
   },
   { kind: "reopen_form", description: "Accept responses again on a closed form, with its live version.", args: '{"formId": string}', permission: null },
+  { kind: "archive_form", description: "Archive a form: it leaves the Forms list and stops accepting responses. Its responses are kept, and it can be restored.", args: '{"formId": string}', permission: null },
+  { kind: "restore_form", description: "Restore an archived form: back to closed if it was ever published, otherwise to draft.", args: '{"formId": string}', permission: null },
   {
     kind: "retry_job",
     description: "Retry a background job that stopped retrying (from failed_jobs), such as a webhook delivery or an export. Only after the cause is fixed.",
@@ -175,19 +183,19 @@ You help the organization's members (owners, admins, creators, analysts and appr
 ## Forms and their rules
 - A form is a draft until it is published. Publishing makes the current draft the live version; later edits stay in the draft until published again. Respondents always get the live version.
 - States: draft (never published), published (accepting responses), closed (published but not accepting responses), archived (hidden from the list; restoring returns it to closed, or to draft if it was never published).
-- Only a person publishes: you never propose publishing, and AI suggestions never publish anything. Point them to Publish in the builder.
+- Publishing happens only when the member confirms: propose publish_form and the server shows what will go live. AI drafting suggestions never publish anything by themselves.
 - A form whose colours fail the contrast check can be saved but not published.
 - Responses can't be edited by you, and deleting responses or forms is not something you do. Send them to the right page.
 
 ## Doing tasks
-- You are an agent: when the member asks you to do something you have an action for (create a form, duplicate one, close or reopen one, retry a failed job), do it by proposing that action. Don't just explain how to do it in the app.
+- You are an agent: when the member asks you to do something you have an action for (create, copy, publish or "make live", close, reopen, archive or restore a form, retry a failed job), do it by proposing that action. Don't just explain how to do it in the app, and don't say you can't.
 - When they ask how to do something ("how do I share a form?"), they want to learn it: give short numbered steps using the app's real names (see "How the app works"), open the page where they start, and, if you have an action for it, end by offering to do it here and saying what you'd need. Don't propose an action until they give the details.
 - You don't change anything directly. The server checks your proposal against the same rules as the app's own pages and shows the member a card with the details; the task is carried out the moment they press its button. So fill the action in completely and correctly.
 - Gather what's required first, in one short question if anything is missing: a new form's name; a copy's name. Never invent a name, template, reason or id.
 - To act on an existing form or job, find it first (search_forms, get_form, failed_jobs) and use its real id. If several match ("the survey"), ask which one.
 - Say in one or two sentences what will happen, e.g. "I'll close Workshop Registration so it stops taking responses; you can reopen it later." Never claim it's done: say it happens when they confirm.
 - One action per answer. For several, do the first and offer to continue once it's confirmed.
-- For anything you have no action for (editing questions, design, logic, publishing, sharing, access, limits, retention, integrations, members, exports, deleting), give short steps and open the right page.
+- For anything you have no action for (editing questions, design, logic, sharing, access, limits, retention, integrations, members, exports, deleting), give short steps and open the right page.
 
 ## How the app works
 - Create a form: Forms → Create form, then choose Blank form, a template, or Describe it with AI. AI only suggests; nothing changes until you apply it.
@@ -216,6 +224,7 @@ You help the organization's members (owners, admins, creators, analysts and appr
 - "How many forms are live?" → organization_overview, then give the published count.
 - "How is the workshop form doing?" → search_forms "workshop", then form_analytics for it over 30 days and summarise views, starts and accepted responses.
 - "Which forms got responses this week?" → search_forms, then name those whose last response is in the last 7 days.
+- "Make the form named test live" → search_forms "test", then propose publish_form with its id (if several match, ask which).
 - "Close the volunteer form" → search_forms "volunteer", check it is published, then propose close_form with its id.
 - "Make a copy of Support request called Support request (EU)" → search_forms "Support request", then propose duplicate_form with its id and the new name.
 - "Create a feedback form" → propose create_form with name "Feedback" and template "feedback".
@@ -277,8 +286,11 @@ export type AssistantMessage = { role: "user" | "assistant"; content: string };
 export type ProposedAction =
   | { kind: "create_form"; name: string; template: string | null }
   | { kind: "duplicate_form"; formId: string; name: string }
+  | { kind: "publish_form"; formId: string }
   | { kind: "close_form"; formId: string; reason: string | null }
   | { kind: "reopen_form"; formId: string }
+  | { kind: "archive_form"; formId: string }
+  | { kind: "restore_form"; formId: string }
   | { kind: "retry_job"; jobId: string };
 
 export type Navigation = { page: string } | { form: string; tab: FormTab };
@@ -321,7 +333,7 @@ function parseAction(v: unknown): ProposedAction | null | undefined {
     return isId(v.formId) && name ? { kind: "duplicate_form", formId: v.formId.toLowerCase(), name } : undefined;
   }
   if (v.kind === "close_form") return isId(v.formId) ? { kind: "close_form", formId: v.formId.toLowerCase(), reason: str(v.reason, 500) ?? null } : undefined;
-  if (v.kind === "reopen_form") return isId(v.formId) ? { kind: "reopen_form", formId: v.formId.toLowerCase() } : undefined;
+  if (v.kind === "publish_form" || v.kind === "reopen_form" || v.kind === "archive_form" || v.kind === "restore_form") return isId(v.formId) ? { kind: v.kind, formId: v.formId.toLowerCase() } : undefined;
   if (v.kind === "retry_job") return isId(v.jobId) ? { kind: "retry_job", jobId: v.jobId.toLowerCase() } : undefined;
   return undefined;
 }

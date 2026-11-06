@@ -634,14 +634,15 @@ export const AssistantAskBodySchema = z.object({
 
 /** A change for the member to confirm; confirming calls `request`, an existing endpoint, as the member. */
 export const AssistantProposalSchema = z.object({
-  kind: z.enum(["create_form", "duplicate_form", "close_form", "reopen_form", "retry_job"]),
+  kind: z.enum(["create_form", "duplicate_form", "publish_form", "close_form", "reopen_form", "archive_form", "restore_form", "retry_job"]),
   title: z.string(),
   /** Checked facts, label then value. */
   summary: z.array(z.tuple([z.string(), z.string()])),
   effect: z.string(),
   confirmLabel: z.string(),
   danger: z.boolean(),
-  request: z.object({ method: z.enum(["POST", "PUT"]), path: z.string(), body: z.record(z.string(), z.unknown()) }),
+  /** Headers to send too: a publish carries If-Match (the draft revision checked) and an Idempotency-Key. */
+  request: z.object({ method: z.enum(["POST", "PUT"]), path: z.string(), body: z.record(z.string(), z.unknown()), headers: z.record(z.string(), z.string()).optional() }),
   /** Where to go once it's done; `:id` is the created form's id when idFrom is "form". */
   done: z.object({ label: z.string(), path: z.string(), idFrom: z.literal("form").optional() }).optional(),
 });

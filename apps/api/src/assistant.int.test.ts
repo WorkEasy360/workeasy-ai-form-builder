@@ -48,8 +48,11 @@ async function publishedForm(name: string) {
 }
 
 /** Carries out a proposal the way the console does: its own request, as the member. */
-const confirm = (who: string, proposal: { request: { method: "POST" | "PUT"; path: string; body: Record<string, unknown> } }) =>
-  consoleReq(who, proposal.request.method.toLowerCase() as "post", proposal.request.path).send(proposal.request.body);
+const confirm = (who: string, proposal: { request: { method: "POST" | "PUT"; path: string; body: Record<string, unknown>; headers?: Record<string, string> } }) => {
+  const req = consoleReq(who, proposal.request.method.toLowerCase() as "post", proposal.request.path);
+  for (const [name, value] of Object.entries(proposal.request.headers ?? {})) req.set(name, value);
+  return req.send(proposal.request.body);
+};
 
 beforeAll(async () => {
   db = createDb({ connectionString: urls.api, maxConnections: 4 });
@@ -66,6 +69,11 @@ beforeAll(async () => {
     ["ownerC", c, "owner"],
   ] as const) {
     tokens[name] = (await identityRepo.createSession(db, t.members.find((m) => m.role === role)!.user.id, 60 * 60 * 1000)).token;
+  }
+  // Many questions run here; the token budget (tested in ai-budget.int.test.ts) must not be what stops them.
+  for (const [who, t] of [["ownerA", a], ["ownerB", b], ["ownerC", c]] as const) {
+    const set = await consoleReq(who, "put", `${org(t)}/ai-settings`).send({ dailyTokenLimit: 100_000_000 });
+    if (set.status !== 200) throw new Error(`Setting the budget failed: ${JSON.stringify(set.body)}`);
   }
 });
 
@@ -113,6 +121,50 @@ describe("assistant", () => {
     // Now it's closed: closing again is refused with a reason, and reopening is offered.
     expect((await ask("ownerA", `Close ${formId}`)).body.answer).toMatchObject({ proposal: null, note: expect.stringMatching(/isn't accepting responses/) });
     expect((await ask("ownerA", `Reopen ${formId}`)).body.answer.proposal).toMatchObject({ kind: "reopen_form", request: { path: `${org()}/forms/${formId}/reopen` } });
+  });
+
+  it("publishes a form on command, only through the builder's own publish endpoint", async () => {
+    const made = FormResponseSchema.parse((await consoleReq("ownerA", "post", `${org()}/forms`).send({ name: "test", template: "contact" })).body);
+    const formId = made.form.id;
+    const r = await ask("ownerA", `Make the form ${formId} live`);
+    expect(r.body.answer.note).toBeNull();
+    const proposal = r.body.answer.proposal;
+    expect(proposal).toMatchObject({
+      kind: "publish_form",
+      title: "Publish test",
+      danger: false,
+      request: { method: "POST", path: `${org()}/forms/${formId}/publish`, headers: { "If-Match": `"draft-${made.draft.revision}"`, "Idempotency-Key": expect.stringMatching(/^assistant-/) } },
+    });
+    expect(proposal.summary).toContainEqual(["Publishes", expect.stringMatching(/^Version 1: \d+ questions? on 1 page$/)]);
+    // Asking changed nothing.
+    expect((await consoleReq("ownerA", "get", `${org()}/forms/${formId}`)).body.form.state).toBe("draft");
+    const done = await confirm("ownerA", proposal);
+    expect(done.status, JSON.stringify(done.body)).toBe(201);
+    expect(done.body.form.state).toBe("published");
+    // Confirming the same card twice publishes once: the Idempotency-Key replays.
+    expect((await confirm("ownerA", proposal)).headers["idempotent-replayed"]).toBe("true");
+
+    // A card is pinned to the draft it showed: if the draft changes first, publishing is refused.
+    const stale = (await ask("ownerA", `Publish ${formId}`)).body.answer.proposal;
+    const draft = (await consoleReq("ownerA", "get", `${org()}/forms/${formId}/draft`)).body;
+    const saved = await consoleReq("ownerA", "put", `${org()}/forms/${formId}/draft`).set("If-Match", `"draft-${draft.revision}"`).send({ ...draft.definition, title: "test (edited)" });
+    expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+    expectProblem(await confirm("ownerA", stale), 412, "DRAFT_CONFLICT");
+  });
+
+  it("won't offer to publish a draft that the builder would refuse", async () => {
+    const blank = await newForm("Empty form");
+    expect((await ask("ownerA", `Publish ${blank}`)).body.answer).toMatchObject({ proposal: null, note: expect.stringMatching(/^Empty form can't be published yet: /) });
+  });
+
+  it("archives and restores a form on command", async () => {
+    const formId = await newForm("Old survey");
+    const archive = (await ask("ownerA", `Archive ${formId}`)).body.answer.proposal;
+    expect(archive).toMatchObject({ kind: "archive_form", danger: true, request: { path: `${org()}/forms/${formId}/archive` } });
+    expect((await confirm("ownerA", archive)).body.form.state).toBe("archived");
+    expect((await ask("ownerA", `Archive ${formId}`)).body.answer).toMatchObject({ proposal: null, note: expect.stringMatching(/already archived/) });
+    const restore = (await ask("ownerA", `Restore ${formId}`)).body.answer.proposal;
+    expect((await confirm("ownerA", restore)).body.form.state).toBe("draft");
   });
 
   it("refuses proposals the member's role or access can't carry out", async () => {

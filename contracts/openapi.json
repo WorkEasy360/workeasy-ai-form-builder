@@ -8903,8 +8903,11 @@
                                   "enum": [
                                     "create_form",
                                     "duplicate_form",
+                                    "publish_form",
                                     "close_form",
                                     "reopen_form",
+                                    "archive_form",
+                                    "restore_form",
                                     "retry_job"
                                   ]
                                 },
@@ -8956,6 +8959,15 @@
                                         "type": "string"
                                       },
                                       "additionalProperties": {}
+                                    },
+                                    "headers": {
+                                      "type": "object",
+                                      "propertyNames": {
+                                        "type": "string"
+                                      },
+                                      "additionalProperties": {
+                                        "type": "string"
+                                      }
                                     }
                                   },
                                   "required": [
