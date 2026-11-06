@@ -331,8 +331,9 @@ describe("negative authorization (SEC-01)", () => {
   });
 
   it("gives a member of both organizations no more in A than their A role allows", async () => {
-    // Routes every member may use; they still must not show the ungranted form.
-    const memberRoutes = new Set(["get /api/v1/organizations/{orgId}/forms", "get /api/v1/organizations/{orgId}/ai-settings"]);
+    // Routes every member may use; they still must not show the ungranted form. The assistant's
+    // status says only whether it's available and how many questions are left today.
+    const memberRoutes = new Set(["get /api/v1/organizations/{orgId}/forms", "get /api/v1/organizations/{orgId}/ai-settings", "get /api/v1/organizations/{orgId}/assistant"]);
     for (const r of orgRoutes) {
       const res = await call(r, pathFor(r, a.id), "both");
       const label = `${r.method} ${r.template} -> ${res.status} ${JSON.stringify(res.body)}`;
