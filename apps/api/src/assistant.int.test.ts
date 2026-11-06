@@ -75,14 +75,8 @@ afterAll(async () => {
 });
 
 describe("assistant", () => {
-  it("stays off until an owner turns AI on for the organization", async () => {
-    expect((await consoleReq("ownerA", "get", `${org()}/assistant`)).body).toEqual({ enabled: false, disabledBy: "organization", usedToday: 0, dailyLimit: testSettings.assistantDailyLimit });
-    expectProblem(await ask("ownerA", "How many forms do we have?"), 409, "AI_NOT_ENABLED");
-    for (const [who, t] of [["ownerA", a], ["ownerB", b], ["ownerC", c]] as const) {
-      const on = await consoleReq(who, "put", `${org(t)}/ai-settings`).send({ enabled: true, dailyTokenLimit: 100_000_000 });
-      expect(on.status, JSON.stringify(on.body)).toBe(200);
-    }
-    expect((await consoleReq("ownerA", "get", `${org()}/assistant`)).body).toMatchObject({ enabled: true, usedToday: 0 });
+  it("is on for every organization, with no switch to turn on", async () => {
+    expect((await consoleReq("ownerA", "get", `${org()}/assistant`)).body).toEqual({ enabled: true, usedToday: 0, dailyLimit: testSettings.assistantDailyLimit });
   });
 
   it("answers from this organization's data with a tool, and charges its tokens to the day's budget", async () => {

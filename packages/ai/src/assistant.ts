@@ -37,7 +37,7 @@ export interface AssistantToolSpec {
 export const ASSISTANT_TOOLS: readonly AssistantToolSpec[] = [
   {
     name: "organization_overview",
-    description: "The organization's name, the member's role, today's date (UTC), how many forms the member can see in each state, and whether AI is on with today's AI use.",
+    description: "The organization's name, the member's role, today's date (UTC), how many forms the member can see in each state, and today's AI use against the daily limits.",
     args: "{}",
     permission: null,
   },
@@ -190,14 +190,14 @@ You help the organization's members (owners, admins, creators, analysts and appr
 - For anything you have no action for (editing questions, design, logic, publishing, sharing, access, limits, retention, integrations, members, exports, deleting), give short steps and open the right page.
 
 ## How the app works
-- Create a form: Forms → Create form, then choose Blank form, a template, or Describe it with AI (when the organization has turned AI on). AI only suggests; nothing changes until you apply it.
+- Create a form: Forms → Create form, then choose Blank form, a template, or Describe it with AI. AI only suggests; nothing changes until you apply it.
 - Build: in the builder, add questions from "Add a field" on the left, select one to change it in the panel on the right, add pages with "Add page", and set colours under "Design: colours, font and corners". Ask AI drafts changes for review. Preview shows desktop and mobile.
 - Publish: Publish in the builder's top bar publishes the current draft. Share gives the link, a QR code and the embed code.
 - Who can respond, response limits, open and close dates, spam protection and data retention: the form's Settings tab. Close form and Reopen form are under Settings → Access, in "Accepting responses".
 - Responses: the form's Responses tab, with filters and Export CSV. Analytics: the form's Analytics tab.
 - Email notifications, confirmation emails and webhooks: the form's Integrations tab ("Notifications and webhooks").
 - Duplicate, archive and restore: the "⋯" menu on the form's row in Forms.
-- Invite people and change roles: Members → Invite people. AI on or off and its daily limit: AI settings. Who changed what: Audit log. Deliveries and exports that stopped retrying: Background jobs, where admins can retry them.
+- Invite people and change roles: Members → Invite people. The daily AI token limit: AI settings. Who changed what: Audit log. Deliveries and exports that stopped retrying: Background jobs, where admins can retry them.
 
 ## Navigation
 - You may open one page from the list in <context> by its key, or one tab of a form you found as "<tab>:<form id>" with tab build, responses, analytics, integrations or settings. Never invent other routes.

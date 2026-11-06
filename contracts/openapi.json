@@ -7510,7 +7510,7 @@
             }
           },
           "403": {
-            "description": "No forms.edit, or AI_NOT_ENABLED: the organization has not turned AI on",
+            "description": "No forms.edit",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7597,7 +7597,7 @@
       ],
       "get": {
         "operationId": "getAiSettings",
-        "summary": "The organization's AI opt-in, daily token budget and today's use (any member)",
+        "summary": "The organization's daily AI token budget and today's use (any member)",
         "security": [
           {
             "consoleSession": []
@@ -7614,9 +7614,6 @@
                     "settings": {
                       "type": "object",
                       "properties": {
-                        "enabled": {
-                          "type": "boolean"
-                        },
                         "dailyTokenLimit": {
                           "type": "integer",
                           "minimum": 1000,
@@ -7624,7 +7621,6 @@
                         }
                       },
                       "required": [
-                        "enabled",
                         "dailyTokenLimit"
                       ],
                       "additionalProperties": false
@@ -7687,8 +7683,8 @@
       },
       "put": {
         "operationId": "updateAiSettings",
-        "summary": "Turn AI on or off and set the daily token budget (requires organization.manage)",
-        "description": "AI is off until turned on. Each request reserves its worst-case token use against the UTC day's budget before it is queued, atomically, so concurrent requests cannot together exceed it; actual use is charged as reported and the rest released when the request ends. Audited.",
+        "summary": "Set the daily AI token budget (requires organization.manage)",
+        "description": "AI is always on for every organization; this sets only its daily budget. Each request reserves its worst-case token use against the UTC day's budget before it is queued, atomically, so concurrent requests cannot together exceed it; actual use is charged as reported and the rest released when the request ends. Audited.",
         "security": [
           {
             "consoleSession": []
@@ -7701,9 +7697,6 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "enabled": {
-                    "type": "boolean"
-                  },
                   "dailyTokenLimit": {
                     "type": "integer",
                     "minimum": 1000,
@@ -7711,7 +7704,6 @@
                   }
                 },
                 "required": [
-                  "enabled",
                   "dailyTokenLimit"
                 ]
               }
@@ -7729,9 +7721,6 @@
                     "settings": {
                       "type": "object",
                       "properties": {
-                        "enabled": {
-                          "type": "boolean"
-                        },
                         "dailyTokenLimit": {
                           "type": "integer",
                           "minimum": 1000,
@@ -7739,7 +7728,6 @@
                         }
                       },
                       "required": [
-                        "enabled",
                         "dailyTokenLimit"
                       ],
                       "additionalProperties": false
@@ -8767,8 +8755,7 @@
                     "disabledBy": {
                       "type": "string",
                       "enum": [
-                        "server",
-                        "organization"
+                        "server"
                       ]
                     },
                     "usedToday": {
@@ -9072,7 +9059,7 @@
             }
           },
           "409": {
-            "description": "AI_NOT_ENABLED, ASSISTANT_DAILY_LIMIT or AI_BUDGET_EXCEEDED",
+            "description": "ASSISTANT_DAILY_LIMIT or AI_BUDGET_EXCEEDED",
             "content": {
               "application/problem+json": {
                 "schema": {

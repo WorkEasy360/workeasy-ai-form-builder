@@ -36,8 +36,8 @@ interface AskResponse {
 
 interface Status {
   enabled: boolean;
-  /** "server": AI isn't set up on this installation; "organization": an owner hasn't turned it on. */
-  disabledBy?: "server" | "organization";
+  /** "server": AI isn't set up on this installation. AI is always on for organizations. */
+  disabledBy?: "server";
   usedToday: number;
   dailyLimit: number;
 }
@@ -291,20 +291,7 @@ export function AssistantPanel({ orgId, can, userName }: { orgId: string; can: (
             </div>
             {disabled ? (
               <p className="c-alert" data-tone="info">
-                {status?.disabledBy === "organization" ? (
-                  <>
-                    AI is turned off for this organization.{" "}
-                    {can("organization.audit.read") ? (
-                      <>
-                        An owner can turn it on in <a href={`/o/${orgId}/ai`}>AI settings</a>.
-                      </>
-                    ) : (
-                      "Ask an organization owner to turn it on in AI settings."
-                    )}
-                  </>
-                ) : (
-                  "The assistant isn't set up on this server yet. Ask whoever runs your Workeasy installation to turn on AI."
-                )}
+                The assistant isn&apos;t set up on this server yet. Ask whoever runs your Workeasy installation to turn on AI.
               </p>
             ) : (
               <form className="c-chat-form" onSubmit={submit}>

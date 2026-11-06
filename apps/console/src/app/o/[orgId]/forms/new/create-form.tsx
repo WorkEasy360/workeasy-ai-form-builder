@@ -14,7 +14,6 @@ interface Template {
 }
 
 interface AiSettings {
-  settings: { enabled: boolean };
   available: boolean;
 }
 
@@ -75,11 +74,8 @@ export function CreateForm({ orgId }: { orgId: string }) {
     api<AiSettings>(`/api/v1/organizations/${orgId}/ai-settings`)
       .then((s) =>
         setAi(
-          !s.available
-            ? { ready: false, reason: "AI isn't set up on this server." }
-            : !s.settings.enabled
-              ? { ready: false, reason: "AI is turned off for your organization. An owner can turn it on in AI settings." }
-              : { ready: true },
+          // AI is always on for organizations; it is unavailable only when the server has no provider.
+          s.available ? { ready: true } : { ready: false, reason: "AI isn't set up on this server." },
         ),
       )
       .catch(() => setAi({ ready: false, reason: "AI settings couldn't be loaded." }));

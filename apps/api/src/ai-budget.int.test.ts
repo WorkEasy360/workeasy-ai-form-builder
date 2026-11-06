@@ -58,7 +58,7 @@ const work = async () => {
 const consoleReq = (who: string, method: "get" | "post" | "put", path: string) =>
   request(app)[method](path).set("Cookie", `we_session=${tokens[who]}`).set("Origin", TEST_CONSOLE_ORIGIN);
 const settingsPath = () => `/api/v1/organizations/${t.id}/ai-settings`;
-const setBudget = (enabled: boolean, dailyTokenLimit: number) => consoleReq("owner", "put", settingsPath()).send({ enabled, dailyTokenLimit });
+const setBudget = (dailyTokenLimit: number) => consoleReq("owner", "put", settingsPath()).send({ dailyTokenLimit });
 async function newForm() {
   const created = FormResponseSchema.parse((await consoleReq("owner", "post", `/api/v1/organizations/${t.id}/forms`).send({ name: "Budget form" })).body);
   return { path: `/api/v1/organizations/${t.id}/forms/${created.form.id}`, revision: created.draft.revision };
@@ -118,41 +118,35 @@ afterAll(async () => {
   await owner?.destroy();
 });
 
-describe("opt-in", () => {
-  it("is off until an owner turns it on, and the change is audited", async () => {
+describe("always on", () => {
+  it("needs no switch; only owners set the daily budget, and the change is audited", async () => {
     const f = await newForm();
-    expectProblem(await ask("owner", f), 403, "AI_NOT_ENABLED");
     const initial = AiSettingsResponseSchema.parse((await consoleReq("analyst", "get", settingsPath())).body);
-    expect(initial).toEqual({ settings: { enabled: false, dailyTokenLimit: 200_000 }, available: true, today: { usedTokens: 0, reservedTokens: 0 } });
-
-    expectProblem(await consoleReq("analyst", "put", settingsPath()).send({ enabled: true, dailyTokenLimit: 5000 }), 403, "FORBIDDEN");
-    expectProblem(await setBudget(true, 10), 422, "VALIDATION_FAILED");
-    const on = await setBudget(true, 1_000_000);
-    expect(AiSettingsResponseSchema.parse(on.body).settings).toEqual({ enabled: true, dailyTokenLimit: 1_000_000 });
+    expect(initial).toEqual({ settings: { dailyTokenLimit: 200_000 }, available: true, today: { usedTokens: 0, reservedTokens: 0 } });
+    // AI works before anyone has saved settings.
     expect((await ask("owner", f)).status).toBe(202);
+    await work();
+
+    expectProblem(await consoleReq("analyst", "put", settingsPath()).send({ dailyTokenLimit: 5000 }), 403, "FORBIDDEN");
+    expectProblem(await setBudget(10), 422, "VALIDATION_FAILED");
+    // An old client may still send the removed switch; it is ignored.
+    const set = await consoleReq("owner", "put", settingsPath()).send({ enabled: false, dailyTokenLimit: 1_000_000 });
+    expect(AiSettingsResponseSchema.parse(set.body).settings).toEqual({ dailyTokenLimit: 1_000_000 });
+    expect((await ask("owner", f)).status).toBe(202);
+    await work();
 
     const audit = await withTenant(owner, t.id, (trx) =>
       trx.selectFrom("audit_events").select("metadata").where("action", "=", "organization.ai_settings_changed").execute(),
     );
-    expect(audit.at(-1)!.metadata).toEqual({ before: { enabled: false, dailyTokenLimit: 200_000 }, after: { enabled: true, dailyTokenLimit: 1_000_000 } });
+    expect(audit.at(-1)!.metadata).toEqual({ before: { dailyTokenLimit: 200_000 }, after: { dailyTokenLimit: 1_000_000 } });
     // Other organizations are unaffected.
-    expect(await withTenant(db, other.id, (trx) => aiRepo.getSettings(trx))).toMatchObject({ enabled: false });
-  });
-
-  it("stops queued generations when AI is turned off before they run, releasing their reservation", async () => {
-    await setBudget(true, 1_000_000);
-    const id = AiJobResponseSchema.parse((await ask("owner", await newForm())).body).job.id;
-    expect((await today()).reserved).toBeGreaterThan(0);
-    await setBudget(false, 1_000_000);
-    await work();
-    expect(await generation(id)).toMatchObject({ status: "failed", failure_code: "ai_not_enabled", reserved_tokens: 0 });
-    expect(await today()).toEqual({ used: 0, reserved: 0 });
+    expect(await withTenant(db, other.id, (trx) => aiRepo.getSettings(trx))).toEqual({ dailyTokenLimit: 200_000 });
   });
 });
 
 describe("daily budget", () => {
   it("reserves the worst case up front, charges actual use and releases the rest", async () => {
-    await setBudget(true, 1_000_000);
+    await setBudget(1_000_000);
     const id = AiJobResponseSchema.parse((await ask("owner", await newForm())).body).job.id;
     perRequest = (await generation(id)).reserved_tokens;
     expect(perRequest).toBeGreaterThan(1800);
@@ -166,7 +160,7 @@ describe("daily budget", () => {
   });
 
   it("refuses a request whose worst case does not fit, and lets one through once use is settled", async () => {
-    await setBudget(true, perRequest + 2000);
+    await setBudget(perRequest + 2000);
     const f = await newForm();
     const first = AiJobResponseSchema.parse((await ask("admin0", f)).body).job.id;
     const refused = await ask("admin1", f);
@@ -180,7 +174,7 @@ describe("daily budget", () => {
 
   it("holds the cap when many requests arrive at once", async () => {
     // Room for exactly two worst-case requests.
-    await setBudget(true, perRequest * 2 + perRequest / 2);
+    await setBudget(perRequest * 2 + perRequest / 2);
     const f = await newForm();
     const results = await Promise.all([0, 1, 2, 3, 4].map((i) => ask(`admin${i}`, f)));
     const statuses = results.map((r) => r.status).toSorted();
@@ -197,7 +191,7 @@ describe("daily budget", () => {
   });
 
   it("releases the reservation of a cancelled queued generation and of an expired one", async () => {
-    await setBudget(true, 1_000_000);
+    await setBudget(1_000_000);
     const cancelledId = AiJobResponseSchema.parse((await ask("admin0", await newForm())).body).job.id;
     await consoleReq("admin0", "post", `/api/v1/organizations/${t.id}/ai-jobs/${cancelledId}/cancel`);
     expect((await generation(cancelledId)).reserved_tokens).toBe(0);
@@ -212,7 +206,7 @@ describe("daily budget", () => {
 describe("logs", () => {
   it("raise a spend alarm near the limit, and never contain prompts or model output", async () => {
     // Room for one request; its actual use passes 80% of the limit.
-    await setBudget(true, Math.max(perRequest + 10, 1000));
+    await setBudget(Math.max(perRequest + 10, 1000));
     await withTenant(owner, t.id, (trx) =>
       trx
         .insertInto("ai_usage_days")

@@ -12,7 +12,7 @@ The prompt is `ASSISTANT_PROMPT` in `packages/ai/src/assistant.ts`, written in t
 
 ## How it works
 
-1. The member asks a question. The API (`POST /api/v1/organizations/:orgId/assistant`) checks they are an active member, that the organization has turned AI on, and takes one question from the organization's daily allowance.
+1. The member asks a question. The API (`POST /api/v1/organizations/:orgId/assistant`) checks they are an active member and takes one question from the organization's daily allowance.
 2. The model receives the prompt plus a context block: organization, member, role, today's date (UTC), and only the tools, actions and pages that role may use.
 3. The model replies in the blueprint's JSON format: a **read-only tool** or an **answer**. It may use up to 4 tools per question.
 4. Each tool runs in its own short transaction, scoped to the organization by row-level security. The member's organization permissions are checked again on every call, and tools about one form check the member's access to that form, exactly as the form's own pages do.
@@ -51,7 +51,7 @@ Left out on purpose: publishing (a person publishes, docs/03 §4), deleting form
 ## Safety
 
 - **Organization isolation** comes from the database (row-level security) and the membership check, not from the prompt. Members of other organizations get 404.
-- **Opt-in.** The assistant sends organization data to the AI provider, so it works only when an owner has turned AI on in AI settings, the same switch as AI drafting.
+- **Always on.** The assistant is a required part of the console, so there is no switch: it is on for every organization whenever the server has an AI provider. It sends form metadata and counts (never respondents' answers) to the provider; owners control cost with the daily token limit in AI settings.
 - **The model cannot write.** It has no write tools, and its actions are only suggestions. Forged chat history doesn't help an attacker: every tool and endpoint checks the signed-in member.
 - **Tool results are data.** Form names, question labels and reasons are marked as data, and the model is told never to follow instructions found inside them.
 - **Replies are checked.** Every reply is validated against the JSON format. A malformed reply gets one correction, and a second ends the question with an error. Links outside the page list and unknown actions are dropped.

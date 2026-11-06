@@ -61,12 +61,6 @@ export function aiGenerationJob(deps: AiJobDeps): JobDefinition {
         await finish({ status: "failed", failureCode: "ai_unavailable" }, NO_USAGE);
         return;
       }
-      // The organization may have turned AI off since the request.
-      if (!(await inTenant((trx) => aiRepo.getSettings(trx))).enabled) {
-        await finish({ status: "failed", failureCode: "ai_not_enabled" }, NO_USAGE);
-        return;
-      }
-
       const remaining = generation.deadlineAt.getTime() - Date.now();
       const signal = AbortSignal.any([ctx.signal, AbortSignal.timeout(Math.max(0, remaining))]);
       let result: Awaited<ReturnType<typeof generateProposal>>;

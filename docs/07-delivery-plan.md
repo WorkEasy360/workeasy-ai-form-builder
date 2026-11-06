@@ -53,7 +53,7 @@ Gate: reload/retry/process crashes cannot produce duplicate acknowledged submiss
 | JOB-01 | Outbox dispatcher, durable jobs, leases, retries | Crash after commit recovers delivery; duplicate dispatch does not create duplicate jobs |
 | AI-01 | Provider adapter and bounded generation jobs | Invalid output never enters draft; outage leaves manual editing usable |
 | AI-02 | Proposal diff, accept/reject, revision conflict | AI cannot overwrite a newer manual draft or publish |
-| AI-03 | Tenant opt-in, budget accounting, metadata logs | Spend cap enforced under concurrency; no prompt/answer logging |
+| AI-03 | Tenant budget accounting, metadata logs (AI is always on; the opt-in was removed) | Spend cap enforced under concurrency; no prompt/answer logging |
 | AUT-01 | Email and signed webhooks | Durable delivery history, retry, permanent-failure display, SSRF protection |
 | ANA-01 | Basic aggregate analytics | Documented view/start/accept definitions, no answer telemetry |
 

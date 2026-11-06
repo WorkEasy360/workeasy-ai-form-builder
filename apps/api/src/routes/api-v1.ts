@@ -1560,9 +1560,6 @@ export function apiV1Router(deps: AppDependencies): Router {
       await onForm(res, orgId, formId, "forms.edit", async (trx, { form }): Promise<Outcome<AiJobResponse>> => {
         if (!settings.aiEnabled) return AI_UNAVAILABLE;
         const aiSettings = await aiRepo.getSettings(trx);
-        if (!aiSettings.enabled) {
-          return { kind: "problem", status: 403, code: "AI_NOT_ENABLED", title: "AI is turned off for this organization; an owner can turn it on" };
-        }
         if (form.state === "archived") return { kind: "conflict", code: "FORM_ARCHIVED", title: "Restore the form before editing it" };
         const draft = await orgRepo.getDraft(trx, formId);
         if (!draft) return { kind: "not_found" };
@@ -1679,7 +1676,7 @@ export function apiV1Router(deps: AppDependencies): Router {
     return { settings: current, available: settings.aiEnabled, today: { usedTokens: today.used, reservedTokens: today.reserved } };
   }
 
-  /** AI settings and today's use, for any member (so the builder can explain why AI is off). */
+  /** AI settings and today's use, for any member (so the builder can explain a spent budget). */
   router.get("/organizations/:orgId/ai-settings", async (req, res) => {
     respond(
       res,
@@ -1687,7 +1684,7 @@ export function apiV1Router(deps: AppDependencies): Router {
     );
   });
 
-  /** Turns AI on or off and sets the daily budget (organization.manage). Audited. */
+  /** Sets the daily AI budget (organization.manage). AI itself is always on. Audited. */
   router.put("/organizations/:orgId/ai-settings", async (req, res) => {
     const body = AiSettingsBodySchema.safeParse(req.body ?? {});
     if (!body.success) {

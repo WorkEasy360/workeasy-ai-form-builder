@@ -855,7 +855,7 @@ export function buildOpenApiDocument(): JsonSchema {
           responses: {
             "202": json("The queued generation", AiJobResponseSchema),
             "401": unauthenticated,
-            "403": problem("No forms.edit, or AI_NOT_ENABLED: the organization has not turned AI on"),
+            "403": problem("No forms.edit"),
             "404": problem("Form not found or not visible"),
             "409": problem("FORM_ARCHIVED, or AI_GENERATION_IN_PROGRESS: you already have one running"),
             "412": problem("DRAFT_CONFLICT: the draft is newer than baseRevision"),
@@ -869,7 +869,7 @@ export function buildOpenApiDocument(): JsonSchema {
         parameters: [uuidPath("orgId", "Organization (tenant) ID")],
         get: {
           operationId: "getAiSettings",
-          summary: "The organization's AI opt-in, daily token budget and today's use (any member)",
+          summary: "The organization's daily AI token budget and today's use (any member)",
           security: [{ consoleSession: [] }],
           responses: {
             "200": json("Settings and usage", AiSettingsResponseSchema),
@@ -879,9 +879,9 @@ export function buildOpenApiDocument(): JsonSchema {
         },
         put: {
           operationId: "updateAiSettings",
-          summary: "Turn AI on or off and set the daily token budget (requires organization.manage)",
+          summary: "Set the daily AI token budget (requires organization.manage)",
           description:
-            "AI is off until turned on. Each request reserves its worst-case token use against the UTC day's budget before it is queued, atomically, so concurrent requests cannot together exceed it; actual use is charged as reported and the rest released when the request ends. Audited.",
+            "AI is always on for every organization; this sets only its daily budget. Each request reserves its worst-case token use against the UTC day's budget before it is queued, atomically, so concurrent requests cannot together exceed it; actual use is charged as reported and the rest released when the request ends. Audited.",
           security: [{ consoleSession: [] }],
           requestBody: { required: true, content: { "application/json": { schema: schemaOf(AiSettingsBodySchema, "input") } } },
           responses: {
@@ -966,7 +966,7 @@ export function buildOpenApiDocument(): JsonSchema {
             "200": json("The answer, with an optional link and proposal", AssistantAnswerResponseSchema),
             "401": unauthenticated,
             "404": problem("Organization not found or not visible"),
-            "409": problem("AI_NOT_ENABLED, ASSISTANT_DAILY_LIMIT or AI_BUDGET_EXCEEDED"),
+            "409": problem("ASSISTANT_DAILY_LIMIT or AI_BUDGET_EXCEEDED"),
             "422": problem("Invalid question or history"),
             "502": problem("ASSISTANT_FAILED: the model couldn't produce a valid answer"),
             "503": problem("AI_DISABLED (no provider on this server) or ASSISTANT_FAILED (provider busy)"),

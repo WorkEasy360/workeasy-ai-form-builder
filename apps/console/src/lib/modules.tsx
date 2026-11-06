@@ -60,7 +60,7 @@ export const MODULES: readonly ConsoleModule[] = [
     icon: (s) => <SparkleIcon size={s} />,
     permission: "organization.audit.read",
     summary: "AI can suggest forms for people who edit them. Suggestions never change a form until someone applies them, and prompts are not kept after a request ends.",
-    features: ["Turn AI drafting on or off", "Daily token limit", "Prompts are not kept after a request"],
+    features: ["Daily token limit for AI drafting and the assistant", "Today's AI use", "Prompts are not kept after a request"],
   },
   {
     key: "audit",

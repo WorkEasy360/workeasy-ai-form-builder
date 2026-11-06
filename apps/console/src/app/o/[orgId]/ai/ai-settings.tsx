@@ -5,7 +5,7 @@ import { api, ApiError } from "../../../../lib/api";
 import { ModuleHeader } from "../module-header";
 
 interface AiSettingsResponse {
-  settings: { enabled: boolean; dailyTokenLimit: number };
+  settings: { dailyTokenLimit: number };
   available: boolean;
   today: { usedTokens: number; reservedTokens: number };
 }
@@ -13,16 +13,15 @@ interface AiSettingsResponse {
 const number = new Intl.NumberFormat();
 
 /**
- * AI opt-in and daily budget (AI-03). Owners turn AI on for the
- * organization and cap the tokens it may use per day; everyone else sees
- * the settings read-only.
+ * The organization's daily AI budget (AI-03). AI drafting and the assistant
+ * are always on; owners cap the tokens they may use per day, and everyone
+ * else sees the setting read-only.
  */
 export function AiSettingsForm({ orgId }: { orgId: string }) {
-  const ids = { enabled: useId(), limit: useId() };
+  const ids = { limit: useId() };
   const path = `/api/v1/organizations/${orgId}/ai-settings`;
   const [data, setData] = useState<AiSettingsResponse | undefined>();
   const [canManage, setCanManage] = useState(false);
-  const [enabled, setEnabled] = useState(false);
   const [limit, setLimit] = useState("");
   const [error, setError] = useState<string | undefined>();
   const [notice, setNotice] = useState("");
@@ -34,7 +33,6 @@ export function AiSettingsForm({ orgId }: { orgId: string }) {
       .then(([settings, me]) => {
         if (cancelled) return;
         setData(settings);
-        setEnabled(settings.settings.enabled);
         setLimit(String(settings.settings.dailyTokenLimit));
         setCanManage(me.organizations.find((o) => o.id === orgId)?.permissions.includes("organization.manage") ?? false);
       })
@@ -51,9 +49,9 @@ export function AiSettingsForm({ orgId }: { orgId: string }) {
     setError(undefined);
     setNotice("");
     try {
-      const next = await api<AiSettingsResponse>(path, { method: "PUT", body: { enabled, dailyTokenLimit: Number(limit) } });
+      const next = await api<AiSettingsResponse>(path, { method: "PUT", body: { dailyTokenLimit: Number(limit) } });
       setData(next);
-      setNotice(next.settings.enabled ? "AI is on for your organization." : "AI is off for your organization.");
+      setNotice("Saved the daily limit.");
     } catch (err) {
       setError(err instanceof ApiError ? (err.problem.errors?.[0]?.message ?? err.problem.title) : "Something went wrong.");
     } finally {
@@ -76,11 +74,7 @@ export function AiSettingsForm({ orgId }: { orgId: string }) {
           }}
           style={{ display: "grid", gap: 16 }}
         >
-          {!data.available && <p role="note">AI isn&apos;t set up on this server, so these settings have no effect yet.</p>}
-          <label htmlFor={ids.enabled} style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <input id={ids.enabled} type="checkbox" checked={enabled} disabled={!canManage || busy} onChange={(e) => setEnabled(e.target.checked)} />
-            Allow AI suggestions in this organization
-          </label>
+          {!data.available && <p role="note">AI isn&apos;t set up on this server, so AI drafting and the assistant aren&apos;t available yet.</p>}
           <div style={{ display: "grid", gap: 4 }}>
             <label htmlFor={ids.limit}>Daily limit (tokens)</label>
             <input
@@ -110,7 +104,7 @@ export function AiSettingsForm({ orgId }: { orgId: string }) {
               </button>
             </p>
           ) : (
-            <p style={{ margin: 0, color: "var(--we-text-secondary)" }}>Only organization owners can change these settings.</p>
+            <p style={{ margin: 0, color: "var(--we-text-secondary)" }}>Only organization owners can change the daily limit.</p>
           )}
           <p role="status">{notice}</p>
         </form>

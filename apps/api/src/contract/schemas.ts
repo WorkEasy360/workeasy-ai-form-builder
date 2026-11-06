@@ -599,9 +599,8 @@ export type AiGenerationBody = z.infer<typeof AiGenerationSchema>;
 export const AiJobResponseSchema = z.object({ job: AiGenerationSchema });
 export type AiJobResponse = z.infer<typeof AiJobResponseSchema>;
 
-/** An organization's AI opt-in and daily budget (AI-03). */
+/** An organization's daily AI budget (AI-03). AI is always on; there is no switch. */
 export const AiSettingsBodySchema = z.object({
-  enabled: z.boolean(),
   /** Tokens per UTC day across the organization, reserved worst-case per request. */
   dailyTokenLimit: z.number().int().min(1000).max(100_000_000),
 });
@@ -617,10 +616,10 @@ export type AiSettingsResponse = z.infer<typeof AiSettingsResponseSchema>;
 // Assistant (docs/09) -------------------------------------------------------
 
 export const AssistantStatusResponseSchema = z.object({
-  /** True when this server has a provider and the organization has turned AI on. */
+  /** True when this server has an AI provider; AI is always on for every organization. */
   enabled: z.boolean(),
-  /** Why it's off: no provider on this server, or AI turned off for the organization. */
-  disabledBy: z.enum(["server", "organization"]).optional(),
+  /** Why it's off: no provider on this server. */
+  disabledBy: z.enum(["server"]).optional(),
   usedToday: z.number().int().min(0),
   dailyLimit: z.number().int().min(1),
 });

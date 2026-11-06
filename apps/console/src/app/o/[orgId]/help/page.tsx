@@ -11,7 +11,7 @@ const SECTIONS: Array<{ id: string; title: string; steps: string[] }> = [
     title: "1. Create a form",
     steps: [
       "Go to Forms and choose Create form.",
-      "Name it, then choose how to start: Blank form, Template, or Describe it with AI (when your organization has turned AI on). AI only suggests; nothing changes until you apply it.",
+      "Name it, then choose how to start: Blank form, Template, or Describe it with AI. AI only suggests; nothing changes until you apply it.",
     ],
   },
   {

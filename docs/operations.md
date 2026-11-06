@@ -25,7 +25,7 @@ Jobs carry deliveries (`integrations.fanout` → `integrations.deliver`) and AI 
 | `deadline_exceeded`, `provider_timeout`, `provider_unavailable`, `provider_unreachable` | AI provider slow or down | Nothing; manual editing is unaffected. Persistent: check the provider's status page and `AI_PROVIDER`/keys |
 | `provider_refused`, `provider_rejected` | The provider refused the request (key, quota, content) | Check the API key and the provider account |
 | `invalid_output`, `output_truncated` | The AI's answer was not a valid form, even after one repair | Nothing to fix; the author can ask again |
-| `ai_not_enabled`, `ai_unavailable` | AI turned off for the organization, or no provider configured | Expected |
+| `ai_unavailable` | No AI provider configured on this server (`ai_not_enabled` appears only on generations from before AI became always on) | Expected |
 | `form_unavailable`, `access_revoked` | The form or the requester's access went away before the job ran | Expected |
 
 **Retry** gives a failed job three more attempts with the same identity, so a receiver that deduplicates sees no duplicate. It is audited.

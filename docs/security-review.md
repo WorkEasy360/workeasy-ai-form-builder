@@ -31,7 +31,7 @@ Trust boundaries: browser → Next.js apps → API (cookie session or respondent
 | Server-side request forgery through webhooks | Only public addresses on allowed ports; DNS checked before each delivery and the connection pinned to the checked address; no redirects | `packages/integrations` unit tests, `integrations.int.test.ts` |
 | Forged webhooks to customers | HMAC-SHA256 over timestamp and body, event IDs for de-duplication, overlapping signatures during secret rotation | `integrations.int.test.ts` |
 | AI output injecting markup or breaking forms | Replies are parsed, normalized, stripped of markup and validated like a published form; one repair attempt; never applied without a person | `ai.int.test.ts`, `packages/ai` unit tests |
-| AI cost abuse | Opt-in per organization; daily token budget reserved atomically before each request; per-user and per-organization concurrency limits | `ai-budget.int.test.ts` |
+| AI cost abuse | Daily token budget per organization (AI is always on), the assistant's daily question limit; budget reserved atomically before each request; per-user and per-organization concurrency limits | `ai-budget.int.test.ts` |
 | Spam and floods on public forms | Honeypot, minimum fill time, per-form response limits and an atomic organization-wide cap | `settings.int.test.ts`, `quotas.int.test.ts` |
 | Invitation link guessing or reuse | 256-bit random tokens, stored hashed, single use, 7-day expiry, revocable; unknown and spent links look the same | `members.int.test.ts` |
 | Sensitive data in logs or telemetry | Structured logs carry IDs, routes and durations only; audit metadata holds no answers or emails | `jobs.int.test.ts`, `governance.int.test.ts`, `members.int.test.ts` |

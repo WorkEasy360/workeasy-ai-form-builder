@@ -33,9 +33,9 @@ import { problems, sendProblem } from "../http/problem.js";
 
 /**
  * The console assistant (packages/ai/src/assistant.ts, docs/09). One POST is
- * one question: the API checks the member, the organization's AI opt-in and
- * the day's allowance, runs the model, and runs each tool the model asks for
- * in its own short transaction scoped to this organization and re-checked
+ * one question: the API checks the member and the day's allowance, runs the
+ * model, and runs each tool the model asks for in its own short transaction
+ * scoped to this organization and re-checked
  * against the member's role and form access. Tools return form metadata and
  * counts, never respondents' answers. Nothing is changed here: a proposed
  * action is verified and returned for the member to confirm, and the console
@@ -105,7 +105,7 @@ const TOOLS: Record<string, (trx: Trx, args: Record<string, unknown>, ctx: ToolC
         todayUtc: today(),
         formsYouCanSee: forms,
         ...(members === undefined ? {} : { activeMembers: members }),
-        ai: { enabled: ai.enabled, dailyTokenLimit: ai.dailyTokenLimit, tokensUsedToday: usage.used + usage.reserved, assistantQuestionsToday: asked, assistantDailyLimit: ctx.assistantLimit },
+        ai: { dailyTokenLimit: ai.dailyTokenLimit, tokensUsedToday: usage.used + usage.reserved, assistantQuestionsToday: asked, assistantDailyLimit: ctx.assistantLimit },
       },
     };
   },
@@ -382,15 +382,10 @@ export function assistantRoutes(router: Router, deps: AppDependencies, access: O
     (await access.inOrganization(orgId, userId, fn))?.value;
 
   router.get("/organizations/:orgId/assistant", async (req, res) => {
-    const found = await access.inOrganization(req.params.orgId, sessionOf(res).userId, async (trx) => {
-      const [settings, used] = await Promise.all([aiRepo.getSettings(trx), aiRepo.assistantUsedToday(trx)]);
-      return { settings, used };
-    });
+    const found = await access.inOrganization(req.params.orgId, sessionOf(res).userId, (trx) => aiRepo.assistantUsedToday(trx));
     if (!found) return problems.notFound(res);
-    const { settings, used } = found.value;
-    // "server": no provider configured here; "organization": an owner hasn't turned AI on.
-    const off = !provider ? "server" : !settings.enabled ? "organization" : null;
-    res.json({ enabled: off === null, ...(off ? { disabledBy: off } : {}), usedToday: used, dailyLimit: limit });
+    // AI is always on for organizations; it's off only when this server has no provider.
+    res.json({ enabled: Boolean(provider), ...(provider ? {} : { disabledBy: "server" }), usedToday: found.value, dailyLimit: limit });
   });
 
   router.post("/organizations/:orgId/assistant", async (req, res) => {
@@ -400,16 +395,14 @@ export function assistantRoutes(router: Router, deps: AppDependencies, access: O
     const { orgId } = req.params;
     const userId = sessionOf(res).userId;
 
-    // 1. The member, the organization's AI opt-in, and one question from today's allowance.
+    // 1. The member, and one question from today's allowance.
     const start = await access.inOrganization(orgId, userId, async (trx, membership) => {
       const settings = await aiRepo.getSettings(trx);
-      if (!settings.enabled) return { kind: "off" as const };
       const taken = await aiRepo.takeAssistantMessage(trx, orgId, limit, settings.dailyTokenLimit);
       return taken.kind === "ok" ? { kind: "ok" as const, membership, used: taken.used } : taken;
     });
     if (!start) return problems.notFound(res);
     const outcome = start.value;
-    if (outcome.kind === "off") return sendProblem(res, 409, "AI_NOT_ENABLED", "AI is turned off for this organization. An owner can turn it on in AI settings");
     if (outcome.kind === "limit") return sendProblem(res, 409, "ASSISTANT_DAILY_LIMIT", `This organization has used today's ${outcome.limit} assistant questions. More are available tomorrow (UTC)`);
     if (outcome.kind === "tokens") return sendProblem(res, 409, "AI_BUDGET_EXCEEDED", "This organization has used today's AI token limit. More is available tomorrow (UTC), or an owner can raise the limit in AI settings");
     const profile = await identityRepo.getUserProfile(deps.db, userId);

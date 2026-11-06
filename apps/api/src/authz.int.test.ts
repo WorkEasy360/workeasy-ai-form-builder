@@ -84,7 +84,7 @@ function bodyFor(route: Route): { body?: unknown; headers?: Record<string, strin
     "POST /invitations": { body: { role: "analyst" } },
     "POST /api/v1/invitations/accept": { body: { token: "x".repeat(43) } },
     "POST /forms/{formId}/ai-jobs": { body: { prompt: "Make a form", operation: "create", baseRevision: 2 } },
-    "PUT /ai-settings": { body: { enabled: false, dailyTokenLimit: 1000 } },
+    "PUT /ai-settings": { body: { dailyTokenLimit: 1000 } },
     "POST /ai-jobs/{jobId}/apply": { body: { expectedRevision: 2 } },
     "POST /forms/{formId}/integrations": { body: { kind: "email", name: "Exfiltrate", recipients: ["attacker@example.test"] } },
     "PATCH /integrations/{integrationId}": { body: { recipients: ["attacker@example.test"] } },
@@ -219,7 +219,7 @@ async function seedTenantA() {
   expect(exported.status, JSON.stringify(exported.body)).toBe(202);
   ids.exportId = exported.body.id as string;
 
-  expect((await ownerReq("put", `/api/v1/organizations/${a.id}/ai-settings`).send({ enabled: true, dailyTokenLimit: 1_000_000 })).status).toBe(200);
+  expect((await ownerReq("put", `/api/v1/organizations/${a.id}/ai-settings`).send({ dailyTokenLimit: 1_000_000 })).status).toBe(200);
   const ai = await ownerReq("post", `${formPath}/ai-jobs`).send({ prompt: "Add a phone number question", operation: "edit", baseRevision: saved.body.revision });
   expect(ai.status, JSON.stringify(ai.body)).toBe(202);
   ids.aiJobId = ai.body.job.id as string;

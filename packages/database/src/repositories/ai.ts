@@ -91,28 +91,32 @@ export async function expireOverdue(trx: Trx, id?: string): Promise<number> {
 
 // Opt-in and budgets (AI-03) -----------------------------------------------------
 
+/**
+ * An organization's AI settings. AI (drafting and the assistant) is always
+ * on; owners set only the daily token limit. The table's `enabled` column
+ * is no longer read: it stays until a later migration drops it, so a
+ * version still running during a deploy keeps working.
+ */
 export interface AiSettings {
-  enabled: boolean;
   dailyTokenLimit: number;
 }
 
-export const DEFAULT_AI_SETTINGS: AiSettings = { enabled: false, dailyTokenLimit: 200_000 };
+export const DEFAULT_AI_SETTINGS: AiSettings = { dailyTokenLimit: 200_000 };
 
-/** The organization's AI settings; AI is off until someone turns it on. */
 export async function getSettings(trx: Trx): Promise<AiSettings> {
-  const row = await trx.selectFrom("ai_settings").select(["enabled", "daily_token_limit"]).executeTakeFirst();
-  return row ? { enabled: row.enabled, dailyTokenLimit: row.daily_token_limit } : DEFAULT_AI_SETTINGS;
+  const row = await trx.selectFrom("ai_settings").select("daily_token_limit").executeTakeFirst();
+  return row ? { dailyTokenLimit: row.daily_token_limit } : DEFAULT_AI_SETTINGS;
 }
 
 export async function saveSettings(trx: Trx, tenantId: string, settings: AiSettings, userId: string): Promise<AiSettings> {
-  const values = { enabled: settings.enabled, daily_token_limit: settings.dailyTokenLimit, updated_by: userId, updated_at: sql<Date>`now()` };
+  const values = { daily_token_limit: settings.dailyTokenLimit, updated_by: userId, updated_at: sql<Date>`now()` };
   const row = await trx
     .insertInto("ai_settings")
     .values({ tenant_id: tenantId, ...values })
     .onConflict((oc) => oc.column("tenant_id").doUpdateSet(values))
-    .returning(["enabled", "daily_token_limit"])
+    .returning("daily_token_limit")
     .executeTakeFirstOrThrow();
-  return { enabled: row.enabled, dailyTokenLimit: row.daily_token_limit };
+  return { dailyTokenLimit: row.daily_token_limit };
 }
 
 /** Budget days are UTC dates; a generation counts against the day it was requested. */
