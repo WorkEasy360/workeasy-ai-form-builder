@@ -3,7 +3,7 @@
   "info": {
     "title": "Workeasy Forms API",
     "version": "0.1.0",
-    "description": "Routes implemented through GOV-01. Organization routes derive the tenant from the authenticated membership; resources outside the caller's organizations return 404. Every response carries an X-Request-Id header, and every error is application/problem+json with the same requestId."
+    "description": "Routes implemented through GOV-01. Organization routes derive the tenant from the authenticated membership; resources outside the caller's organizations return 404. Every response carries an X-Request-Id header, and every error is application/problem+json with the same requestId. WorkEasy360 Accounts sign-in (docs/workeasy360-sso.md): a WorkEasy360 session reaches only the organization its ID token named (any other is 404), and an organization linked to WorkEasy360 answers 403 WORKEASY360_ACCESS_ENDED (with `reason`), WORKEASY360_ACCESS_UNVERIFIED or WORKEASY360_READ_ONLY on any organization route when the platform's entitlement says so. With WORKEASY360_SSO_ONLY every other session answers 401 WORKEASY360_SIGN_IN_REQUIRED."
   },
   "servers": [
     {
@@ -205,10 +205,10 @@
     "/auth/methods": {
       "get": {
         "operationId": "signInMethods",
-        "summary": "Sign-in options the console offers: email and password, and single sign-on when its provider answers",
+        "summary": "Sign-in options the console offers: email and password and single sign-on unless WorkEasy360 is the only way in, and WorkEasy360 when connected",
         "responses": {
           "200": {
-            "description": "{ password: true, sso: boolean }"
+            "description": "{ password: boolean, sso: boolean, workeasy360: boolean, workeasy360PurchaseUrl?: string }"
           }
         }
       }
@@ -283,7 +283,7 @@
             }
           },
           "403": {
-            "description": "Forbidden: missing permission, or a cookie-authenticated mutation not sent from the console origin",
+            "description": "Not from the console origin, or PASSWORD_SIGN_IN_DISABLED (WORKEASY360_SSO_ONLY)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -318,10 +318,10 @@
     "/auth/logout": {
       "post": {
         "operationId": "logout",
-        "summary": "Revoke the current session",
+        "summary": "Revoke the current session; with ?workeasy360=1 a WorkEasy360 session is also sent to WorkEasy360's end_session_endpoint",
         "responses": {
           "303": {
-            "description": "Redirect to the console; clears the session cookie"
+            "description": "Redirect to the console, or to WorkEasy360's end_session_endpoint (id_token_hint, client_id, post_logout_redirect_uri); clears the session cookie"
           },
           "403": {
             "description": "Forbidden: missing permission, or a cookie-authenticated mutation not sent from the console origin",
@@ -332,6 +332,70 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/auth/workeasy360/start": {
+      "get": {
+        "operationId": "beginWorkeasy360Login",
+        "summary": "Start WorkEasy360 sign-in (authorization code + PKCE S256; state, nonce and verifier kept server-side, single use)",
+        "parameters": [
+          {
+            "name": "organization",
+            "in": "query",
+            "required": false,
+            "description": "The WorkEasy360 organization the launcher opened the product for; forwarded as the organization hint",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "returnTo",
+            "in": "query",
+            "required": false,
+            "description": "A console page of that organization (/o/<id>/...)",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "302": {
+            "description": "Redirect to WorkEasy360's authorization endpoint"
+          },
+          "303": {
+            "description": "Redirect to /?sso_error=<code> when sign-in cannot start"
+          }
+        }
+      }
+    },
+    "/auth/workeasy360/callback": {
+      "get": {
+        "operationId": "completeWorkeasy360Login",
+        "summary": "WorkEasy360 redirect target: code exchange with private_key_jwt, ID token verified against the key set, entitlement asked, session bound to the organization's tenant",
+        "responses": {
+          "303": {
+            "description": "Redirect to /o/<tenant>/forms with the session cookie, or to /?sso_error=<code>[&reason=<entitlement reason>]"
+          }
+        }
+      }
+    },
+    "/auth/workeasy360/backchannel-logout": {
+      "post": {
+        "operationId": "workeasy360BackchannelLogout",
+        "summary": "OpenID Connect Back-Channel Logout receiver (form field logout_token)",
+        "description": "Server to server: the logout token's signature is the authentication. Ends the sessions it names (sid, or every session of sub) in PostgreSQL, so every instance refuses them on the next request.",
+        "responses": {
+          "200": {
+            "description": "Verified; the sessions it names have ended (a duplicate delivery too)"
+          },
+          "400": {
+            "description": "{ error: invalid_request }: not a valid logout token"
+          },
+          "503": {
+            "description": "{ error: temporarily_unavailable }: the key set or the database could not be reached; delivered again later"
           }
         }
       }
@@ -420,11 +484,32 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "session": {
+                      "type": "object",
+                      "properties": {
+                        "provider": {
+                          "type": "string",
+                          "enum": [
+                            "local",
+                            "workeasy360"
+                          ]
+                        },
+                        "workeasy360SignOut": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "provider",
+                        "workeasy360SignOut"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
                     "user",
-                    "organizations"
+                    "organizations",
+                    "session"
                   ],
                   "additionalProperties": false
                 }
@@ -510,7 +595,7 @@
             }
           },
           "403": {
-            "description": "Forbidden: missing permission, or a cookie-authenticated mutation not sent from the console origin",
+            "description": "Not from the console origin, or WORKEASY360_ORGANIZATIONS: organizations come from WorkEasy360 for a WorkEasy360 session (and with WORKEASY360_SSO_ONLY)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -531,6 +616,64 @@
           },
           "422": {
             "description": "VALIDATION_FAILED",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/organizations/{orgId}/access": {
+      "parameters": [
+        {
+          "name": "orgId",
+          "in": "path",
+          "required": true,
+          "description": "Organization (tenant) ID",
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "getOrganizationAccess",
+        "summary": "Whether the caller may use this organization now: an active membership and, when linked to WorkEasy360, a current entitlement",
+        "security": [
+          {
+            "consoleSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "{ ok: true, role }"
+          },
+          "401": {
+            "description": "No valid session",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "WORKEASY360_ACCESS_ENDED (reason), or WORKEASY360_ACCESS_UNVERIFIED",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Organization not found or not visible",
             "content": {
               "application/problem+json": {
                 "schema": {

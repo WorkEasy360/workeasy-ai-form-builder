@@ -94,4 +94,6 @@ export interface FormResponse {
 export interface Me {
   user: { id: string; displayName: string | null };
   organizations: Array<{ id: string; name: string; role: string; permissions: string[] }>;
+  /** How this session was opened; a WorkEasy360 session may also sign out of WorkEasy360. */
+  session?: { provider: "local" | "workeasy360"; workeasy360SignOut: boolean };
 }

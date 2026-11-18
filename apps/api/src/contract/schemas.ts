@@ -65,6 +65,11 @@ export const MeResponseSchema = z.object({
       permissions: z.array(z.enum(ORG_PERMISSIONS)),
     }),
   ),
+  /** How this session was opened. A WorkEasy360 session sees only its token's organization and may also sign out of WorkEasy360. */
+  session: z.object({
+    provider: z.enum(["local", "workeasy360"]),
+    workeasy360SignOut: z.boolean(),
+  }),
 });
 export type MeResponse = z.infer<typeof MeResponseSchema>;
 

@@ -123,7 +123,7 @@ export function buildOpenApiDocument(): JsonSchema {
       title: "Workeasy Forms API",
       version: "0.1.0",
       description:
-        "Routes implemented through GOV-01. Organization routes derive the tenant from the authenticated membership; resources outside the caller's organizations return 404. Every response carries an X-Request-Id header, and every error is application/problem+json with the same requestId.",
+        "Routes implemented through GOV-01. Organization routes derive the tenant from the authenticated membership; resources outside the caller's organizations return 404. Every response carries an X-Request-Id header, and every error is application/problem+json with the same requestId. WorkEasy360 Accounts sign-in (docs/workeasy360-sso.md): a WorkEasy360 session reaches only the organization its ID token named (any other is 404), and an organization linked to WorkEasy360 answers 403 WORKEASY360_ACCESS_ENDED (with `reason`), WORKEASY360_ACCESS_UNVERIFIED or WORKEASY360_READ_ONLY on any organization route when the platform's entitlement says so. With WORKEASY360_SSO_ONLY every other session answers 401 WORKEASY360_SIGN_IN_REQUIRED.",
     },
     servers: [{ url: "/" }],
     components: {
@@ -186,8 +186,8 @@ export function buildOpenApiDocument(): JsonSchema {
       "/auth/methods": {
         get: {
           operationId: "signInMethods",
-          summary: "Sign-in options the console offers: email and password, and single sign-on when its provider answers",
-          responses: { "200": { description: "{ password: true, sso: boolean }" } },
+          summary: "Sign-in options the console offers: email and password and single sign-on unless WorkEasy360 is the only way in, and WorkEasy360 when connected",
+          responses: { "200": { description: "{ password: boolean, sso: boolean, workeasy360: boolean, workeasy360PurchaseUrl?: string }" } },
         },
       },
       "/auth/password/signup": {
@@ -210,7 +210,7 @@ export function buildOpenApiDocument(): JsonSchema {
           responses: {
             "200": { description: "Signed in; sets the session cookie" },
             "401": problem("INVALID_CREDENTIALS: unknown email or wrong password (indistinguishable)"),
-            "403": crossOrigin,
+            "403": problem("Not from the console origin, or PASSWORD_SIGN_IN_DISABLED (WORKEASY360_SSO_ONLY)"),
             "422": problem("VALIDATION_FAILED"),
             "429": problem("TOO_MANY_ATTEMPTS: 10 failures for this email in 15 minutes"),
           },
@@ -219,8 +219,41 @@ export function buildOpenApiDocument(): JsonSchema {
       "/auth/logout": {
         post: {
           operationId: "logout",
-          summary: "Revoke the current session",
-          responses: { "303": { description: "Redirect to the console; clears the session cookie" }, "403": crossOrigin },
+          summary: "Revoke the current session; with ?workeasy360=1 a WorkEasy360 session is also sent to WorkEasy360's end_session_endpoint",
+          responses: {
+            "303": { description: "Redirect to the console, or to WorkEasy360's end_session_endpoint (id_token_hint, client_id, post_logout_redirect_uri); clears the session cookie" },
+            "403": crossOrigin,
+          },
+        },
+      },
+      "/auth/workeasy360/start": {
+        get: {
+          operationId: "beginWorkeasy360Login",
+          summary: "Start WorkEasy360 sign-in (authorization code + PKCE S256; state, nonce and verifier kept server-side, single use)",
+          parameters: [
+            { name: "organization", in: "query", required: false, description: "The WorkEasy360 organization the launcher opened the product for; forwarded as the organization hint", schema: { type: "string", format: "uuid" } },
+            { name: "returnTo", in: "query", required: false, description: "A console page of that organization (/o/<id>/...)", schema: { type: "string" } },
+          ],
+          responses: { "302": { description: "Redirect to WorkEasy360's authorization endpoint" }, "303": { description: "Redirect to /?sso_error=<code> when sign-in cannot start" } },
+        },
+      },
+      "/auth/workeasy360/callback": {
+        get: {
+          operationId: "completeWorkeasy360Login",
+          summary: "WorkEasy360 redirect target: code exchange with private_key_jwt, ID token verified against the key set, entitlement asked, session bound to the organization's tenant",
+          responses: { "303": { description: "Redirect to /o/<tenant>/forms with the session cookie, or to /?sso_error=<code>[&reason=<entitlement reason>]" } },
+        },
+      },
+      "/auth/workeasy360/backchannel-logout": {
+        post: {
+          operationId: "workeasy360BackchannelLogout",
+          summary: "OpenID Connect Back-Channel Logout receiver (form field logout_token)",
+          description: "Server to server: the logout token's signature is the authentication. Ends the sessions it names (sid, or every session of sub) in PostgreSQL, so every instance refuses them on the next request.",
+          responses: {
+            "200": { description: "Verified; the sessions it names have ended (a duplicate delivery too)" },
+            "400": { description: "{ error: invalid_request }: not a valid logout token" },
+            "503": { description: "{ error: temporarily_unavailable }: the key set or the database could not be reached; delivered again later" },
+          },
         },
       },
       "/api/v1/me": {
@@ -240,9 +273,23 @@ export function buildOpenApiDocument(): JsonSchema {
           responses: {
             "201": json("Organization created", OrganizationCreatedResponseSchema),
             "401": unauthenticated,
-            "403": crossOrigin,
+            "403": problem("Not from the console origin, or WORKEASY360_ORGANIZATIONS: organizations come from WorkEasy360 for a WorkEasy360 session (and with WORKEASY360_SSO_ONLY)"),
             "409": problem("ORGANIZATION_LIMIT: the caller already owns 5 organizations"),
             "422": problem("VALIDATION_FAILED"),
+          },
+        },
+      },
+      "/api/v1/organizations/{orgId}/access": {
+        parameters: [uuidPath("orgId", "Organization (tenant) ID")],
+        get: {
+          operationId: "getOrganizationAccess",
+          summary: "Whether the caller may use this organization now: an active membership and, when linked to WorkEasy360, a current entitlement",
+          security: [{ consoleSession: [] }],
+          responses: {
+            "200": { description: "{ ok: true, role }" },
+            "401": unauthenticated,
+            "403": problem("WORKEASY360_ACCESS_ENDED (reason), or WORKEASY360_ACCESS_UNVERIFIED"),
+            "404": problem("Organization not found or not visible"),
           },
         },
       },

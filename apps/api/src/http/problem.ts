@@ -24,6 +24,8 @@ export interface ProblemExtensions {
   signInUrl?: string;
   /** When a scheduled form opens, returned with FORM_NOT_OPEN. */
   opensAt?: string;
+  /** WorkEasy360's entitlement reason, returned with WORKEASY360_ACCESS_ENDED. */
+  reason?: string;
 }
 
 /**

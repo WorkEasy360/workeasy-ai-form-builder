@@ -8,6 +8,8 @@ import { clearCookie, parseCookies, serializeCookie } from "../http/cookies.js";
 import { sendProblem } from "../http/problem.js";
 import { requestLog } from "../http/request-context.js";
 import { requireSameOrigin } from "../http/same-origin.js";
+import { workeasy360Router } from "../workeasy360/routes.js";
+import type { Workeasy360Runtime } from "../workeasy360/runtime.js";
 import { LOGIN_TRANSACTION_MAX_AGE_MS, sealLoginTransaction, unsealLoginTransaction } from "../identity/login-transaction.js";
 import {
   createAttemptLimiter,
@@ -50,6 +52,12 @@ interface SignInOptions {
   signInFailed: (returnTo: string | undefined) => string;
   /** Accepts a requested return path, or undefined to ignore it. */
   parseReturnTo: (raw: unknown) => string | undefined;
+  /**
+   * WorkEasy360 Accounts, on the console origin only: sign-out can also end the
+   * WorkEasy360 sign-in (`POST /logout?workeasy360=1`), and with SSO-only the
+   * generic provider's sign-in is off.
+   */
+  workeasy360?: Workeasy360Runtime | undefined;
 }
 
 /** OIDC sign-in, callback and sign-out for one origin and cookie (docs/06 §1). */
@@ -59,6 +67,11 @@ function signInRouter(options: SignInOptions): Router {
 
   router.get("/login", async (req, res) => {
     const log = requestLog(res, logger);
+    if (options.workeasy360?.settings.ssoOnly) {
+      // WorkEasy360 is the only way in.
+      res.redirect(303, new URL("/auth/workeasy360/start", options.origin).toString());
+      return;
+    }
     const returnTo = options.parseReturnTo(req.query.returnTo);
     let started;
     try {
@@ -117,13 +130,27 @@ function signInRouter(options: SignInOptions): Router {
     const log = requestLog(res, logger);
     const token = parseCookies(req.get("cookie")).get(sessionCookie);
     const session = token ? await identityRepo.resolveSession(db, token) : undefined;
+    // "Sign out of WorkEasy360 too": the product session ends here first, then the browser goes to the
+    // provider's end_session_endpoint, which asks the person to confirm. Plain sign-out ends only ours.
+    let endSession: URL | undefined;
+    const w360 = options.workeasy360;
+    if (session && w360 && req.query.workeasy360 === "1" && session.provider === "workeasy360") {
+      try {
+        endSession = await w360.client.endSessionUrl({
+          idTokenHint: await identityRepo.sessionIdToken(db, session),
+          postLogoutRedirectUri: w360.settings.postLogoutRedirectUri,
+        });
+      } catch (err) {
+        log.warn({ err }, "WorkEasy360 end-session address unavailable");
+      }
+    }
     if (session) {
       await identityRepo.revokeSession(db, session);
-      log.info({ userId: session.userId, sessionId: session.sessionId }, "user signed out");
+      log.info({ userId: session.userId, sessionId: session.sessionId, workeasy360: Boolean(endSession) }, "user signed out");
     }
     res.append("Set-Cookie", clearCookie(sessionCookie, { path: "/", secure }));
     res.set("Cache-Control", "no-store");
-    res.redirect(303, options.home(options.parseReturnTo(req.query.returnTo)));
+    res.redirect(303, endSession ? endSession.toString() : options.home(options.parseReturnTo(req.query.returnTo)));
   });
 
   return router;
@@ -149,12 +176,20 @@ const MAX_SIGN_UPS_PER_HOUR = 200;
  * Email and password accounts at /auth/password (sign-up and sign-in), next
  * to OIDC. A success opens the same server-side session as OIDC sign-in.
  */
-function passwordRouter({ db, settings, logger }: AppDependencies, secure: boolean): Router {
+function passwordRouter({ db, settings, logger, workeasy360 }: AppDependencies, secure: boolean): Router {
   const router = Router();
   const sessionCookie = sessionCookieName(secure);
   const failures = createAttemptLimiter(MAX_FAILED_SIGN_INS, 15 * 60 * 1000);
   const signUps = createAttemptLimiter(MAX_SIGN_UPS_PER_HOUR, 60 * 60 * 1000);
   router.use(requireSameOrigin(settings.consoleOrigin));
+  router.use((_req, res, next) => {
+    // WORKEASY360_SSO_ONLY: WorkEasy360 is the only way in.
+    if (workeasy360?.settings.ssoOnly) {
+      sendProblem(res, 403, "PASSWORD_SIGN_IN_DISABLED", "Sign in with WorkEasy360");
+      return;
+    }
+    next();
+  });
 
   async function openSession(res: Response, userId: string) {
     const session = await identityRepo.createSession(db, userId, settings.sessionTtlMs);
@@ -226,15 +261,37 @@ function passwordRouter({ db, settings, logger }: AppDependencies, secure: boole
 
 /** Console sign-in at /auth on the console origin. */
 export function authRouter(deps: AppDependencies): Router {
-  const { db, identityProvider, settings, logger } = deps;
+  const { db, identityProvider, settings, logger, workeasy360 } = deps;
   const secure = settings.secureCookies;
   const router = Router();
   router.use("/password", passwordRouter(deps, secure));
-  // Which sign-in options the console offers: email and password always, single sign-on when its provider answers.
+  if (workeasy360) {
+    router.use(
+      "/workeasy360",
+      workeasy360Router({
+        db,
+        logger,
+        runtime: workeasy360,
+        consoleOrigin: settings.consoleOrigin,
+        secure,
+        sessionCookie: sessionCookieName(secure),
+        sessionTtlMs: settings.sessionTtlMs,
+        homeRegion: settings.homeRegion ?? "default",
+      }),
+    );
+  }
+  // Which sign-in options the console offers: email and password and the generic single sign-on unless
+  // WorkEasy360 is the only way in, and WorkEasy360 when this deployment is connected to it.
   router.get("/methods", async (_req, res) => {
-    const sso = identityProvider.isAvailable ? await identityProvider.isAvailable() : true;
+    const ssoOnly = workeasy360?.settings.ssoOnly ?? false;
+    const sso = ssoOnly ? false : identityProvider.isAvailable ? await identityProvider.isAvailable() : true;
     res.set("Cache-Control", "no-store");
-    res.json({ password: true, sso });
+    res.json({
+      password: !ssoOnly,
+      sso,
+      workeasy360: workeasy360 ? await workeasy360.client.isAvailable() : false,
+      ...(workeasy360?.settings.purchaseUrl ? { workeasy360PurchaseUrl: workeasy360.settings.purchaseUrl } : {}),
+    });
   });
   return router.use(signInRouter({
     db,
@@ -250,6 +307,7 @@ export function authRouter(deps: AppDependencies): Router {
     home: (returnTo) => new URL(returnTo ?? "/", settings.consoleOrigin).toString(),
     signInFailed: () => new URL("/?signin=failed", settings.consoleOrigin).toString(),
     parseReturnTo: (raw) => (typeof raw === "string" && INVITE_RETURN_PATH.test(raw) ? raw : undefined),
+    workeasy360,
   }));
 }
 

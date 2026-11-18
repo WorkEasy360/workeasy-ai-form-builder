@@ -134,7 +134,7 @@ const forms = await withTenant(db, tenantId, (trx) => trx.selectFrom("forms").se
 
 Cookie-authenticated mutations must come from `CONSOLE_PUBLIC_URL`, checked by Origin, or by Referer when there is no Origin. With `SESSION_COOKIE_SECURE=true` the cookie becomes `__Host-we_session`, and production refuses `false`, http issuers and http console URLs.
 
-**Organization mapping.** Organization routes take the tenant ID from the URL (`/api/v1/organizations/:orgId/...`), and every request re-checks that the signed-in user has an **active** membership there before any tenant data is read. Unknown organizations, organizations the user doesn't belong to, and revoked memberships all return 404, so revocation applies to the very next request. The tenant is never inferred from an email domain or a token claim. `tenants.external_org_id` is reserved for the Workeasy organization identifier once the Workeasy identity provider's claims are specified.
+**Organization mapping.** Organization routes take the tenant ID from the URL (`/api/v1/organizations/:orgId/...`), and every request re-checks that the signed-in user has an **active** membership there before any tenant data is read. Unknown organizations, organizations the user doesn't belong to, and revoked memberships all return 404, so revocation applies to the very next request. The tenant is never inferred from an email domain or a token claim. `tenants.external_org_id` holds the WorkEasy360 organization a tenant is linked to; a WorkEasy360 session is bound to that one tenant ([Sign-in with WorkEasy360 Accounts](workeasy360-sso.md)).
 
 **Roles and grants** (`packages/auth`, docs/01 §4):
 - Owners hold every permission.

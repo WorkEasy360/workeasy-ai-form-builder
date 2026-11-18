@@ -6,6 +6,7 @@ import { createLogger } from "@workeasy/observability";
 import type { Express } from "express";
 import { sql } from "kysely";
 import { createApp, type AppSettings } from "./app.js";
+import type { Workeasy360Runtime } from "./workeasy360/runtime.js";
 
 /** Shared setup for API integration tests. Not part of the production bundle. */
 export const TEST_CONSOLE_ORIGIN = "http://localhost:3000";
@@ -67,6 +68,7 @@ export function buildTestApp(
   respondentIdentityProvider: IdentityProvider = identityProvider,
   objectStore: ObjectStore = testObjectStore(),
   logger = createLogger({ service: "api-test", level: "silent" }),
+  workeasy360?: Workeasy360Runtime,
 ): Express {
   return createApp({
     logger,
@@ -80,6 +82,7 @@ export function buildTestApp(
     isDraining: () => false,
     // The console assistant answers with the local stub model.
     assistant: stubProvider(),
+    workeasy360,
   });
 }
 
