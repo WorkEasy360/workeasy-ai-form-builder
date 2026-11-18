@@ -4,9 +4,12 @@ import { createDb } from "@workeasy/database";
 import { createObjectStore } from "@workeasy/files";
 import { sql } from "kysely";
 import { createLogger } from "@workeasy/observability";
+import { readFileSync } from "node:fs";
+import type { IdentityProvider } from "@workeasy/auth";
 import { createApp } from "./app.js";
-import { loadConfig } from "./config.js";
+import { isLoopbackHttp, loadConfig, WORKEASY360_CALLBACK_PATH } from "./config.js";
 import { createOidcIdentityProvider } from "./identity/oidc-provider.js";
+import { createWorkeasy360Runtime, type Workeasy360Runtime } from "./workeasy360/runtime.js";
 
 const config = loadConfig();
 const logger = createLogger({ service: "api", level: config.LOG_LEVEL });
@@ -17,6 +20,62 @@ let draining = false;
 
 // The worker runs AI drafting; the API runs the assistant, which answers while the member waits.
 const assistant = providerFromSettings(config);
+
+/** The generic OpenID Connect provider (OIDC_*), or one that reports itself unavailable when it is not configured. */
+function genericProvider(redirectUri: string): IdentityProvider {
+  const { OIDC_ISSUER_URL: issuerUrl, OIDC_CLIENT_ID: clientId, OIDC_CLIENT_SECRET: clientSecret } = config;
+  if (!issuerUrl || !clientId || !clientSecret) {
+    return {
+      isAvailable: () => Promise.resolve(false),
+      beginLogin: () => Promise.reject(new Error("single sign-on is not configured")),
+      completeLogin: () => Promise.reject(new Error("single sign-on is not configured")),
+    };
+  }
+  return createOidcIdentityProvider({
+    issuerUrl,
+    clientId,
+    clientSecret,
+    redirectUri,
+    // Config validation already requires https outside development.
+    allowInsecureRequests: config.NODE_ENV !== "production" && new URL(issuerUrl).protocol === "http:",
+  });
+}
+
+/** WorkEasy360 Accounts sign-in (docs/workeasy360-sso.md), when WORKEASY360_* is set. */
+function workeasy360Runtime(): Workeasy360Runtime | undefined {
+  const { WORKEASY360_ISSUER: issuer, WORKEASY360_CLIENT_ID: clientId, WORKEASY360_KEY_ID: keyId, WORKEASY360_PRIVATE_KEY_FILE: keyFile } = config;
+  if (!issuer || !clientId || !keyId || !keyFile) return undefined;
+  let privateKeyPem: string;
+  try {
+    privateKeyPem = readFileSync(keyFile, "utf8");
+  } catch {
+    throw new Error("WORKEASY360_PRIVATE_KEY_FILE cannot be read");
+  }
+  const runtime = createWorkeasy360Runtime(
+    db,
+    {
+      issuer,
+      clientId,
+      productCode: config.WORKEASY360_PRODUCT_CODE,
+      redirectUri: config.WORKEASY360_REDIRECT_URI ?? new URL(WORKEASY360_CALLBACK_PATH, consoleOrigin).toString(),
+      keyId,
+      privateKeyPem,
+      scopes: config.WORKEASY360_SCOPES.split(" ").filter(Boolean),
+      // Config validation allows plain http only for a loopback issuer outside production.
+      allowInsecureRequests: config.NODE_ENV !== "production" && isLoopbackHttp(issuer),
+    },
+    {
+      postLogoutRedirectUri: config.WORKEASY360_POST_LOGOUT_REDIRECT_URI ?? new URL("/", consoleOrigin).toString(),
+      ssoOnly: config.WORKEASY360_SSO_ONLY,
+      defaultRole: config.WORKEASY360_DEFAULT_ROLE,
+      provisionTenants: config.WORKEASY360_PROVISION_TENANTS,
+      purchaseUrl: config.WORKEASY360_PURCHASE_URL ?? issuer,
+    },
+    { logger },
+  );
+  logger.info({ issuer, productCode: config.WORKEASY360_PRODUCT_CODE, ssoOnly: config.WORKEASY360_SSO_ONLY }, "WorkEasy360 sign-in enabled");
+  return runtime;
+}
 
 const app = createApp({
   assistant,
@@ -38,21 +97,9 @@ const app = createApp({
     cleanBucket: config.OBJECT_STORAGE_BUCKET_CLEAN,
     exportsBucket: config.OBJECT_STORAGE_BUCKET_EXPORTS,
   }),
-  identityProvider: createOidcIdentityProvider({
-    issuerUrl: config.OIDC_ISSUER_URL,
-    clientId: config.OIDC_CLIENT_ID,
-    clientSecret: config.OIDC_CLIENT_SECRET,
-    redirectUri: new URL("/auth/callback", consoleOrigin).toString(),
-    // Config validation already requires https outside development.
-    allowInsecureRequests: config.NODE_ENV !== "production" && new URL(config.OIDC_ISSUER_URL).protocol === "http:",
-  }),
-  respondentIdentityProvider: createOidcIdentityProvider({
-    issuerUrl: config.OIDC_ISSUER_URL,
-    clientId: config.OIDC_CLIENT_ID,
-    clientSecret: config.OIDC_CLIENT_SECRET,
-    redirectUri: new URL("/public/v1/auth/callback", config.RESPONDENT_PUBLIC_URL).toString(),
-    allowInsecureRequests: config.NODE_ENV !== "production" && new URL(config.OIDC_ISSUER_URL).protocol === "http:",
-  }),
+  identityProvider: genericProvider(new URL("/auth/callback", consoleOrigin).toString()),
+  respondentIdentityProvider: genericProvider(new URL("/public/v1/auth/callback", config.RESPONDENT_PUBLIC_URL).toString()),
+  workeasy360: workeasy360Runtime(),
   settings: {
     consoleOrigin,
     respondentOrigin: new URL(config.RESPONDENT_PUBLIC_URL).origin,

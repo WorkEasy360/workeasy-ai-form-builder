@@ -83,6 +83,15 @@ export interface AuthSessionsTable {
   expires_at: Date;
   revoked_at: Date | null;
   created_at: CreatedAt;
+  /** How the session was opened (migration 0029). */
+  provider: Generated<"local" | "workeasy360">;
+  /** A WorkEasy360 session's one tenant: the organization its ID token named. */
+  tenant_id: Generated<string | null>;
+  w360_issuer: Generated<string | null>;
+  w360_subject: Generated<string | null>;
+  w360_sid: Generated<string | null>;
+  w360_organization_id: Generated<string | null>;
+  id_token: Generated<string | null>;
 }
 
 export type GrantPrincipalType = "user";

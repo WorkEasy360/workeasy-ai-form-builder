@@ -3,6 +3,8 @@ export { createDb, type CreateDbOptions, type Db } from "./client.js";
 export { InvalidDbContextError, withContext, withTenant, type DbContext } from "./context.js";
 export { DEFAULT_MIGRATIONS_DIR, migrate, type MigrateOptions, type MigrateResult } from "./migrate.js";
 export * as identityRepo from "./repositories/identity.js";
+export * as workeasy360Repo from "./repositories/workeasy360.js";
+export type { LoginFlow, LogoutOutcome, ProvisionOutcome, Workeasy360SignIn } from "./repositories/workeasy360.js";
 export * as orgRepo from "./repositories/organization.js";
 export * as membersRepo from "./repositories/members.js";
 export type { Invitation, InvitationStatus, Member, NewInvitation } from "./repositories/members.js";
@@ -28,7 +30,7 @@ export type { NewUpload, ScanJob, ScanOutcome, Upload } from "./repositories/upl
 export type { LockedSession, NewSubmission, RecordedRequest } from "./repositories/intake.js";
 export type { Acceptance, Availability, FormGate, PublicForm, RespondentSession, StartedSession, Unavailable } from "./repositories/public-forms.js";
 export type { AuditInput, FormVersion, NewVersionInput, OutboxInput, VersionSummary } from "./repositories/publishing.js";
-export type { CreatedSession, IdentityClaims, ResolvedSession, UserProfile } from "./repositories/identity.js";
+export type { CreatedSession, IdentityClaims, ResolvedSession, SessionBinding, SessionProvider, UserProfile } from "./repositories/identity.js";
 export type {
   AccessPolicy,
   CreateFormInput,

@@ -11,6 +11,7 @@ import { requestContext, requestLog } from "./http/request-context.js";
 import { apiV1Router } from "./routes/api-v1.js";
 import { publicV1Router } from "./routes/public-v1.js";
 import { authRouter } from "./routes/auth.js";
+import type { Workeasy360Runtime } from "./workeasy360/runtime.js";
 
 /** JSON body cap for non-upload routes (docs/05 §1). */
 const JSON_BODY_LIMIT = "1mb";
@@ -55,6 +56,8 @@ export interface AppDependencies {
   isDraining: () => boolean;
   /** The model behind the console assistant (docs/09); undefined when AI is disabled on this server. */
   assistant?: JsonCompletionProvider | undefined;
+  /** WorkEasy360 Accounts sign-in (docs/workeasy360-sso.md); undefined when this deployment does not use it. */
+  workeasy360?: Workeasy360Runtime | undefined;
 }
 
 /** Maps body-parser failures to stable problem codes. */

@@ -133,6 +133,7 @@ import { requestIdOf } from "../http/request-context.js";
 import { canRead, indexVersions, presentAnswer, readableClasses, shortReceipt } from "@workeasy/responses";
 import { requireSameOrigin } from "../http/same-origin.js";
 import { sessionCookieName } from "./auth.js";
+import { organizationGate, refuseUnlessWorkeasy360 } from "../workeasy360/access.js";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -314,11 +315,14 @@ export function apiV1Router(deps: AppDependencies): Router {
       problems.unauthenticated(res);
       return;
     }
+    if (refuseUnlessWorkeasy360(deps.workeasy360, session, res)) return;
     res.locals.session = session;
     next();
   });
 
   router.use(requireSameOrigin(settings.consoleOrigin));
+  // WorkEasy360: a session reaches only its organization, and only while it is entitled.
+  router.use("/organizations/:orgId", organizationGate(db, deps.workeasy360));
 
   /**
    * Runs `fn` in a transaction scoped to the route organization and the
@@ -382,7 +386,9 @@ export function apiV1Router(deps: AppDependencies): Router {
   }
 
   router.get("/me", async (_req, res) => {
-    const profile = await identityRepo.getUserProfile(db, sessionOf(res).userId);
+    const session = sessionOf(res);
+    // A WorkEasy360 session sees only the organization its token named.
+    const profile = await identityRepo.getUserProfile(db, session.userId, session.provider === "workeasy360" ? session.tenantId : undefined);
     if (!profile) {
       problems.unauthenticated(res);
       return;
@@ -395,6 +401,7 @@ export function apiV1Router(deps: AppDependencies): Router {
         role: m.role,
         permissions: [...orgPermissions(m)],
       })),
+      session: { provider: session.provider, workeasy360SignOut: session.provider === "workeasy360" },
     };
     res.json(body);
   });
@@ -409,6 +416,10 @@ export function apiV1Router(deps: AppDependencies): Router {
       return;
     }
     const userId = sessionOf(res).userId;
+    if (sessionOf(res).provider === "workeasy360" || deps.workeasy360?.settings.ssoOnly) {
+      sendProblem(res, 403, "WORKEASY360_ORGANIZATIONS", "Organizations come from WorkEasy360. Create or choose one there");
+      return;
+    }
     const profile = await identityRepo.getUserProfile(db, userId);
     if (!profile) {
       problems.unauthenticated(res);
@@ -425,6 +436,20 @@ export function apiV1Router(deps: AppDependencies): Router {
     });
     const organization: OrganizationCreatedResponse = { id: tenantId, name: body.data.name };
     res.status(201).location(`/api/v1/organizations/${tenantId}`).json(organization);
+  });
+
+  /**
+   * Whether the caller may use this organization right now: an active
+   * membership, and (for an organization linked to WorkEasy360) a current
+   * entitlement. The console asks it once per page load to show "access
+   * ended" instead of failing request by request.
+   */
+  router.get("/organizations/:orgId/access", async (req, res) => {
+    const outcome = await inOrganization(req.params.orgId, sessionOf(res).userId, async (_trx, membership): Promise<Outcome<{ ok: true; role: string }>> => ({
+      kind: "ok",
+      body: { ok: true, role: membership.role },
+    }));
+    respond(res, outcome);
   });
 
   router.get("/form-templates", (_req, res) => {
@@ -1483,6 +1508,12 @@ export function apiV1Router(deps: AppDependencies): Router {
     const tenantId = await membersRepo.resolveInvitation(db, tokenHash);
     if (!tenantId) {
       respond(res, invalid);
+      return;
+    }
+    const session = sessionOf(res);
+    if (session.provider === "workeasy360" && tenantId !== session.tenantId) {
+      // Joining another organization would give this session nothing: its token named one.
+      sendProblem(res, 403, "WORKEASY360_OTHER_ORGANIZATION", "This invitation is for another organization. Open it from that organization in WorkEasy360");
       return;
     }
     respond(
