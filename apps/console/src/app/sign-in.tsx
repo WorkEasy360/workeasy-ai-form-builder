@@ -2,28 +2,40 @@
 
 import { useEffect, useId, useState, type FormEvent } from "react";
 import { api, ApiError } from "../lib/api";
+import { SSO_ERROR_MESSAGES } from "./workeasy360";
 
 type Mode = "sign-in" | "sign-up";
 
+interface Methods {
+  password: boolean;
+  sso: boolean;
+  /** WorkEasy360 Accounts (docs/workeasy360-sso.md). */
+  workeasy360?: boolean;
+}
+
 /**
- * Email and password sign-in and sign-up, plus single sign-on when the
- * server has an identity provider. After success the browser goes to
- * `returnTo` (an invitation link) or the landing page.
+ * Email and password sign-in and sign-up, plus "Continue with WorkEasy360"
+ * and single sign-on when the server offers them. After success the browser
+ * goes to `returnTo` (an invitation link) or the landing page. This page never
+ * starts a WorkEasy360 sign-in by itself: the person chooses.
  */
-export function SignIn({ signInFailed, returnTo }: { signInFailed: boolean; returnTo?: string }) {
+export function SignIn({ signInFailed, returnTo, ssoError }: { signInFailed: boolean; returnTo?: string; ssoError?: string }) {
   const ids = { email: useId(), password: useId(), name: useId() };
   const [mode, setMode] = useState<Mode>("sign-in");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | undefined>(signInFailed ? "Sign-in didn't complete. Please try again." : undefined);
-  const [sso, setSso] = useState(false);
+  const [error, setError] = useState<string | undefined>(
+    ssoError ? (SSO_ERROR_MESSAGES[ssoError] ?? "Sign-in didn't complete. Please try again.") : signInFailed ? "Sign-in didn't complete. Please try again." : undefined,
+  );
+  const [methods, setMethods] = useState<Methods>({ password: true, sso: false });
+  const { sso, workeasy360 } = methods;
 
   useEffect(() => {
-    api<{ sso: boolean }>("/auth/methods")
-      .then((m) => setSso(m.sso))
-      .catch(() => setSso(false));
+    api<Methods>("/auth/methods")
+      .then(setMethods)
+      .catch(() => setMethods({ password: true, sso: false }));
   }, []);
 
   async function submit(event: FormEvent) {
@@ -46,12 +58,34 @@ export function SignIn({ signInFailed, returnTo }: { signInFailed: boolean; retu
   }
 
   const signingUp = mode === "sign-up";
+  const workeasy360Button = workeasy360 && (
+    <a className="c-btn c-btn-primary" href="/auth/workeasy360/start">
+      Continue with WorkEasy360
+    </a>
+  );
+  if (!methods.password) {
+    // WorkEasy360 is the only way in (WORKEASY360_SSO_ONLY).
+    return (
+      <div className="c-card" style={{ display: "grid", gap: 14 }}>
+        <h2 style={{ margin: 0 }}>Sign in</h2>
+        <p style={{ margin: 0, color: "var(--we-text-secondary)" }}>Sign in with your WorkEasy360 account.</p>
+        {error && (
+          <p role="alert" className="c-error" style={{ margin: 0 }}>
+            {error}
+          </p>
+        )}
+        {workeasy360Button}
+      </div>
+    );
+  }
   return (
     <form className="c-card" style={{ display: "grid", gap: 14 }} onSubmit={submit} noValidate={false}>
       <h2 style={{ margin: 0 }}>{signingUp ? "Create your account" : "Sign in"}</h2>
       <p style={{ margin: 0, color: "var(--we-text-secondary)" }}>
         {signingUp ? "Build forms, share them and review responses." : "Welcome back. Sign in to your forms."}
       </p>
+      {!signingUp && workeasy360Button}
+      {!signingUp && workeasy360 && <p style={{ margin: 0, fontSize: 14, color: "var(--we-text-secondary)" }}>Or with your email and password:</p>}
       {signingUp && (
         <div className="c-field">
           <label className="c-label" htmlFor={ids.name}>

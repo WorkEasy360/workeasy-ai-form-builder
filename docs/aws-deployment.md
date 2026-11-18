@@ -65,6 +65,8 @@ Two A records pointing at `54.255.105.162`, for example `forms-admin.example.com
 
 People sign up and sign in with **email and password** on the console's home page; nothing to set up. New users create their own organization on first sign-in and invite the rest from **Members**. Not yet included: email verification and "forgot password" (they need SES).
 
+**Sign-in with WorkEasy360 Accounts:** see [workeasy360-sso.md](workeasy360-sso.md) (registration, the private key file the api container needs, and the DNS prerequisite: `sslip.io` hostnames cannot be proven).
+
 **Optional, single sign-on** (OpenID Connect, e.g. Amazon Cognito or your company's identity provider): the console offers "Sign in with single sign-on" only once the provider in `OIDC_ISSUER_URL` answers. With Cognito:
 
 In **Amazon Cognito → User pools → Create user pool** (ap-southeast-1):

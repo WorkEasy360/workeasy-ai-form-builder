@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { CreateOrganization } from "./create-organization";
 import { SignIn } from "./sign-in";
+import { NoAccess, SignOutButtons } from "./workeasy360";
 
 interface Organization {
   id: string;
@@ -14,6 +15,7 @@ interface Organization {
 interface Me {
   user: { id: string; displayName: string | null };
   organizations: Organization[];
+  session?: { provider: "local" | "workeasy360"; workeasy360SignOut: boolean };
 }
 
 type State = { kind: "loading" } | { kind: "signed-out" } | { kind: "error" } | { kind: "signed-in"; me: Me };
@@ -22,8 +24,9 @@ type State = { kind: "loading" } | { kind: "signed-out" } | { kind: "error" } | 
  * The landing page: sign in, then pick an organization. Someone in exactly
  * one organization goes straight to its forms.
  */
-export function SessionPanel({ signInFailed, returnTo }: { signInFailed: boolean; returnTo?: string }) {
+export function SessionPanel({ signInFailed, returnTo, ssoError, reason }: { signInFailed: boolean; returnTo?: string; ssoError?: string; reason?: string }) {
   const [state, setState] = useState<State>({ kind: "loading" });
+  const denied = ssoError === "not_entitled";
 
   useEffect(() => {
     let cancelled = false;
@@ -59,7 +62,9 @@ export function SessionPanel({ signInFailed, returnTo }: { signInFailed: boolean
   }
 
   if (state.kind === "signed-out") {
-    return <SignIn signInFailed={signInFailed} {...(returnTo ? { returnTo } : {})} />;
+    // WorkEasy360 said this organization (or person) has no access: a purchase path, not a sign-in error.
+    if (denied) return <NoAccess reason={reason} signedIn={false} />;
+    return <SignIn signInFailed={signInFailed} {...(returnTo ? { returnTo } : {})} {...(ssoError ? { ssoError } : {})} />;
   }
 
   const { me } = state;
@@ -81,11 +86,9 @@ export function SessionPanel({ signInFailed, returnTo }: { signInFailed: boolean
           ))}
         </div>
       )}
-      <form method="post" action="/auth/logout">
-        <button type="submit" className="c-btn">
-          Sign out
-        </button>
-      </form>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <SignOutButtons workeasy360={me.session?.workeasy360SignOut ?? false} />
+      </div>
     </div>
   );
 }

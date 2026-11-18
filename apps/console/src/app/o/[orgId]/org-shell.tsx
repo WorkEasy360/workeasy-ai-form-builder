@@ -7,6 +7,7 @@ import { ThemeToggle } from "@workeasy/ui/theme-toggle";
 import { api, ApiError, type Me } from "../../../lib/api";
 import { MODULE_GROUPS, MODULES } from "../../../lib/modules";
 import { LogoutIcon, UsersIcon } from "../../icons";
+import { NoAccess } from "../../workeasy360";
 import { AssistantPanel } from "./assistant-panel";
 import { GlobalSearch, Notifications } from "./shell-tools";
 
@@ -32,7 +33,14 @@ function initials(name: string): string {
   return ((parts[0]?.[0] ?? "") + (parts.length > 1 ? (parts.at(-1)?.[0] ?? "") : "")).toUpperCase() || "?";
 }
 
-type State = { kind: "loading" } | { kind: "signed-out" } | { kind: "not-found" } | { kind: "error" } | { kind: "ready"; me: Me; org: OrgContextValue };
+type State =
+  | { kind: "loading" }
+  | { kind: "signed-out" }
+  | { kind: "not-found" }
+  | { kind: "error" }
+  /** WorkEasy360 says the organization's (or this person's) access ended; the session stays so they can sign out. */
+  | { kind: "access-ended"; reason: string | undefined; unverified: boolean }
+  | { kind: "ready"; me: Me; org: OrgContextValue };
 
 /**
  * The console frame for one organization, the WorkEasy360 application
@@ -59,11 +67,24 @@ export function OrgShell({ orgId, children }: { orgId: string; children: ReactNo
           setState({ kind: "not-found" });
           return;
         }
-        setState({
+        const ready: State = {
           kind: "ready",
           me,
           org: { orgId, orgName: org.name, role: org.role, permissions: org.permissions, userName: me.user.displayName ?? "Your account", userId: me.user.id },
-        });
+        };
+        // Whether WorkEasy360 still lets this organization in (checked on the platform's cadence, not per request).
+        return api<{ ok: true }>(`/api/v1/organizations/${orgId}/access`)
+          .then(() => {
+            if (!cancelled) setState(ready);
+          })
+          .catch((err: unknown) => {
+            if (cancelled) return;
+            const code = err instanceof ApiError ? err.problem.code : "";
+            if (code === "WORKEASY360_ACCESS_ENDED" || code === "WORKEASY360_ACCESS_UNVERIFIED") {
+              const reason = err instanceof ApiError ? (err.problem as { reason?: string }).reason : undefined;
+              setState({ kind: "access-ended", reason, unverified: code === "WORKEASY360_ACCESS_UNVERIFIED" });
+            } else setState(ready);
+          });
       })
       .catch((err: unknown) => {
         if (!cancelled) setState(err instanceof ApiError && err.problem.status === 401 ? { kind: "signed-out" } : { kind: "error" });
@@ -72,6 +93,24 @@ export function OrgShell({ orgId, children }: { orgId: string; children: ReactNo
       cancelled = true;
     };
   }, [orgId]);
+
+  if (state.kind === "access-ended") {
+    return (
+      <main className="c-center-page">
+        {state.unverified ? (
+          <div className="c-empty" style={{ maxWidth: 440 }} role="alert">
+            <h2>We can't confirm your access right now</h2>
+            <p>Workeasy Forms cannot reach WorkEasy360 to confirm your organization's access. Try again in a few minutes.</p>
+            <a className="c-btn c-btn-primary" href={pathname}>
+              Try again
+            </a>
+          </div>
+        ) : (
+          <NoAccess reason={state.reason} signedIn />
+        )}
+      </main>
+    );
+  }
 
   if (state.kind === "signed-out" || state.kind === "not-found" || state.kind === "error") {
     const copy = {
@@ -196,6 +235,13 @@ export function OrgShell({ orgId, children }: { orgId: string; children: ReactNo
                     <LogoutIcon size={16} /> Sign out
                   </button>
                 </form>
+                {ready?.me.session?.workeasy360SignOut && (
+                  <form method="post" action="/auth/logout?workeasy360=1">
+                    <button type="submit">
+                      <LogoutIcon size={16} /> Sign out of WorkEasy360 too
+                    </button>
+                  </form>
+                )}
               </div>
             </details>
           )}
